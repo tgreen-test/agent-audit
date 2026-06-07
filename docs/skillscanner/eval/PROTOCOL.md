@@ -369,7 +369,7 @@ correspondingly collapsed to a single tag.
 | Repo root on disk | `agent-security-suite/` |
 | Branch | `feature/skillscanner` |
 | Tag | `skillscanner-core-frozen` |
-| Tagged commit hash | `<TBD: filled in at tagging>` |
+| Tagged commit hash | `ab6f0eebd21c2cb39ea48aa9bb4192729a398093` (Phase 1 commit) followed by `<this commit>` (the §7 hash-recording follow-up) |
 | Tag locality | **local only**, no `git push`, no remote tag |
 | Date of freeze | 2026-06-06 |
 
