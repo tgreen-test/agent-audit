@@ -383,6 +383,20 @@ def run_scan(
             )
             all_findings.append(finding)
 
+    # Run SkillScanner (SKILL-000, SKILL-010, SKILL-020) — additive, distinct
+    # from SkillBody/SkillMeta which emit AGENT-058..AGENT-064.
+    if not quiet and output_format == "terminal":
+        console.print("[dim]Scanning Skills (cross-lingual)...[/dim]")
+
+    try:
+        from agent_audit.scanners.skill_scanner import SkillScanner
+        skill_scanner = SkillScanner()
+        skill_findings = skill_scanner.scan_and_convert(path)
+        all_findings.extend(skill_findings)
+    except Exception as e:  # pragma: no cover - dispatch safety net
+        if verbose and output_format == "terminal":
+            console.print(f"[yellow]SkillScanner skipped: {e}[/yellow]")
+
     # Run package scanner (AGENT-110, AGENT-111)
     if not quiet and output_format == "terminal":
         console.print("[dim]Scanning package configurations...[/dim]")
