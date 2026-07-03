@@ -24,10 +24,12 @@ def cli(ctx: click.Context, verbose: bool, quiet: bool):
 from agent_audit.cli.commands.inspect import inspect  # noqa: E402
 from agent_audit.cli.commands.scan import scan  # noqa: E402
 from agent_audit.cli.commands.init import init  # noqa: E402
+from agent_audit.cli.commands.report import report  # noqa: E402
 
 cli.add_command(inspect)
 cli.add_command(scan)
 cli.add_command(init)
+cli.add_command(report)
 
 
 if __name__ == '__main__':
