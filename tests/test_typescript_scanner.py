@@ -827,12 +827,30 @@ class TestConstantArgumentSuppression:
         """)
         assert len(self._shell_findings(scanner, path)) >= 1
 
-    def test_multiline_call_still_flagged(self, scanner):
-        """An argument list running past the line end must not be assumed safe."""
+    def test_multiline_call_with_fixed_program_superseded(self, scanner):
+        """SUPERSEDED by TestFixedNonShellProgram, same reason as the two above.
+
+        W14 could not see past the end of the line, so `const files =
+        execFileSync(` was treated as unknown and reported. W17 joins a short
+        window and finds the literal `'git'` on the next line, which puts this
+        in exactly the same bucket as the single-line form. Kept and inverted so
+        the change is visible. See DECISIONS.md item 24.
+        """
         path = _write_ts_file("""
             import { execFileSync } from 'child_process';
             const files = execFileSync(
                 'git',
+                ['ls-files', userPath],
+            );
+        """)
+        assert self._shell_findings(scanner, path) == []
+
+    def test_multiline_call_with_variable_program_still_flagged(self, scanner):
+        """The line-joining must not turn an unknown program into a safe one."""
+        path = _write_ts_file("""
+            import { execFileSync } from 'child_process';
+            const files = execFileSync(
+                resolvedBinary,
                 ['ls-files', userPath],
             );
         """)

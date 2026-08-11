@@ -37,6 +37,31 @@ from agent_audit.scanners.base import BaseScanner, ScanResult
 logger = logging.getLogger(__name__)
 
 
+# A comment-only line in a JavaScript/TypeScript source.
+_JS_COMMENT_LINE_RE = re.compile(r"^\s*(?://|/\*|\*)")
+
+# A method or function declaration: it names the operation, it does not perform
+# it. Deliberately narrow — balanced parens are not checked here because this
+# path only ever tests the leading token, and the caller additionally requires
+# no `=` before the call.
+_JS_DECLARATION_RE = re.compile(
+    r"^(?:export\s+)?(?:declare\s+)?"
+    r"(?:abstract\s+|override\s+|async\s+|static\s+|readonly\s+"
+    r"|private\s+|public\s+|protected\s+|function\s+)*"
+    r"[A-Za-z_$][\w$]*\s*\([^;=]*\)\s*(?::\s*[^={]+)?\s*\{?\s*;?\s*$"
+)
+
+# Launchers whose entire purpose is to confine the child process. AGENT-047 is
+# "Subprocess Execution Without Sandbox"; reporting the sandbox itself under
+# that title inverts the finding. Matched only as a quoted program argument, so
+# a mention in prose or a variable named `bwrapPath` does not suppress anything.
+_SANDBOX_LAUNCHER_RE = re.compile(
+    r"""['"`](?:/[\w./-]*/)?"""
+    r"(?:bwrap|bubblewrap|sandbox-exec|firejail|landlock-launcher|nsjail|minijail)"
+    r"""['"`]\s*,"""
+)
+
+
 @dataclass
 class PrivilegeFinding:
     """Internal finding from privilege scanner before conversion to Finding."""
@@ -856,6 +881,23 @@ class PrivilegeScanner(BaseScanner):
                 pattern.search(line) for pattern in self.SUBPROCESS_IMPORT_ONLY_JS
             )
             if is_import_only:
+                continue
+
+            # A comment-only line and a method declaration both name the
+            # operation without performing it. The TypeScript scanner learned
+            # this in the same run; this path had no such filter at all, so
+            # `/** Executable to spawn ... */` and `async fork(request) {` were
+            # reported as subprocess execution.
+            if _JS_COMMENT_LINE_RE.match(line):
+                continue
+            if _JS_DECLARATION_RE.match(line.strip()) and "=" not in line.split("(")[0]:
+                continue
+
+            # A launcher whose whole purpose is to confine the child is not
+            # "execution without sandbox". bwrap, sandbox-exec, firejail and the
+            # Landlock launcher were being reported as the very thing they
+            # implement.
+            if _SANDBOX_LAUNCHER_RE.search(line):
                 continue
 
             for pattern in self.SUBPROCESS_DANGEROUS_JS:

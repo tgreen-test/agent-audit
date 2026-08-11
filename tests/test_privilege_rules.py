@@ -817,3 +817,70 @@ class TestBrowserEvaluateCallbackLiteral:
             "await puppeteer.launch({ args: ['--disable-web-security'] });\n"
         )
         assert len(self._browser(tmp_path, body)) >= 1
+
+
+class TestSubprocessSandboxLaunchers:
+    """
+    AGENT-047 is "Subprocess Execution Without Sandbox". The privilege scanner's
+    JavaScript path had no comment or declaration filter at all, and no notion
+    that some programs ARE the sandbox.
+
+    On the audit target that produced three inverted findings — `spawnSync(
+    'bwrap', ...)` and `spawnSync('sandbox-exec', ...)` reported as execution
+    without a sandbox, when confining the child is the whole purpose of those
+    launchers — plus JSDoc lines and method declarations reported as execution.
+
+    The launcher test matches only a quoted program argument, so prose
+    mentioning bwrap or a variable named `bwrapPath` suppresses nothing.
+
+    Regression source: the audit-target measurement recorded in
+    NIGHT_RUN_LEDGER.md section W17, pattern 9.
+    """
+
+    def _subprocess(self, tmp_path, body, name="probe.ts"):
+        target = tmp_path / name
+        target.write_text(body, encoding="utf-8")
+        scanner = PrivilegeScanner()
+        return [
+            f for f in scanner.scan_and_convert(target) if f.rule_id == "AGENT-047"
+        ]
+
+    # --- Must NOT trigger ---------------------------------------------------
+
+    def test_bwrap_launcher_not_flagged(self, tmp_path):
+        body = "const probe = spawnSync('bwrap', ['--ro-bind', '/', '/', '--die-with-parent']);\n"
+        assert self._subprocess(tmp_path, body) == []
+
+    def test_sandbox_exec_launcher_not_flagged(self, tmp_path):
+        body = "const probe = spawnSync('sandbox-exec', ['-p', profile, '--', binary]);\n"
+        assert self._subprocess(tmp_path, body) == []
+
+    def test_absolute_path_launcher_not_flagged(self, tmp_path):
+        body = "const probe = spawnSync('/usr/bin/firejail', ['--quiet', binary]);\n"
+        assert self._subprocess(tmp_path, body) == []
+
+    def test_jsdoc_line_not_flagged(self, tmp_path):
+        body = "/** Executable to spawn (absolute, or resolved on PATH at load). */\n"
+        assert self._subprocess(tmp_path, body) == []
+
+    def test_method_declaration_not_flagged(self, tmp_path):
+        body = "class Host {\n  async fork(request) {\n    return this.child;\n  }\n}\n"
+        assert self._subprocess(tmp_path, body) == []
+
+    # --- Must STILL trigger -------------------------------------------------
+
+    def test_ordinary_program_still_flagged(self, tmp_path):
+        """`psql`, not `curl`: SAFE_COMMANDS already halves the latter below the
+        0.30 emission floor, which is pre-existing behaviour and not what this
+        class is about."""
+        body = "const result = spawnSync('psql', ['-c', userQuery]);\n"
+        assert len(self._subprocess(tmp_path, body)) >= 1
+
+    def test_variable_program_still_flagged(self, tmp_path):
+        body = "const child = spawn(command, args);\n"
+        assert len(self._subprocess(tmp_path, body)) >= 1
+
+    def test_launcher_named_in_prose_does_not_suppress(self, tmp_path):
+        """A mention of bwrap must not immunise a real call on the same line."""
+        body = "const child = spawn(userBinary, ['--profile', 'bwrap-like']);\n"
+        assert len(self._subprocess(tmp_path, body)) >= 1

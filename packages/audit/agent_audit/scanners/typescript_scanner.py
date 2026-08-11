@@ -238,6 +238,12 @@ _SHELL_PROGRAMS = {
 
 _SHELL_OPTION_RE = re.compile(r"\bshell\s*:\s*(?:true|1)\b")
 
+# How many source lines to join when a call's opening parenthesis is the last
+# thing on its line. Four covers `const child = spawn(\n  process.execPath,\n
+# [ ... ]` without letting an unrelated call downstream be mistaken for this
+# one's argument list.
+_CALL_JOIN_LINES = 4
+
 
 def _fixed_non_shell_program(line: str, open_paren: int) -> bool:
     """Whether this call runs a fixed, non-shell executable.
@@ -1037,7 +1043,19 @@ class TypeScriptScanner(BaseScanner):
                     if _call_args_are_constant(line, match.end() - 1):
                         continue
                     # A fixed, non-shell executable is not shell execution.
-                    if _fixed_non_shell_program(line, match.end() - 1):
+                    # When the call opener runs past the end of the line the
+                    # program sits on the next one, so join a short window and
+                    # re-ask. `const child = spawn(` tells us nothing on its own.
+                    probe = line
+                    if line.count("(") != line.count(")"):
+                        probe = " ".join(
+                            candidate.strip()
+                            for candidate in lines[line_num - 1:line_num - 1 + _CALL_JOIN_LINES]
+                        )
+                        offset = probe.find("(", probe.find(match.group(0)[:-1]))
+                    else:
+                        offset = match.end() - 1
+                    if offset >= 0 and _fixed_non_shell_program(probe, offset):
                         continue
                 if match:
                     findings.append(
