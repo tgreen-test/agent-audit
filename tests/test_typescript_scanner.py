@@ -1019,3 +1019,176 @@ class TestFetchReceiver:
             const c = await fetch(userSuppliedUrl, { method: "GET" });
         """)
         assert len(self._ssrf(scanner, path)) == 1
+
+
+class TestDeclarationsAndQuotedSource:
+    """
+    A declaration names an operation; it does not perform one. Neither does a
+    comment, nor source text quoted inside a string.
+
+    `ts_decl_signature_re` already covered part of this — scoped to
+    ``eval|Function`` and to the return-type form alone. On the audit target the
+    uncovered shapes were the bulk of what remained: interface and class method
+    declarations named ``spawn``/``exec``/``fetch``, JSDoc opener lines (`/**`
+    was never skipped, only `//` and `*`), and generated API-surface entries
+    whose values are quoted source — ``signature: 'async spawn(owner: Agent)'``.
+
+    The discrimination that has to hold is `execFileSync('git', ['init'])`:
+    identifier, parens, end of line, and still a call. Balanced parentheses plus
+    "no `=` or `(` before the name" plus one positive declaration marker is what
+    separates them.
+
+    Regression source: the audit-target measurement recorded in
+    NIGHT_RUN_LEDGER.md § W17, pattern 2.
+    """
+
+    def _shell(self, scanner, path):
+        return [
+            f for f in scanner.scan_and_convert(path)
+            if f.rule_id == "AGENT-034" and "shell" in f.description.lower()
+        ]
+
+    def _ssrf(self, scanner, path):
+        return [
+            f for f in scanner.scan_and_convert(path) if f.rule_id == "AGENT-026"
+        ]
+
+    # --- Must NOT trigger: declarations ------------------------------------
+
+    def test_interface_method_declaration_not_flagged(self, scanner):
+        path = _write_ts_file("""
+            export interface PtyBackend {
+                spawn(spec: PtyBackendSpawnSpec): Promise<PtyBackendSession>
+            }
+        """)
+        assert self._shell(scanner, path) == []
+
+    def test_abstract_method_declaration_not_flagged(self, scanner):
+        path = _write_ts_file("""
+            abstract class Base {
+                abstract spawn(spec: SubprocessSpawnSpec): SubprocessHandle
+            }
+        """)
+        assert self._shell(scanner, path) == []
+
+    def test_async_method_body_opener_not_flagged(self, scanner):
+        path = _write_ts_file("""
+            class Local {
+                async spawn() {
+                    return this.backend;
+                }
+            }
+        """)
+        assert self._shell(scanner, path) == []
+
+    def test_override_method_declaration_not_flagged(self, scanner):
+        path = _write_ts_file("""
+            class Fake extends Base {
+                override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
+                    throw new Error("unused");
+                }
+            }
+        """)
+        assert self._shell(scanner, path) == []
+
+    def test_local_function_named_exec_not_flagged(self, scanner):
+        path = _write_ts_file("""
+            function exec(name: string, args: unknown): ToolExecutionInput {
+                return { name, args };
+            }
+        """)
+        assert self._shell(scanner, path) == []
+
+    def test_fetch_method_declaration_not_flagged(self, scanner):
+        path = _write_ts_file("""
+            export interface WebFetchProvider {
+                fetch(request: WebFetchRequest, signal?: AbortSignal): Promise<WebFetchResult>
+            }
+        """)
+        assert self._ssrf(scanner, path) == []
+
+    # --- Must NOT trigger: comments and quoted source ----------------------
+
+    def test_jsdoc_opener_not_flagged(self, scanner):
+        """`/**` was never skipped — only `//` and a continuation `*`."""
+        path = _write_ts_file("""
+            /** Executable to spawn (absolute, or resolved on PATH at load). */
+            const program = resolved;
+        """)
+        assert self._shell(scanner, path) == []
+
+    def test_block_comment_opener_not_flagged(self, scanner):
+        path = _write_ts_file("""
+            /* wrap argv so the caller spawn()s it confined */
+            const argv = confine(input);
+        """)
+        assert self._shell(scanner, path) == []
+
+    def test_api_surface_signature_string_not_flagged(self, scanner):
+        path = _write_ts_file("""
+            const entry = {
+                signature: 'async spawn(owner: Agent, request: PtySpawnRequest): Promise<R>',
+            };
+        """)
+        assert self._shell(scanner, path) == []
+
+    def test_child_script_built_as_string_not_flagged(self, scanner):
+        path = _write_ts_file("""
+            const helper = 'const child = spawnSync(process.argv[1], [], {});';
+            writeFileSync(target, helper);
+        """)
+        assert self._shell(scanner, path) == []
+
+    # --- Must STILL trigger: real calls ------------------------------------
+
+    def test_call_that_looks_like_a_declaration_still_flagged(self, scanner):
+        """The discriminator: identifier, parens, end of line — still a call."""
+        path = _write_ts_file("""
+            execFileSync(gitBinary, ['init', '--quiet', root], { env })
+        """)
+        assert len(self._shell(scanner, path)) >= 1
+
+    def test_multiline_call_opener_still_flagged(self, scanner):
+        """An unbalanced paren is a continued call, not a declaration body."""
+        path = _write_ts_file("""
+            const child = spawn(program, [
+                "--flag",
+            ]);
+        """)
+        assert len(self._shell(scanner, path)) >= 1
+
+    def test_bare_call_with_variable_still_flagged(self, scanner):
+        path = _write_ts_file("""
+            const out = execSync(userCommand);
+        """)
+        assert len(self._shell(scanner, path)) >= 1
+
+    def test_global_fetch_call_still_flagged(self, scanner):
+        path = _write_ts_file("""
+            const response = await fetch(target, { method: "GET" });
+        """)
+        assert len(self._ssrf(scanner, path)) >= 1
+
+    def test_trailing_brace_call_still_flagged(self, scanner):
+        """Ends with `{`, but the parens do not balance — an options object."""
+        path = _write_ts_file("""
+            spawn(program, args, {
+                stdio: "inherit",
+            });
+        """)
+        assert len(self._shell(scanner, path)) >= 1
+
+    def test_deserialization_declaration_excluded_but_call_kept(self, scanner):
+        """The deserialization scanner gets the same treatment."""
+        decl = _write_ts_file("""
+            interface Loader {
+                load(source: string): unknown
+            }
+        """)
+        assert [f for f in scanner.scan_and_convert(decl)
+                if f.rule_id == "AGENT-049"] == []
+        call = _write_ts_file("""
+            const parsed = yaml.load(untrustedDocument);
+        """)
+        assert [f for f in scanner.scan_and_convert(call)
+                if f.rule_id == "AGENT-049"] != []

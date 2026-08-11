@@ -122,6 +122,96 @@ _CP_RECEIVER_RE = "(?:" + "|".join(
 _CP_EXEC_NAMES = "(?:execSync|execFileSync|execFile|exec)"
 _CP_SPAWN_NAMES = "(?:spawnSync|spawn)"
 
+
+# A line that is only a comment. `//` and `*` (continuation of a block comment)
+# were already skipped; `/*` and `/**` were not, so the opening line of every
+# JSDoc block was scanned as code. On the audit target that reported prose —
+# "the executable to spawn", "wrap `argv` so it executes confined" — as shell
+# execution.
+_TS_COMMENT_LINE_RE = re.compile(r"^\s*(?://|/\*|\*)")
+
+# A TypeScript method or function *declaration*, as opposed to a call.
+#
+# `ts_decl_signature_re` already existed for this, scoped to `eval|Function`
+# and to the return-type form alone. Widening it to every detected call name
+# needs the shape to be pinned down properly, because `execFileSync('git',
+# ['init'], { env })` is a call that superficially matches "identifier, parens,
+# end of line".
+#
+# A declaration is recognised only when ALL of these hold:
+#   * parentheses balance on the line — a call continued on the next line, e.g.
+#     `spawn(process.execPath, [` , never balances, and neither does
+#     `expect(execFileSync('git', [`
+#   * nothing before the name that implies a value position: no `=` (so
+#     `const child = spawn(...)` is out) and no `(` (so the name is the first
+#     call-shaped token on the line)
+#   * and one positive declaration marker: a return-type annotation after the
+#     closing paren, a body-opening `{` at end of line, or a leading modifier
+#     (`function`, `async`, `abstract`, `override`, `static`, `readonly`,
+#     `declare`, `export`, or an access modifier).
+_TS_DECL_MODIFIER_RE = re.compile(
+    r"^(?:export\s+|declare\s+|abstract\s+|override\s+|async\s+|static\s+"
+    r"|readonly\s+|private\s+|public\s+|protected\s+|function\s+)+"
+)
+_TS_DECL_RETURN_TYPE_RE = re.compile(r"\)\s*:\s*[^={]+$")
+
+
+def _is_ts_declaration(line: str, match_start: int) -> bool:
+    """Whether `line` is a declaration rather than a call at `match_start`."""
+    stripped = line.strip()
+    if stripped.count("(") != stripped.count(")"):
+        return False
+
+    before = line[:match_start]
+    if "=" in before or "(" in before:
+        return False
+
+    if _TS_DECL_MODIFIER_RE.match(stripped):
+        return True
+    if _TS_DECL_RETURN_TYPE_RE.search(stripped):
+        return True
+    return stripped.endswith("{")
+
+
+def _index_inside_string_literal(line: str, index: int) -> bool:
+    """Whether `index` falls inside a *closed* string literal on this line.
+
+    The audit target carries generated API-surface files whose entries are
+    quoted source text — `signature: 'async spawn(owner: Agent, ...)'`,
+    `declaration: 'export interface PtyBackend { spawn(spec) }'` — and test
+    files that build a child script as a string before writing it out. The
+    callee name appears inside a quotation there; the call it describes happens
+    somewhere else, and reporting it at the quotation is reporting it twice or
+    in the wrong file.
+
+    Only *closed* spans count. An unterminated quote (a template literal
+    continued on the next line) leaves the rest of the line unmarked, so the
+    uncertain case stays a finding.
+    """
+    i = 0
+    n = len(line)
+    while i < n:
+        ch = line[i]
+        if ch in "\"'`":
+            quote = ch
+            j = i + 1
+            while j < n:
+                if line[j] == "\\":
+                    j += 2
+                    continue
+                if line[j] == quote:
+                    break
+                j += 1
+            if j >= n:
+                return False  # unterminated: treat the remainder as code
+            if i < index < j:
+                return True
+            i = j + 1
+            continue
+        i += 1
+    return False
+
+
 def _call_args_are_constant(line: str, open_paren: int) -> bool:
     """Whether the argument list starting at `open_paren` is entirely literal.
 
@@ -776,30 +866,26 @@ class TypeScriptScanner(BaseScanner):
             ),
         ]
 
-        # TS method/function declaration shape:
-        # `name(args): ReturnType` — return type annotation after the
-        # closing paren. Used to skip interface/class declarations like
-        #   `eval(script: string, options: RedisEvalOptions): Promise<unknown>;`
-        # The fallback regex parser can't distinguish declarations from
-        # calls structurally, so we filter them here.
-        ts_decl_signature_re = re.compile(
-            r"\b(?:eval|Function)\s*\([^)]*\)\s*:"
-        )
-
         for line_num, line in enumerate(lines, start=1):
             stripped = line.strip()
-            # Skip comments
-            if stripped.startswith("//") or stripped.startswith("*"):
+            # Skip comment-only lines, including the `/*` and `/**` openers the
+            # previous `//`-and-`*` test let through.
+            if _TS_COMMENT_LINE_RE.match(line):
                 continue
 
-            # Skip TS method/function declarations: `eval(args): Type ...`
-            is_ts_decl = bool(ts_decl_signature_re.search(line))
-
             for pattern, rule_id, pattern_type, confidence, call_name in patterns:
-                if pattern_type == "ts_eval_exec" and is_ts_decl:
-                    continue
                 match = pattern.search(line)
-                if match and pattern_type == "ts_child_process_exec":
+                if not match:
+                    continue
+                # A declaration names the operation; it does not perform it.
+                # This replaces ts_decl_signature_re, which covered only
+                # `eval|Function` and only the return-type form.
+                if _is_ts_declaration(line, match.start()):
+                    continue
+                # Source text quoted inside a string is not a call site here.
+                if _index_inside_string_literal(line, match.start()):
+                    continue
+                if pattern_type == "ts_child_process_exec":
                     # No injection surface when every argument is a literal:
                     # execFileSync('git', ['rev-parse', '--show-toplevel'])
                     # cannot be influenced by an attacker no matter what the
@@ -983,11 +1069,13 @@ class TypeScriptScanner(BaseScanner):
 
         for line_num, line in enumerate(lines, start=1):
             stripped = line.strip()
-            if stripped.startswith("//") or stripped.startswith("*"):
+            if _TS_COMMENT_LINE_RE.match(line):
                 continue
 
             for pattern, call_name, confidence in ssrf_patterns:
-                if pattern.search(line):
+                match = pattern.search(line)
+                if match and not _is_ts_declaration(line, match.start()) \
+                        and not _index_inside_string_literal(line, match.start()):
                     findings.append(
                         TSFinding(
                             rule_id="AGENT-026",
@@ -1024,11 +1112,13 @@ class TypeScriptScanner(BaseScanner):
 
         for line_num, line in enumerate(lines, start=1):
             stripped = line.strip()
-            if stripped.startswith("//") or stripped.startswith("*"):
+            if _TS_COMMENT_LINE_RE.match(line):
                 continue
 
             for pattern, description, confidence in UNSAFE_DESER_PATTERNS:
-                if pattern.search(line):
+                match = pattern.search(line)
+                if match and not _is_ts_declaration(line, match.start()) \
+                        and not _index_inside_string_literal(line, match.start()):
                     findings.append(
                         TSFinding(
                             rule_id="AGENT-049",
