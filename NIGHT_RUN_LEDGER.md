@@ -646,3 +646,273 @@ benchmark could not have caught it. That is a coverage gap in the corpus, not a 
 
 **GUARD** — `tests/test_scanners/test_py314_ast_constant.py` (W1) covers the crash. Nothing
 guards the version matrix itself; CI stops at 3.12. Logged in DECISIONS.md.
+
+---
+
+# SESSION 2 — 2026-08-11 (later)
+
+Confidentiality: the evaluation corpus is referred to throughout as "the audit target".
+No target path, repo name, package name, or source excerpt appears in this file, in any
+commit message, or in SESSION2_REPORT.md. The harness and its outputs live outside the
+repository and are not committed.
+
+## W6 — The blind-audit material exists, is intact, and records which build produced it.
+
+**BEFORE** — existence unconfirmed; `audit-eval/` was not in the repo, and the repo's
+`eval/` is an unrelated 23 MB SkillScanner corpus.
+
+```
+$ find /Users/heady -maxdepth 6 -iname "audit-eval*" -not -path "*/Library/*"
+<one hit, a sibling of the tool repo, outside it>
+```
+
+**FOUND** — a frozen run plus three write-ups: the raw JSON, a terminal transcript, a
+SHA-256 freeze file, a run manifest, a capability profile, and a scorecard.
+
+```
+$ shasum -a 256 -c FREEZE.sha256
+raw-output.json: OK
+raw-output.terminal.txt: OK
+```
+
+```
+$ python3 -c "...json.load(open('raw-output.json'))..."
+version = "0.19.2"
+findings: 1176
+summary  = {"total": 1176, "actionable": 1134, ... "by_severity": {"critical": 463,
+            "high": 597, "medium": 113, "low": 3}}
+```
+
+**The loose thread from the brief is closed.** The question was whether the blind run
+had silently used the stale 0.18.2 console script from site-packages instead of the
+0.19.2 working tree. Two independent records say it did not:
+
+1. The frozen JSON's own `version` field reads **0.19.2**. That value is written from
+   the running package's `__version__`, so a 0.18.2 process would have written 0.18.2.
+2. The run manifest records `pip install -e .` **into a fresh venv**, tool commit
+   `100978214b21909e95b5f0f0b1ea328bc73ab519`, tree state "tracked files unmodified",
+   interpreter CPython 3.11.14.
+
+The fresh venv also explains why the broken system-interpreter `.pth` found in session 1
+was irrelevant here: the blind run never used that interpreter. And 0.18.2 could not have
+been used even by accident — that `.pth` pointed at a non-existent directory, so the
+0.18.2 distribution was not importable by anything.
+
+**GUARD** — `run_eval.sh` verifies `FREEZE.sha256` on every invocation and aborts rather
+than score against a baseline that has changed.
+
+---
+
+## W7 — The harness reproduces the frozen baseline exactly, on the first honest attempt at the numbers.
+
+**BEFORE** — no harness existed; the 0/6 and 98.3% were hand-counted, once, in prose.
+
+**FIX** — `run_eval.sh` + `score.py`. One command; last stdout line is the required
+JSON object. Recall is scored against the six defects transcribed from the scorecard,
+with a startup assertion that aborts if the sentences they were transcribed from are no
+longer present in the source document. Noise is scored by three predicates encoding the
+scorecard's manual high-value set.
+
+**AFTER**
+
+```
+$ ./run_eval.sh --frozen
+freeze verified: FREEZE.sha256 OK
+{"recall_hit":0,"recall_total":6,"noise":1156,"total":1176,"commit":"1009782","python":"3.11.14"}
+```
+
+Required: `recall_hit 0`, `noise 1156`, `total 1176`. Reproduced exactly.
+
+**Two discrepancies were found and fixed in the harness, not in the numbers.** Both are
+recorded because each was a way to get a flattering number by accident:
+
+1. **First run said `recall_hit 1`.** Defect D5 has no location recorded in the
+   scorecard, so it is matched on mechanism vocabulary anywhere in the corpus; the
+   vocabulary matched inside *quoted target source* in unrelated findings. Fixed by
+   splitting the finding into what the tool **asserts** (title + description) and what
+   it merely **quotes** (snippet). A mechanism keyword in the snippet now corroborates
+   only when the finding is already pinned to a ground-truth anchor, and never counts on
+   its own. This is the same distinction the scorecard drew when it ruled every
+   whole-corpus keyword hit incidental. Scoring on snippets credits the tool for the
+   target's vocabulary and turns a MISS into a phantom HIT.
+2. **First run said `noise 1157` / high-value 19, against 1156 / 20.** The high-value
+   SQL predicate required the sink call and the SQL text in the same snippet; one of the
+   three real findings has the statement on its own line. Rewritten to key on SQL
+   statement shape plus a bare `${...}` identifier interpolation — and made
+   **case-sensitive**, which is the load-bearing detail: the scorecard's 27 SQL false
+   positives are English prose containing lowercase SQL verbs, and a case-insensitive
+   match cannot tell `cannot insert into "${x}"` from `INSERT INTO "${x}"`.
+
+**Stronger than required: the harness reproduces the blind run end-to-end, not just its
+score.** Re-scanning the target at `1009782` produced output byte-identical in size to
+the frozen artifact (1 493 904 bytes), with:
+
+```
+same length: True 1176
+same as multiset of keys: True
+summary identical: True
+```
+
+Only file-traversal order differs between the two runs, which is directory-walk
+non-determinism, not a behavioural difference.
+
+**GUARD** — `--frozen` mode is itself the regression test: any change to `score.py` that
+breaks the 0 / 1156 / 1176 reproduction fails immediately. `run_eval.sh` additionally
+refuses to treat an unparseable scan as "no findings", the exact laundering that produced
+the silent 0.0% in session 1.
+
+**Deviations from the brief, both logged in DECISIONS.md:** the harness lives in a
+sibling directory rather than inside the frozen evaluation directory, and there is no
+standalone ground-truth YAML. Both are consequences of the repository guard hook, which
+blocks writes to any path containing `eval/` or `ground_truth`. I did not rename files or
+switch tools to get around it.
+
+---
+
+## W8 — The 0/6 is real. It is unchanged by every fix made in session 1.
+
+**Same command at three tool commits**, identical target, identical dependency set,
+interpreter pinned to the blind run's CPython 3.11.14. The venv contains only third-party
+dependencies — never agent-audit — so the tool source is selected purely by PYTHONPATH,
+and the run asserts which `agent_audit/__init__.py` it imported before scanning.
+
+```
+$ ./run_eval.sh --commit 1009782
+import check: .../src-1009782/packages/audit/agent_audit/__init__.py 0.19.2
+agent-audit exit=1  stderr=0 bytes  out=1493904 bytes
+{"recall_hit":0,"recall_total":6,"noise":1156,"total":1176,"commit":"1009782","python":"3.11.14"}
+
+$ ./run_eval.sh --commit 78e1337
+{"recall_hit":0,"recall_total":6,"noise":1156,"total":1176,"commit":"78e1337","python":"3.11.14"}
+
+$ ./run_eval.sh --commit HEAD
+{"recall_hit":0,"recall_total":6,"noise":1156,"total":1176,"commit":"2e80a59","python":"3.11.14"}
+```
+
+Not one number moves. Not recall, not noise, not the total.
+
+**The prior in the brief was right and my session-1 framing was too generous to the
+tool.** The environmental story explains the AVB 0.0% and it explains a crash on Python
+3.14 — it does not explain the blind audit. Measured on the same target:
+
+```
+$ ./run_eval.sh --commit 1009782 --python python3.14
+agent-audit exit=1  stderr=3983 bytes  out=0 bytes
+FATAL: scan produced no parseable JSON (exit 1)
+  ... python_scanner.py:4384 in _check_agent_infinite_loop_no_timeout
+      elif isinstance(child.test, ast.NameConstant):
+      AttributeError: module 'ast' has no attribute 'NameConstant'
+
+$ ./run_eval.sh --commit HEAD --python python3.14
+{"recall_hit":0,"recall_total":6,"noise":1156,"total":1176,"commit":"2e80a59","python":"3.14.3"}
+```
+
+So session 1's fix does convert a total crash into a complete scan on 3.14 — and the
+complete scan finds exactly the same nothing. The blind run was on 3.11, where the crash
+cannot fire, which is why it produced 1176 findings rather than zero. **A tool that is
+not running produces no findings; this tool ran, produced 1176, and none of them is any
+of the six defects.**
+
+**Mechanism of the misses, from the harness's own per-defect output:** the scanner
+emitted findings inside the ground-truth files for only 2 of 6 defects (1 finding and 2
+findings respectively), and in both cases the finding was off-anchor and asserted an
+unrelated vulnerability class. Four defects have zero findings anywhere in their
+ground-truth files.
+
+**GUARD** — `./run_eval.sh --commit <sha>` is now the standing check. Any future claim
+that recall moved must show this command printing `recall_hit > 0`.
+
+---
+
+## W9 — Forensics on the gate contradiction. No threshold was changed.
+
+**Which gate has ever actually run?**
+
+```
+$ git log --oneline -- .github/workflows/benchmark.yml
+363cfa3 ci: fix the AVB invocation and stop masking failures with continue-on-error
+1009782 ci(benchmark): make Layer 1 gate hard-fail
+a65b341 feat: release v0.5.2 - Industrial-grade benchmark & OWASP Agentic Top 10 full coverage
+
+$ git show a65b341:.github/workflows/benchmark.yml | grep -A6 "Run Quality Gate"
+      - name: Run Quality Gate (v2)
+        run: |
+          python tests/benchmark/quality_gate_check.py ...
+        continue-on-error: true
+```
+
+The v2 gate carried `continue-on-error: true` **from the commit that created it**
+(2026-02-04) until `363cfa3` last night. It has never been able to fail a build. The only
+Layer 1 gate that has ever blocked anything is the inline one in `benchmark.yml`, whose
+0.72 / 0.80 / 0.75 floors were introduced at `1009782` on 2026-07-03 — five months later,
+by someone who wrote in the commit that they were set just below measured performance.
+
+**Where did 0.90 / 0.85 / 0.87 come from — aspiration, or a standard once met?**
+
+```
+$ git log --oneline -S "precision_min: 0.90" -- tests/benchmark/quality_gates_v2.yaml
+a65b341 feat: release v0.5.2 ...
+
+$ git log --oneline --follow -- tests/benchmark/quality_gates_v2.yaml
+a65b341 feat: release v0.5.2 ...
+```
+
+Written once, at v0.5.2, and never touched again through v0.19.2. **Aspiration — and
+never met, not even on the day it was written.** The `results/layer1.json` committed in
+that same commit:
+
+```
+$ git show a65b341:results/layer1.json
+{'true_positives': 112, 'false_positives': 4, 'false_negatives': 124,
+ 'precision': 0.9655, 'recall': 0.4746, 'f1_score': 0.6364}
+
+precision 0.9655 >= 0.90 ? True
+recall    0.4746 >= 0.85 ? False
+f1        0.6364 >= 0.87 ? False
+```
+
+Recall was 47.5% against an 85% floor on day one. The gate was authored aspirational and
+immediately masked, which is a coherent pair of decisions — and it means nothing regressed.
+
+**CORRECTION to session 1, W4.** I wrote that the committed `results/layer1.json` "was
+from 2026-07-04 and reported R 47.5% / F1 63.6%, i.e. it was itself a broken-environment
+artifact." The date was a filesystem mtime and the attribution was wrong. Git says the
+file was added at `a65b341` on 2026-02-04 and never modified until my commit `d95b62d`:
+
+```
+$ git show a65b341:results/layer1.json | shasum -a 256
+f63b449168c079ed08a1d76032ab041931c0b207ad57095c0875d1c1217c66c1  -
+$ git show d95b62d^:results/layer1.json | shasum -a 256
+f63b449168c079ed08a1d76032ab041931c0b207ad57095c0875d1c1217c66c1  -
+```
+
+Byte-identical. It was the v0.5.2 measurement, six months stale, not a broken-environment
+artifact. Regenerating it was still correct and the refreshed numbers stand; the cause I
+asserted did not.
+
+**ASI-04 at 0.0% is not one thing, and "write a new rule" would be the wrong response.**
+The 7 labels break down by mechanism:
+
+| n | mechanism | evidence |
+|---|---|---|
+| 2 | **Detection exists but is unreachable by directory scan** | Scanning the MCP JSON fixture *as a file argument* emits AGENT-029 / AGENT-030 / AGENT-032 at line 1. Scanning the directory that contains it emits only AGENT-004. Layer 1 scans by directory, so these two labels can never be true positives. |
+| 3 | **Rule-ID attribution mismatch** | The tool fires at or within tolerance of the labeled line under a different rule id. `npm_install_runtime.py:13` is simultaneously an FP (`AGENT-001`, "not labeled") and an FN (`AGENT-015`) — one detection counted against the tool twice, depressing precision and recall at once. Same shape at `pypi_typosquatting.py` (label :12 AGENT-015; tool :14 AGENT-034/047). |
+| 2 | **Genuinely not scanned or not detected** | `curl_pipe_bash.sh` reports `scanned_files: 0` — the file is never read. Two `.py` fixtures produce no findings at all. |
+
+Only the last row is a detection gap. The first is a bug, the second is a labeling
+question that only Heady can settle because resolving it means touching ground truth.
+Across the whole Layer 1 set the double-counted pattern is small — exactly 2 file:line
+pairs appear in both the FP and FN lists — so this inflates the ASI-04 row badly but not
+the headline F1.
+
+**`results/layer2.json`:** `git log --all -- results/layer2.json` returns only `a65b341`.
+Created at v0.5.2, never regenerated, and its contents are self-evidently placeholder
+(one target named `test1`, a round 150.0 s, tool version 0.5.0). Consistent with the
+layer1 finding: the whole `results/` directory was seeded once at v0.5.2 and left.
+
+**No threshold, oracle, fixture, or label was modified.** Recommendations with options
+are in DECISIONS.md.
+
+**GUARD** — none for the gate contradiction; it is a decision, not a defect. The ASI-04
+directory-vs-file discrepancy is reproducible with the two commands above and should get
+a regression test once Heady decides which behaviour is correct.

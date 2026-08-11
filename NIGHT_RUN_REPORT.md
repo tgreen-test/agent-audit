@@ -1,5 +1,14 @@
 # NIGHT RUN REPORT — 2026-08-11
 
+> **SUPERSEDED IN PART — read SESSION2_REPORT.md.** Session 2 measured the blind audit
+> directly and settled the open question below: **the 0/6 is real.** It reproduces
+> identically at all three commits and on both interpreters, so it is a capability gap,
+> not an environment artifact. The environmental story in §1 explains the AVB 0.0% and the
+> Python 3.14 crash — it does not explain the blind audit, which ran on 3.11 where that
+> crash cannot fire. Session 2 also corrected §2's claim that `results/layer1.json` was a
+> broken-environment artifact; it was the v0.5.2 measurement, six months stale.
+> Everything else below stands as written.
+
 ## 1. The headline
 
 **The 0.0% was a broken environment, not a capability gap.** The editable install's `.pth`

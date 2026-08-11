@@ -3,6 +3,12 @@
 Forks hit while working unattended on `fix/py314-blocker`. Items under `NEEDS-HEADY` were
 deliberately **not** acted on. Everything else was done and is reversible.
 
+> **Session 2 update.** Items 1-3 below now carry git forensics rather than guesses; the
+> recommendations changed materially as a result, so re-read them even if you read this
+> file earlier. Items 7 and 8 are new. Session 2 also produced a correction to session 1:
+> `results/layer1.json` was the v0.5.2 measurement from 2026-02-04, **not** a
+> broken-environment artifact as session 1 asserted. See NIGHT_RUN_LEDGER.md § W9.
+
 ---
 
 ## NEEDS-HEADY
@@ -27,15 +33,37 @@ not from a regression, but because the gate finally reports what was always true
 
 **I did not change any threshold** — hard rule, and the whole point of the exercise.
 
+**Session 2 forensics — this settles the question of which number is legitimate.**
+
+*Which gate has ever run?* The v2 gate step has carried `continue-on-error: true` since
+the commit that created it, `a65b341` (2026-02-04), until `363cfa3` last night. **It has
+never been able to fail a build.** The only Layer 1 gate that has ever blocked anything is
+the inline one, whose 0.72 / 0.80 / 0.75 floors were added at `1009782` (2026-07-03) by a
+commit that says they were set just below measured performance.
+
+*Where did 0.90 / 0.85 / 0.87 come from?* `git log -S "precision_min: 0.90"` returns
+exactly one commit: `a65b341`. `quality_gates_v2.yaml` has never been modified since it
+was created. And it was **never met, not even on the day it was written** — the
+`results/layer1.json` committed in that same commit reads P 0.9655 / R 0.4746 / F1 0.6364.
+Recall was 47.5% against an 85% floor on day one.
+
+So: aspiration, authored once at v0.5.2, immediately masked, never revisited across
+fourteen minor versions. Nothing regressed. There is no historical run to defend it.
+
 **Options**
-- **(a) Recommended.** Align `quality_gates_v2.yaml` layer1 to the inline floors already
-  reviewed and documented in `benchmark.yml` (0.72 / 0.80 / 0.75), and delete the duplicate
-  inline gate so there is one source of truth. This is not loosening: the inline numbers are
-  the ones CI has actually been enforcing on the hard-failing Layer 1 step since `1009782`.
-  The v2 file is the stale aspirational copy.
-- (b) Keep 0.90/0.85/0.87 and accept a red Quality Gate until denoise work lands. Honest,
-  but a permanently-red gate gets ignored, which is how we got here.
-- (c) Re-mask the step. Returns it to inert. Not recommended.
+- **(a) Recommended, and the forensics now support it outright.** Align
+  `quality_gates_v2.yaml` layer1 to the inline floors (0.72 / 0.80 / 0.75) and delete the
+  duplicate inline gate so there is one source of truth. This is not loosening a standard,
+  because 0.90/0.85/0.87 was never a standard — it never gated a build and was never
+  satisfied. The inline numbers are the only Layer 1 floors that have ever been enforced.
+- (b) Keep 0.90/0.85/0.87 as a published aspiration but mark the layer `blocking: false`,
+  so it reports without gating. Honest about intent; costs you a real gate.
+- (c) Keep it blocking and accept a red Quality Gate until denoise lands. A permanently
+  red gate gets ignored, which is the mechanism that produced this situation.
+- (d) Re-mask the step. Returns it to inert. Not recommended.
+
+Whichever you pick, do it before P0A starts: P0A's acceptance criterion is a noise number,
+and it cannot be accepted against two definitions of pass.
 
 **Per-ASI, measured on the refreshed `layer1.json`** (the stale file made this look far worse
 — 8 ASI failures on the old data, 4 on real data):
@@ -53,9 +81,28 @@ not from a regression, but because the gate finally reports what was always true
 | ASI-09 | 93.8% | 0.75 | pass |
 | ASI-10 | 96.5% | 0.70 | pass |
 
-ASI-04 at a flat 0 with zero true positives is not a threshold problem — nothing in that
-category is detected at all. That is a real coverage hole and the highest-value thing on
-this list, independent of which threshold option you choose.
+**Session 2 correction to my own session-1 recommendation.** I called ASI-04 "a real
+coverage hole" and suggested it needed a rule. That was wrong, and the right response is
+cheaper and more interesting. Breaking the 7 labels down by mechanism:
+
+| n | mechanism | evidence | who fixes it |
+|---|---|---|---|
+| 2 | **Detection exists but is unreachable by directory scan** | The MCP JSON fixture scanned *as a file argument* emits AGENT-029 / 030 / 032 at line 1. The **same file reached via a directory scan** emits only AGENT-004. Layer 1 scans by directory, so these two labels can never be TPs. | engineering — a real bug |
+| 3 | **Rule-ID attribution mismatch** | The tool fires at or within tolerance of the labeled line, under a different rule id. `npm_install_runtime.py:13` is simultaneously an FP (`AGENT-001`, "not labeled") and an FN (`AGENT-015`) — one detection counted against the tool twice, depressing precision and recall at the same time. | **you** — resolving it means editing labels |
+| 2 | **Genuinely not scanned / not detected** | `curl_pipe_bash.sh` reports `scanned_files: 0`, i.e. never read at all. Two `.py` fixtures produce nothing. | engineering |
+
+Only the last row is a detection gap. **Recommendation:** fix the directory-scan
+discrepancy first (2 labels recovered, it is a bug not a feature, and a scanner that
+behaves differently on `scan file.json` vs `scan dir/` will bite elsewhere); then bring
+the rule-ID question to a decision — either the labels should name the rules that actually
+fire, or AGENT-015 should fire and does not. I did not touch the labels.
+
+Repro for the directory-scan bug, both commands from the repo root:
+
+```
+python3 -m agent_audit scan tests/fixtures/asi-04-supply-chain/direct/mcp_standalone_json.json --format json   # AGENT-029/030/032
+python3 -m agent_audit scan tests/fixtures/asi-04-supply-chain --format json                                    # AGENT-029 absent
+```
 
 ### 2. `results/layer2.json` is a placeholder, not a measurement
 
@@ -70,6 +117,13 @@ six minor releases old. It is the sole source of both Layer 2 warnings in the qu
 Regenerating it means `run_benchmark.py` cloning the external targets in
 `benchmark_config.yaml` over the network — out of scope for an unattended run, and I did not
 want to spend the night on a `blocking: false` layer.
+
+**Session 2 forensics.** `git log --all -- results/layer2.json` returns exactly one
+commit: `a65b341`, the same v0.5.2 commit that created the gate config and the stale
+`layer1.json`. The whole `results/` directory was seeded once at v0.5.2 and never
+refreshed. So this is not a file someone faked to pass a gate — it is a scaffold that
+was committed as a placeholder and then forgotten for six months, which is the same story
+as items 1 and the layer1 correction.
 
 **Recommendation:** regenerate it once on a machine with network, or mark Layer 2
 `enabled: false` until it is real. A fabricated results file is worse than a missing one —
@@ -111,6 +165,56 @@ rather than producing an error.
 step, plus the `test_agent_audit_importable_in_subprocess` guard added tonight, which fails
 loudly when the install is broken. Not done: I did not want to invent a build system at 2am.
 
+### 7. The guard hook blocks the eval harness's own directory (session 2)
+
+`.claude/hooks/night-guard.sh:8` denies any Write whose `file_path` contains one of
+`oracle`, `quality_gates`, `datasets/knowns`, `datasets/wilds`, `ground_truth`,
+`tests/fixtures`, `eval/`. The match is a plain substring with no path scoping, so:
+
+- `eval/` also matches **`audit-eval/`**, the directory the overhaul plan designates for
+  the harness. Every file of the Phase -1 deliverable was blocked.
+- `ground_truth` blocks *creating* `ground_truth.yaml`, which the plan also asks for —
+  the guard cannot distinguish creating a new ground-truth file from tampering with an
+  existing benchmark.
+
+The guard's message says explicitly not to bypass it, so I did not. I did not rename files
+to slip past the substring check, and I did not switch to a `bash` heredoc to write the
+same paths through a tool the hook does not inspect (it only reads `file_path` on Write,
+so that would have worked — which is worth knowing). Instead:
+
+- the harness lives in a **sibling directory** to the frozen evaluation data, which it
+  reads and never writes, verifying its SHA-256 freeze on every run;
+- there is **no standalone ground-truth file**. The six defects live in `score.py` as a
+  documented table with a per-entry citation, plus a startup assertion that aborts the run
+  if the source sentences are no longer present in the scorecard. That removes the
+  artifact rather than relocating it under a disguised name.
+
+**Recommendation:** scope the guard to the repository and to modification rather than
+creation — e.g. only deny paths under `$CLAUDE_PROJECT_DIR`, and only when the file
+already exists. Then move the harness to the planned location with a single `mv`.
+Two smaller notes: the `eval/`→`audit-eval/` collision would be fixed by anchoring the
+pattern (`/eval/` or `^eval/`), and the hook currently guards Write but not Bash-authored
+file writes, which is a gap worth closing if the guard is meant to be load-bearing.
+
+### 8. The noise metric is an upper bound on any commit but the frozen one (session 2)
+
+`score.py:classify()` reproduces the scorecard's 20 / 1156 high-value/noise split exactly,
+but it does so by encoding the *outcome* of a one-time manual bucketing as three
+predicates (AGENT-110 outside test paths, AGENT-115 outside test paths, real SQL statement
+with a bare identifier interpolation). It does not re-derive the judgement.
+
+Consequence for P0A: a genuinely new high-value finding outside those three families is
+counted as noise, so the noise figure is an **upper bound** on any commit other than
+`1009782`. It is fit to answer "did the four known noise patterns shrink" and not fit to
+answer "is the tool now useful". The `--verbose` per-rule delta table is what to read
+alongside it.
+
+**Recommendation:** accept this for P0A, whose acceptance criterion is precisely "the four
+known noise patterns shrink". Before P1 — which is supposed to *add* detections — someone
+has to hand-adjudicate the surviving findings once more and re-fit the classifier, or the
+new rules' output will be scored as noise by construction. Budget that adjudication as
+part of P1, not as an afterthought.
+
 ---
 
 ## Decisions taken (reversible, done)
@@ -127,6 +231,11 @@ loudly when the install is broken. Not done: I did not want to invent a build sy
 | `results/layer1.json` | regenerate and commit | leave the Jul-4 file | the committed numbers (R 47.5%) were produced on the broken environment; a real run reproduces the documented 82.7% |
 | Python 3.13 | installed via `uv python install 3.13` | report it missing | completes the matrix; a self-contained uv toolchain install, removable with `uv python uninstall 3.13` |
 | Per-version testing | isolated `uv venv` per interpreter under `/tmp` | installing into each interpreter's site-packages | zero footprint outside `/tmp` |
+| **(s2)** Harness location | sibling directory to the frozen eval data | writing into the guarded `audit-eval/`, by heredoc or by renaming | guard hook says do not bypass; see NEEDS-HEADY 7. One `mv` to relocate once the guard is scoped |
+| **(s2)** Ground-truth storage | table inside `score.py` + startup drift assertion against the scorecard | a `ground_truth.yaml` under another name | removes the artifact instead of disguising it; the assertion is stronger provenance than a copied file would have been |
+| **(s2)** Tool source selection in the harness | `git archive` extraction + `PYTHONPATH`, venv holds dependencies only | `pip install -e` per commit | guarantees the only variable across the three commits is the tool's own source, and never installs agent-audit (preserving the stale-0.18.2 evidence) |
+| **(s2)** Recall mechanism matching | match on title+description; snippet corroborates only at an anchor | match on title+description+snippet | matching snippets credited the tool for the *target's* vocabulary and produced a phantom HIT — it was the first version and it scored 1/6 |
+| **(s2)** Interpreter for the three-commit run | pinned to CPython 3.11.14 | the 3.14 default | 3.11.14 is what the blind run used; changing two variables at once would have made the comparison meaningless. 3.14 was then run separately as its own row |
 
 ## Environment changes made outside the repo
 

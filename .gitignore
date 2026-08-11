@@ -59,3 +59,9 @@ eval/
 # the eval run holds bytes locally; the published artifact is the manifest +
 # fetch-and-verify script only. Third-party SKILL.md bytes are not redistributable.
 eval/snapshot/private/
+
+# Evaluation harness and its target-bearing data. Never commit: these paths and their
+# contents identify the audit target. The harness itself lives outside the repository;
+# these entries exist so that a copy accidentally created inside it cannot be staged.
+audit-eval/
+audit-harness/
