@@ -916,3 +916,106 @@ class TestSqlStatementRequirement:
             const rows = await db.query(`SELECT id FROM users WHERE n = '${n}'`);
         """)
         assert len(self._sql_findings(scanner, path)) == 1
+
+
+class TestFetchReceiver:
+    """
+    AGENT-026 must distinguish the global ``fetch`` from a member method that
+    happens to be called ``fetch``.
+
+    Same shape as TestExecSpawnReceiver, on the other side of the problem.
+    ``exec``/``spawn`` are not globals, so there the *receiver* carries the
+    signal. ``fetch`` **is** a WHATWG global, so — as with ``eval`` in
+    TestEvalMemberCallDistinction — the member form is the one that is almost
+    never an outbound request. The old pattern was ``r"\\bfetch\\s*\\("`` and
+    ``\\b`` matches immediately after a dot, so every ``x.fetch(...)`` matched.
+
+    The case that matters in practice is the ``fetch(Request) -> Response``
+    server-handler convention (Workers, Bun, Hono, Remix). A handler named
+    ``fetch`` *receives* a request; reporting it as server-side request forgery
+    inverts the direction of the finding.
+
+    Regression source: the audit-target evaluation recorded in
+    NIGHT_RUN_LEDGER.md § W17, pattern 1. 67 of its 84 AGENT-026 findings were
+    member-form calls.
+    """
+
+    def _ssrf(self, scanner, path):
+        return [
+            f for f in scanner.scan_and_convert(path) if f.rule_id == "AGENT-026"
+        ]
+
+    # --- Must NOT trigger: receivers that are not the global ---------------
+
+    def test_request_handler_fetch_not_flagged(self, scanner):
+        """`handler.fetch(new Request(...))` receives a request, not sends one."""
+        path = _write_ts_file("""
+            async function call(handler) {
+                const response = await handler.fetch(new Request(target));
+                return response.status;
+            }
+        """)
+        assert self._ssrf(scanner, path) == []
+
+    def test_provider_call_result_fetch_not_flagged(self, scanner):
+        path = _write_ts_file("""
+            const result = await provider().fetch({ url: base });
+        """)
+        assert self._ssrf(scanner, path) == []
+
+    def test_property_chain_fetch_not_flagged(self, scanner):
+        path = _write_ts_file("""
+            const page = await ctx.web.fetch({ url: endpoint });
+        """)
+        assert self._ssrf(scanner, path) == []
+
+    def test_route_fetch_not_flagged(self, scanner):
+        path = _write_ts_file("""
+            const response = await route.fetch();
+        """)
+        assert self._ssrf(scanner, path) == []
+
+    # --- Must STILL trigger: the global ------------------------------------
+
+    def test_bare_global_fetch_flagged(self, scanner):
+        path = _write_ts_file("""
+            export async function load(url: string) {
+                return await fetch(url, { redirect: "follow" });
+            }
+        """)
+        assert len(self._ssrf(scanner, path)) >= 1
+
+    def test_globalthis_fetch_flagged(self, scanner):
+        path = _write_ts_file("""
+            const response = await globalThis.fetch(endpoint, { method: "GET" });
+        """)
+        assert len(self._ssrf(scanner, path)) >= 1
+
+    def test_window_fetch_flagged(self, scanner):
+        path = _write_ts_file("""
+            const response = await window.fetch(target);
+        """)
+        assert len(self._ssrf(scanner, path)) >= 1
+
+    def test_axios_still_flagged(self, scanner):
+        """The axios patterns are receiver-qualified already and unaffected."""
+        path = _write_ts_file("""
+            const response = await axios.get(userSuppliedUrl);
+        """)
+        assert len(self._ssrf(scanner, path)) >= 1
+
+    def test_hardcoded_url_still_excluded(self, scanner):
+        """The pre-existing string-literal exclusion is preserved."""
+        path = _write_ts_file("""
+            const response = await fetch("https://api.example.com/health");
+        """)
+        assert self._ssrf(scanner, path) == []
+
+    def test_mixed_file_keeps_only_the_global(self, scanner):
+        """The discrimination itself: 1 of 3 fetch calls is outbound."""
+        path = _write_ts_file("""
+            const a = await handler.fetch(new Request(input));
+            const b = await provider().fetch({ url: base });
+            const c = await fetch(userSuppliedUrl, { method: "GET" });
+        """)
+        assert len(self._ssrf(scanner, path)) == 1

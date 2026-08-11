@@ -938,8 +938,30 @@ class TypeScriptScanner(BaseScanner):
         # Negative lookahead excludes calls where the first arg is a string literal
         _quote_lookahead = r"""(?!['"\x60])"""
         ssrf_patterns: List[Tuple[re.Pattern, str, float]] = [
+            # `fetch` is a WHATWG global, so — exactly as with `eval` in
+            # _scan_dangerous_calls_regex — the *member* form is the one that
+            # is almost never the thing this rule is about. The previous
+            # pattern was r"\bfetch\s*\(", and \b also matches immediately
+            # after a dot, so `handler.fetch(request)`, `provider().fetch(...)`
+            # and `route.fetch()` were all reported as outbound SSRF. A
+            # server-side request handler named `fetch` (the Request -> Response
+            # convention used by Workers, Bun, Hono and Remix) is the opposite
+            # of an outbound request: it receives one.
+            #
+            # Same fix shape as CHILD_PROCESS_RECEIVERS in a37bfba, applied to
+            # the global-identifier side of the problem.
             (
-                re.compile(r"\bfetch\s*\(\s*" + _quote_lookahead),
+                re.compile(r"(?<![\w.$])fetch\s*\(\s*" + _quote_lookahead),
+                "fetch",
+                0.70,
+            ),
+            # Explicit global-scope fetch aliases, which the lookbehind above
+            # would otherwise exclude along with the member calls.
+            (
+                re.compile(
+                    r"\b(?:window|globalThis|global|self)\.fetch\s*\(\s*"
+                    + _quote_lookahead
+                ),
                 "fetch",
                 0.70,
             ),
