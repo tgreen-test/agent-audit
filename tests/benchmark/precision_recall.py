@@ -280,7 +280,16 @@ def evaluate(
     # Track which expected vulns were matched for per-ASI
     matched_expected: Set[Tuple[str, int, str]] = set()
 
-    for d_file, d_line, d_rule in detected_vulns:
+    # Iterate in sorted order, not set order. Both `detected_vulns` and
+    # `expected_vulns` are sets, and set iteration order for these tuples varies
+    # with PYTHONHASHSEED. When one detection is within tolerance of two labels,
+    # whichever label the fuzzy loop reached first claimed the match, so the
+    # score moved between runs of the identical command:
+    #     PYTHONHASHSEED=0 -> TP 196, F1 74.95%
+    #     PYTHONHASHSEED=1 -> TP 197, F1 75.19%
+    # A quality gate cannot ratchet against a number that flaps, so the order is
+    # pinned here. See TestEvaluateDeterminism.
+    for d_file, d_line, d_rule in sorted(detected_vulns):
         found_match = False
 
         # Try exact match first
@@ -291,17 +300,26 @@ def evaluate(
             matched_expected.add((d_file, d_line, d_rule))
             found_match = True
         else:
-            # Try fuzzy line match
-            for e_file, e_line, e_rule in expected_vulns:
-                if e_file == d_file and e_rule == d_rule:
-                    if abs(e_line - d_line) <= line_tolerance:
-                        if (e_file, e_line, e_rule) not in matched:
-                            result.true_positives += 1
-                            result.tp_details.append(f"{d_file}:{d_line}~{e_line} {d_rule}")
-                            matched.add((e_file, e_line, e_rule))
-                            matched_expected.add((e_file, e_line, e_rule))
-                            found_match = True
-                            break
+            # Fuzzy line match. Credit the detection to the *nearest* unmatched
+            # label rather than to whichever one iteration happened to reach
+            # first; ties break toward the lower line number.
+            candidates = sorted(
+                (
+                    (abs(e_line - d_line), e_file, e_line, e_rule)
+                    for (e_file, e_line, e_rule) in expected_vulns
+                    if e_file == d_file
+                    and e_rule == d_rule
+                    and abs(e_line - d_line) <= line_tolerance
+                    and (e_file, e_line, e_rule) not in matched
+                )
+            )
+            if candidates:
+                _, e_file, e_line, e_rule = candidates[0]
+                result.true_positives += 1
+                result.tp_details.append(f"{d_file}:{d_line}~{e_line} {d_rule}")
+                matched.add((e_file, e_line, e_rule))
+                matched_expected.add((e_file, e_line, e_rule))
+                found_match = True
 
         if not found_match:
             # Check if this is a finding in a safe file
@@ -314,7 +332,7 @@ def evaluate(
                 result.fp_details.append(f"{d_file}:{d_line} {d_rule} (not labeled)")
 
     # False negatives: expected but not detected
-    for e_file, e_line, e_rule in expected_vulns:
+    for e_file, e_line, e_rule in sorted(expected_vulns):
         if (e_file, e_line, e_rule) not in matched:
             result.false_negatives += 1
             result.fn_details.append(f"{e_file}:{e_line} {e_rule}")
