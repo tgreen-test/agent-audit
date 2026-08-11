@@ -563,3 +563,148 @@ class TestEvalMemberCallDistinction:
             if f.rule_id == "AGENT-034"
         ]
         assert eval_like != []
+
+
+class TestExecSpawnReceiver:
+    """
+    AGENT-034 must distinguish child_process ``exec``/``spawn`` from unrelated
+    member methods that share the name — ``RegExp.prototype.exec`` and the
+    ``.exec()`` on essentially every SQL driver being the two that matter.
+
+    This is the mirror image of TestEvalMemberCallDistinction above. ``eval`` is
+    a JS global, so the *member* form is the suspicious one. ``exec``/``spawn``
+    are not globals — they exist only on child_process or destructured out of
+    it — so the member form is the normal one and the receiver is what carries
+    the signal. The old pattern was
+    ``r"\\b(?:child_process\\.)?(?:exec|execSync)\\s*\\("``, whose optional group
+    did nothing: ``\\b`` also matches immediately after a dot, so every member
+    call matched.
+
+    Regression source: the audit-target evaluation recorded in
+    NIGHT_RUN_LEDGER.md § W14, pattern 2. 455 of its findings were this.
+    """
+
+    def _shell_findings(self, scanner, path):
+        """AGENT-034 findings from the child_process patterns, not eval."""
+        return [
+            f
+            for f in scanner.scan_and_convert(path)
+            if f.rule_id == "AGENT-034"
+            and "shell" in f.description.lower()
+        ]
+
+    # --- Must NOT trigger: receivers that are not child_process -------------
+
+    def test_regex_exec_not_flagged(self, scanner):
+        """`re.exec(s)` is RegExp.prototype.exec — the brief's named control."""
+        path = _write_ts_file("""
+            const re = /^(\\w+)=(\\w+)$/;
+            function parse(line: string) {
+                const m = re.exec(line);
+                return m ? m[1] : null;
+            }
+        """)
+        assert self._shell_findings(scanner, path) == []
+
+    def test_regex_literal_exec_not_flagged(self, scanner):
+        path = _write_ts_file("""
+            const m = /a(b)c/.exec(input);
+        """)
+        assert self._shell_findings(scanner, path) == []
+
+    def test_sqlite_db_exec_not_flagged(self, scanner):
+        """`db.exec('COMMIT')` is a SQL driver, not a shell."""
+        path = _write_ts_file("""
+            function commit(db: Database) {
+                db.exec('COMMIT');
+            }
+        """)
+        assert self._shell_findings(scanner, path) == []
+
+    def test_this_qualified_db_exec_not_flagged(self, scanner):
+        path = _write_ts_file("""
+            class Store {
+                flush() { this.db.exec('PRAGMA wal_checkpoint'); }
+            }
+        """)
+        assert self._shell_findings(scanner, path) == []
+
+    def test_minified_single_letter_receiver_not_flagged(self, scanner):
+        """Bundled output routinely produces `i.exec(...)` / `u.exec(...)`."""
+        path = _write_ts_file("""
+            const r = i.exec(s), q = u.exec(s);
+        """)
+        assert self._shell_findings(scanner, path) == []
+
+    def test_unrelated_spawn_receivers_not_flagged(self, scanner):
+        """A pty, a sandbox or a service having .spawn() is not child_process."""
+        path = _write_ts_file("""
+            const a = ctx.pty.spawn(cmd);
+            const b = ctx.subprocess.spawn(cmd);
+            const c = sandbox.spawn(cmd);
+            const d = backend.spawn(cmd);
+        """)
+        assert self._shell_findings(scanner, path) == []
+
+    # --- TRUE-POSITIVE CONTROLS: these must still fire ----------------------
+
+    def test_child_process_exec_still_flagged(self, scanner):
+        """The brief's named control: `child_process.exec(userInput)` fires."""
+        path = _write_ts_file("""
+            import child_process from 'child_process';
+            function run(userInput: string) {
+                return child_process.exec(userInput);
+            }
+        """)
+        assert len(self._shell_findings(scanner, path)) >= 1
+
+    def test_bare_destructured_exec_still_flagged(self, scanner):
+        """`const { exec } = require('child_process')` then bare `exec(...)`."""
+        path = _write_ts_file("""
+            const { exec } = require('child_process');
+            function run(userInput: string) {
+                return exec(userInput);
+            }
+        """)
+        assert len(self._shell_findings(scanner, path)) >= 1
+
+    def test_bare_spawn_still_flagged(self, scanner):
+        path = _write_ts_file("""
+            import { spawn } from 'child_process';
+            const child = spawn(userCommand, userArgs);
+        """)
+        assert len(self._shell_findings(scanner, path)) >= 1
+
+    def test_execsync_still_flagged(self, scanner):
+        path = _write_ts_file("""
+            import { execSync } from 'child_process';
+            const out = execSync(`git log ${userRef}`);
+        """)
+        assert len(self._shell_findings(scanner, path)) >= 1
+
+    def test_cp_alias_still_flagged(self, scanner):
+        """`import * as cp from 'child_process'` is a common alias."""
+        path = _write_ts_file("""
+            import * as cp from 'child_process';
+            cp.spawnSync(userCommand);
+        """)
+        assert len(self._shell_findings(scanner, path)) >= 1
+
+    def test_execa_still_flagged(self, scanner):
+        """execa is a child_process wrapper and is matched by name."""
+        path = _write_ts_file("""
+            import execa from 'execa';
+            await execa(userCommand);
+        """)
+        assert len(self._shell_findings(scanner, path)) >= 1
+
+    def test_mixed_file_keeps_only_the_real_one(self, scanner):
+        """The discrimination itself, in one file: 1 of 4 calls is a shell."""
+        path = _write_ts_file("""
+            import child_process from 'child_process';
+            const m = re.exec(line);
+            db.exec('COMMIT');
+            ctx.pty.spawn(shellCmd);
+            child_process.exec(userInput);
+        """)
+        assert len(self._shell_findings(scanner, path)) == 1

@@ -90,6 +90,38 @@ TS_DANGEROUS_CALLS: Dict[str, Tuple[str, str, float]] = {
 # TS_DANGEROUS_CALLS above.
 GLOBAL_ONLY_TS_CALLS: Set[str] = {"eval", "Function"}
 
+# Receivers that plausibly denote the child_process module, for resolving
+# `X.exec(...)` / `X.spawn(...)`.
+#
+# `exec` and `spawn` are the mirror image of the `eval` case above. `eval` is a
+# global, so a member call is the suspicious form. exec/spawn are NOT globals —
+# they only exist as members of child_process, or as bare names destructured
+# out of it — so the member call is the *normal* form and the receiver is what
+# distinguishes shell execution from an unrelated method that happens to share
+# the name. `RegExp.prototype.exec` and the `.exec()` on virtually every SQL
+# driver are the two that matter in practice; both are extremely common, and
+# neither has anything to do with a shell.
+#
+# Matching is by receiver name rather than by import resolution because the
+# regex path has no module graph. That is a deliberate under-approximation:
+# an unusual alias (`import * as childProc`) is missed. Missing a true positive
+# on an unusual alias is the safer error, and the alias list is cheap to extend.
+CHILD_PROCESS_RECEIVERS: Set[str] = {
+    "child_process",
+    "childProcess",
+    "child_proc",
+    "childProc",
+    "cp",
+    "proc",
+    "node:child_process",
+}
+
+_CP_RECEIVER_RE = "(?:" + "|".join(
+    sorted((re.escape(r) for r in CHILD_PROCESS_RECEIVERS), key=len, reverse=True)
+) + ")"
+_CP_EXEC_NAMES = "(?:execSync|execFileSync|execFile|exec)"
+_CP_SPAWN_NAMES = "(?:spawnSync|spawn)"
+
 # SQL keywords used to identify SQL template strings
 SQL_KEYWORDS: Set[str] = {
     "SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "ALTER",
@@ -569,20 +601,48 @@ class TypeScriptScanner(BaseScanner):
                 0.90,
                 "vm.runInContext",
             ),
-            # child_process.exec/execSync
+            # child_process exec/execSync — bare (destructured import) form only.
+            #
+            # The previous pattern was r"\b(?:child_process\.)?(?:exec|execSync)\("
+            # and the optional group did nothing: \b also matches immediately
+            # after a dot, so EVERY member call matched. `regex.exec(s)`,
+            # `db.exec('COMMIT')` and `stmt.exec()` were all reported as shell
+            # execution. Unlike `eval`, exec/spawn are not JS globals — they come
+            # from child_process — so the receiver has to be resolved rather than
+            # ignored. See CHILD_PROCESS_RECEIVERS and TestExecSpawnReceiver.
             (
                 re.compile(
-                    r"\b(?:child_process\.)?(?:exec|execSync)\s*\("
+                    rf"(?<![\w.$]){_CP_EXEC_NAMES}\s*\("
                 ),
                 "AGENT-034",
                 "ts_child_process_exec",
                 0.90,
                 "exec",
             ),
-            # child_process.spawn/spawnSync
+            # child_process exec/execSync — qualified form, receiver resolved.
             (
                 re.compile(
-                    r"\b(?:child_process\.)?(?:spawn|spawnSync)\s*\("
+                    rf"(?<![\w.$]){_CP_RECEIVER_RE}\.{_CP_EXEC_NAMES}\s*\("
+                ),
+                "AGENT-034",
+                "ts_child_process_exec",
+                0.90,
+                "exec",
+            ),
+            # child_process spawn/spawnSync — bare (destructured import) form.
+            (
+                re.compile(
+                    rf"(?<![\w.$]){_CP_SPAWN_NAMES}\s*\("
+                ),
+                "AGENT-034",
+                "ts_child_process_exec",
+                0.85,
+                "spawn",
+            ),
+            # child_process spawn/spawnSync — qualified form, receiver resolved.
+            (
+                re.compile(
+                    rf"(?<![\w.$]){_CP_RECEIVER_RE}\.{_CP_SPAWN_NAMES}\s*\("
                 ),
                 "AGENT-034",
                 "ts_child_process_exec",
