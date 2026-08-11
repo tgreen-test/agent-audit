@@ -1,14 +1,22 @@
 # PROGRESS
 
-**Session 3 state: W9–W13 COMPLETE and committed. GATE passed; W14 (P0A denoise)
-in progress.** Context has not compacted, so I did not stop at the gate.
+**Session 3 state: COMPLETE. W9-W14 all done and committed.** Read `RUN3_REPORT.md`
+first (one page).
+
+**W14 landed all four named patterns but did NOT reach its bar: noise 1156 -> 375
+against a target of 118.** That is a 67.6% reduction with every invariant intact and
+all 20 high-value findings preserved, and it is still 3x the target. The gap is fully
+accounted for in NIGHT_RUN_LEDGER.md § W14 and DECISIONS.md item 21.
+
+Next session starts at DECISIONS.md item 18: wire the TypeScript scanner to
+context_classifier.py. Worth 174 of the remaining 375, additive, no new capability.
 
 Read `RUN3_REPORT.md` first when it exists, then `NIGHT_RUN_LEDGER.md` § SESSION 3
 for evidence, then `DECISIONS.md` items 9–17 for what needs Heady.
 
 ## Current commit
 
-`a3c89d0` on `fix/py314-blocker`. Five commits this session:
+`fix/py314-blocker`. Ten commits this session:
 
 | sha | W | what |
 |---|---|---|
@@ -18,6 +26,12 @@ for evidence, then `DECISIONS.md` items 9–17 for what needs Heady.
 | `72f069b` | W11 | nine rule-ID mismatches adjudicated, none applied |
 | `1c297d8` | W12 | one gate, ratcheted |
 | `a3c89d0` | W13 | P0A contract frozen |
+| `2b36f9c` | — | GATE handoff |
+| `6a5db05` | W14.1 | 40-hex is a digest, not an AWS secret (noise -472) |
+| `a37bfba` | W14.2 | receiver resolution for .exec/.spawn (noise -243) |
+| `26ee49f` | W14.3 | constant-argument suppression (noise -32) |
+| `5f00398` | W14.4 | SQL statement syntax required (noise -34) |
+| `daa21b0` | — | W14 evidence and accounting |
 
 ## The four frozen P0A values
 
