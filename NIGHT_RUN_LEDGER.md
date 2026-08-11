@@ -2796,3 +2796,254 @@ was deleted; this hard-coded floor inside the script was not. Before this run F1
 0.7510, one thousandth above it.
 
 **Neither threshold was touched.** DECISIONS 31.
+
+---
+
+# SESSION 6 (RUN6) — W23 through W26
+
+Same confidentiality rule as RUN5: the audit target is never named, and no target path,
+repository name or source excerpt appears here.
+
+## RUN6 opening measurement, before any change
+
+At `74ef74b`, `fix/py314-blocker`. `python` is not on PATH; every command below uses
+`python3`.
+
+```
+$ python3 tests/benchmark/precision_recall.py --output-json <scratch>/run1.json
+INFO: Got 289 findings
+  True Positives:  196
+  False Positives: 93
+  False Negatives: 40
+  Precision: 67.82%   Recall: 83.05%   F1-Score: 74.67%   FP Rate: 32.18%
+QUALITY GATE FAILED
+$ echo $?
+1
+```
+
+This reproduces RUN5's closing figure exactly (TP 196 / FP 93 / FN 40, P 0.6782 /
+R 0.8305 / F1 0.7467), and the exit 1 is the hard-coded floor inside the script, not
+`gates.yaml`. CI is red at HEAD, as recorded.
+
+## W24 step 1 — the run-to-run spread, measured before touching any threshold
+
+The brief says derive the ratchet, do not choose it. The derivation needs the observed
+spread of the measurement on identical input, so that is measured first.
+
+**Ten runs of the identical command on identical input.** Seven with the interpreter's
+default hash seed — which Python randomises per process, so these ten sample ten
+different seeds — plus three pinned to seeds chosen because two of them are the exact
+seeds recorded in § W12 as producing *different* answers before `cca9265` pinned the
+iteration order (`PYTHONHASHSEED=0 -> TP 196`, `PYTHONHASHSEED=1 -> TP 197`).
+
+```
+run1 exit=1   TP=196 FP=93 FN=40 P=0.678201 R=0.830508 F1=0.746667
+run2 exit=1   TP=196 FP=93 FN=40 P=0.678201 R=0.830508 F1=0.746667
+run3 exit=1   TP=196 FP=93 FN=40 P=0.678201 R=0.830508 F1=0.746667
+run4 exit=1   TP=196 FP=93 FN=40 P=0.678201 R=0.830508 F1=0.746667
+run5 exit=1   TP=196 FP=93 FN=40 P=0.678201 R=0.830508 F1=0.746667
+run6 exit=1   TP=196 FP=93 FN=40 P=0.678201 R=0.830508 F1=0.746667
+run7 exit=1   TP=196 FP=93 FN=40 P=0.678201 R=0.830508 F1=0.746667
+
+PYTHONHASHSEED=0    TP=196 FP=93 FN=40 P=0.678201 R=0.830508 F1=0.746667
+PYTHONHASHSEED=1    TP=196 FP=93 FN=40 P=0.678201 R=0.830508 F1=0.746667
+PYTHONHASHSEED=42   TP=196 FP=93 FN=40 P=0.678201 R=0.830508 F1=0.746667
+```
+
+**Observed range: zero.** Not "small" — every one of the ten runs agrees to six decimal
+places on all three metrics and on all three counts. `PYTHONHASHSEED=1`, which used to
+return TP 197, now returns TP 196. The pin works, and it is the reason a ratchet can be
+derived at all rather than guessed at with a safety cushion for flapping.
+
+This makes the margin the only judgement call in the derivation. That derivation is
+recorded below, after the second-definition audit, because the two must land together.
+
+## W24 — one threshold, one place
+
+### The deletion
+
+`tests/benchmark/precision_recall.py` ended with:
+
+```python
+    if result.f1_score < 0.75:
+        sys.exit(1)
+```
+
+Deleted. In its place is a comment recording what it was and why nothing may replace
+it. The floor is now read once, from `gates.yaml`, by `quality_gate_check.py`, which
+`.github/workflows/benchmark.yml` runs as its own step.
+
+Exit codes at the same measurement, before and after:
+
+```
+BEFORE (74ef74b)
+$ python3 tests/benchmark/precision_recall.py --output-json <scratch>/run1.json
+  F1-Score: 74.67%
+$ echo $?
+1
+
+AFTER
+$ python3 tests/benchmark/precision_recall.py --output-json <scratch>/after_w24.json
+  F1-Score: 74.67%
+$ echo $?
+0
+```
+
+Identical measurement, TP 196 / FP 93 / FN 40 in both. Only the exit code moved, and
+it moved because a duplicate gate was removed, not because a number was.
+
+### The second-definition audit — every one found, not just that one
+
+Searched `tests/benchmark/`, `.github/workflows/`, `scripts/`, and `docs/` for
+`sys.exit(1)`, `assert.*0\.\d`, and comparisons of a metric name against a numeric
+literal. **Eight second definitions, in four families.**
+
+| # | where | what it duplicates | blocking? | disposition |
+|---|---|---|---|---|
+| 1 | `precision_recall.py:503` `f1_score < 0.75` | `gates.yaml` `layer1.thresholds.f1_min` (0.72) | **yes** | **deleted** |
+| 2 | `precision_recall.py:376-379` printed gate, literals 0.90 / 0.85 / 0.87 / 0.05 | `gates.yaml` `layer1.target` — same four numbers | no, but prints `QUALITY GATE FAILED` | **now read from `gates.yaml`** |
+| 3 | `.github/workflows/benchmark.yml:37` comment "F1 < 0.75 raw, see script" | #1 | no | **corrected**; it described a gate that no longer exists |
+| 4 | `tests/benchmark/quality_gates_v2.yaml` layer1 0.90 / 0.85 / 0.87 / 0.05 | `gates.yaml` `layer1.target` | no — referenced by nothing | **NEEDS-HEADY**: guard-protected, cannot delete |
+| 5 | `tests/benchmark/quality_gates.yaml` layer1 0.90 / 0.85 / 0.87 / 0.05 + a whole per-ASI precision/recall table | `gates.yaml` `layer1.*` and `per_asi_recall_min` | no — referenced by nothing | **NEEDS-HEADY**: guard-protected, cannot delete |
+| 6 | `tests/benchmark/benchmark_config.yaml:149-161` `owasp_coverage: 10` | `gates.yaml` `layer2.thresholds.owasp_coverage_min: 10` | yes, via `run_benchmark.py` exit code | **NEEDS-HEADY** — see below |
+| 7 | `tests/benchmark/run_benchmark.py:375-398` the same numbers again as `.get(key, DEFAULT)` code defaults | #6 and `gates.yaml` | yes, `sys.exit(0 if PASS else 1)` at :730 | **NEEDS-HEADY** — see below |
+| 8 | `docs/F1_REPRODUCTION.md:75` "the CI gate inside `precision_recall.py` is set at `f1 < 0.75` (line 485) — passes today" | #1 | no | **not edited** — public-facing; logged for W25's ordering list |
+
+Three observations that the table does not carry.
+
+**#2 was actively misreporting.** The script printed `QUALITY GATE FAILED` on every run,
+against an aspiration `gates.yaml` explicitly annotates as never blocking, while the gate
+that does block was passing. Anyone reading the script's own output learned the opposite
+of the build's actual state. It now prints the ratchet and the target separately, both
+sourced from `gates.yaml`, and announces neither as a verdict.
+
+**#6 and #7 are the same defect one layer down, and it is worse than #1 was.**
+`owasp_coverage_min: 10` is written in three places — `gates.yaml`, `benchmark_config.yaml`,
+and as a literal default inside `run_benchmark.py`'s `.get()` calls — so a change to the
+config file silently does nothing if the key is renamed, and `gates.yaml` has no
+relationship to either. `run_benchmark.py` then blocks on its own verdict. I did not touch
+it: `layer2` is `enabled: false` in `gates.yaml` and the whole Layer 2 path is stale
+(DECISIONS item 3), so consolidating it is a change to a disabled subsystem and belongs
+with the decision to re-enable it. **DECISIONS item 33.**
+
+**#4 and #5 could not be deleted, and I did not bypass the guard.** The night-guard hook's
+`PROTECTED` pattern is `quality_gates[^/]*\.ya?ml$`, which matches both files by name. They
+are dead — referenced by no code, only by ledger entries describing them as dead — and
+`git rm` on each is the entire fix. It is Heady's to run. **DECISIONS item 34.**
+
+### The ratchet, derived
+
+**The brief's premise does not survive contact with the file.** It says the ratchet has to
+be reset because 0.7467 sits below the 0.75 being removed. `gates.yaml`'s ratchet is not
+0.75; it is **0.72**, and 0.7467 clears it. Deleting the hard-coded floor un-reds CI on its
+own — which is why `quality_gate_check.py` already exited 0 at `74ef74b` while
+`precision_recall.py` exited 1 on the same numbers.
+
+The derivation was still run, because "the ratchet happens to be right" and "the ratchet is
+where the method puts it" are different claims and only the second is worth anything.
+
+Method, stated before the numbers: **ratchet = truncate2(measured − observed spread −
+margin)**. Margin **0.02**, which is not a fresh choice — it is the margin `gates.yaml`'s own
+header records for the § W12 derivation, and reusing it keeps successive re-derivations
+comparable. It is small and it is defensible: 0.02 of F1 across 289 findings is on the order
+of five findings, which is a regression worth failing a build over rather than noise.
+
+```
+precision_min  measured=0.678201  -spread=0.000000  -margin=0.02  = 0.658201  trunc2 -> 0.65   (gates.yaml today: 0.66)
+recall_min     measured=0.830508  -spread=0.000000  -margin=0.02  = 0.810508  trunc2 -> 0.81   (gates.yaml today: 0.81)
+f1_min         measured=0.746667  -spread=0.000000  -margin=0.02  = 0.726667  trunc2 -> 0.72   (gates.yaml today: 0.72)
+```
+
+All three numbers: **measured, spread, margin, result, and the value already in the file.**
+
+- `f1_min` → **0.72**, exactly what is there. No change.
+- `recall_min` → **0.81**, exactly what is there. No change.
+- `precision_min` → 0.65, one point *below* the 0.66 in the file. The file is tighter than
+  the method, and the measurement (0.6782) clears the tighter number. Lowering 0.66 to 0.65
+  would loosen a floor that is being met, which is what `gates.yaml`'s header forbids in as
+  many words. **No change.**
+
+**Nothing in `gates.yaml` was modified.** The one threshold this run was authorised to move
+turns out not to need moving, and the derivation is the evidence for that rather than an
+assertion of it. The spread being exactly zero (ten runs, six decimal places, § W24 step 1)
+is what makes the margin the only judgement in the calculation.
+
+If W26's fixtures move the measurement, this derivation is re-run and the result recorded
+separately — see § W26.
+
+### Proof
+
+```
+$ python3 tests/benchmark/precision_recall.py --output-json <scratch>/results/layer1.json
+  True Positives:  196   False Positives: 93   False Negatives: 40
+  Precision: 67.82%   Recall: 83.05%   F1-Score: 74.67%   FP Rate: 32.18%
+
+Ratchet (tests/benchmark/gates.yaml layer1.thresholds — blocks CI
+via quality_gate_check.py, which is what decides the build):
+  [PASS] Precision >= 66%
+  [PASS] Recall >= 81%
+  [PASS] F1 >= 72%
+
+  -> against the ratchet, Layer 1 WOULD PASS
+
+Target (gates.yaml layer1.target — aspirational, never blocks):
+  [not met] Precision >= 90%
+  [not met] Recall >= 85%
+  [not met] F1 >= 87%
+  [not met] FP Rate <= 5%
+$ echo $?
+0
+
+$ python3 tests/benchmark/quality_gate_check.py --config tests/benchmark/gates.yaml --results <scratch>/results
+  ℹ️ [INFO] Layer 1 precision 67.8% below target 90% (aspirational, non-blocking)
+  ℹ️ [INFO] Layer 1 recall 83.1% below target 85% (aspirational, non-blocking)
+  ℹ️ [INFO] Layer 1 F1 74.7% below target 87% (aspirational, non-blocking)
+  ⏭️ [SKIP] Agent-Vuln-Bench results not found
+Summary: 0 failures, 0 warnings, 1 skipped, 3 below target (non-blocking)
+$ echo $?
+0
+```
+
+And the same checker on a synthetic result one point below the ratchet (`f1_score: 0.71`
+against `f1_min: 0.72`, every other field copied from the real measurement):
+
+```
+$ python3 tests/benchmark/quality_gate_check.py --config tests/benchmark/gates.yaml --results <scratch>/synthetic
+  ❌ [FAIL] Layer 1 F1 71.00% < 72%
+Summary: 1 failures, 0 warnings, 1 skipped, 3 below target (non-blocking)
+🚫 QUALITY GATE BLOCKED — fix failures before merging
+$ echo $?
+1
+```
+
+### The guard, so the eighth instance fails the suite instead of being found by a reader
+
+`tests/test_layer1_gate_singleton.py`, 11 tests, no allow-list. It asserts the *shape*
+rather than any instance:
+
+- `precision_recall.py` contains no comparison of a metric name against a numeric literal
+  (comment text excluded — the replacement comment quotes the line it replaced);
+- no `sys.exit` appears anywhere downstream of the `evaluate()` call, which catches a floor
+  written as `if not ok: sys.exit(1)` where `ok` came from elsewhere;
+- `quality_gate_check.py` holds no non-zero literal floor of its own;
+- `benchmark.yml` runs `quality_gate_check.py` against `tests/benchmark/gates.yaml` and no
+  other config, and carries no inline metric threshold — the original defect;
+- `gates.yaml` declares both a ratchet and a target for all three metrics, and the ratchet
+  never sits above the target;
+- end to end on synthetic inputs: the measurement script exits 0 on a deliberately terrible
+  score (F1 0.5) and non-zero only when it cannot measure at all; the gate checker exits 1
+  one point below `f1_min` and 0 exactly at it.
+
+The last pair is the contract in both directions. The floors are read from `gates.yaml` at
+test time, so raising the ratchet does not require editing the test.
+
+```
+$ python3 -m pytest tests/test_layer1_gate_singleton.py -q
+...........                                                              [100%]
+11 passed in 0.22s
+
+$ python3 -m pytest tests/ -q
+1759 passed, 1 skipped, 3173 warnings in 19.94s
+```
+
+1748 at RUN5 + 11 added, none deleted.

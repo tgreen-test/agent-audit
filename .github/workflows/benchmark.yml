@@ -33,8 +33,14 @@ jobs:
           python tests/benchmark/precision_recall.py \
             --output-json results/layer1.json \
             --verbose
-        # NOTE (2026-05-30): continue-on-error removed. This step now fails the
-        # job if precision_recall.py exits non-zero (F1 < 0.75 raw, see script).
+        # NOTE (2026-05-30): continue-on-error removed. This step fails the job if
+        # precision_recall.py exits non-zero — which now means the measurement could
+        # not be produced at all (missing ground truth, unparseable scan output), not
+        # that a threshold was missed.
+        # NOTE (2026-08-11): precision_recall.py used to carry its own
+        # `if f1 < 0.75: sys.exit(1)`, a second Layer 1 floor competing with
+        # tests/benchmark/gates.yaml. It is deleted. The floor is evaluated once, by
+        # the "Layer 1 Quality Gate Check" step below. Do not gate here.
 
       - name: Upload Layer 1 Results
         if: always()  # upload artifacts even on failure for forensics

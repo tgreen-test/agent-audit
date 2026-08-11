@@ -354,6 +354,50 @@ def evaluate(
     return result, per_asi_metrics
 
 
+GATES_PATH = Path(__file__).parent / "gates.yaml"
+
+
+def load_layer1_gates(path: Path = GATES_PATH) -> Tuple[Dict[str, float], Dict[str, float]]:
+    """Read the Layer 1 ratchet and target from gates.yaml.
+
+    There is deliberately no fallback set of numbers here. This report used to carry
+    its own copy of 0.90 / 0.85 / 0.87 / 0.05, which is a second definition of the
+    figures in gates.yaml `layer1.target` — the same defect this file's exit gate was.
+    If gates.yaml cannot be read, the report says so rather than inventing floors.
+    """
+    try:
+        with open(path) as f:
+            config = yaml.safe_load(f) or {}
+    except OSError as e:
+        logger.warning(f"Could not read {path}: {e}; thresholds will not be reported")
+        return {}, {}
+
+    layer1 = config.get("layer1", {}) or {}
+    return layer1.get("thresholds", {}) or {}, layer1.get("target", {}) or {}
+
+
+def _threshold_lines(
+    result: EvaluationResult, floors: Dict[str, float]
+) -> List[Tuple[str, bool]]:
+    """Build (label, passed) rows for whichever floors the config actually defines."""
+    metrics = (
+        ("precision_min", "Precision", result.precision, False),
+        ("recall_min", "Recall", result.recall, False),
+        ("f1_min", "F1", result.f1_score, False),
+        ("fp_rate_max", "FP Rate", result.false_positive_rate, True),
+    )
+    rows: List[Tuple[str, bool]] = []
+    for key, label, value, is_max in metrics:
+        if key not in floors:
+            continue
+        bound = floors[key]
+        if is_max:
+            rows.append((f"{label} <= {bound:.0%}", value <= bound))
+        else:
+            rows.append((f"{label} >= {bound:.0%}", value >= bound))
+    return rows
+
+
 def print_report(result: EvaluationResult, verbose: bool = False) -> None:
     """Print evaluation report."""
     print("\n" + "=" * 60)
@@ -370,22 +414,27 @@ def print_report(result: EvaluationResult, verbose: bool = False) -> None:
     print(f"  F1-Score:  {result.f1_score:.2%}")
     print(f"  FP Rate:   {result.false_positive_rate:.2%}")
 
-    # Quality gate check
-    print("\nQuality Gate:")
-    gates = [
-        ("Precision >= 90%", result.precision >= 0.90),
-        ("Recall >= 85%", result.recall >= 0.85),
-        ("F1 >= 0.87", result.f1_score >= 0.87),
-        ("FP Rate <= 5%", result.false_positive_rate <= 0.05),
-    ]
+    # Threshold REPORT, read from gates.yaml. Nothing here decides an exit code:
+    # quality_gate_check.py is the only thing that gates Layer 1.
+    ratchet, target = load_layer1_gates()
 
-    all_pass = True
-    for name, passed in gates:
-        status = "PASS" if passed else "FAIL"
-        print(f"  [{status}] {name}")
-        all_pass = all_pass and passed
+    if not ratchet and not target:
+        print(f"\nThresholds: unavailable ({GATES_PATH} could not be read)")
+    else:
+        ratchet_rows = _threshold_lines(result, ratchet)
+        if ratchet_rows:
+            print("\nRatchet (tests/benchmark/gates.yaml layer1.thresholds — blocks CI")
+            print("via quality_gate_check.py, which is what decides the build):")
+            for name, passed in ratchet_rows:
+                print(f"  [{'PASS' if passed else 'FAIL'}] {name}")
+            verdict = "WOULD PASS" if all(p for _, p in ratchet_rows) else "WOULD FAIL"
+            print(f"\n  -> against the ratchet, Layer 1 {verdict}")
 
-    print(f"\n{'QUALITY GATE PASSED' if all_pass else 'QUALITY GATE FAILED'}")
+        target_rows = _threshold_lines(result, target)
+        if target_rows:
+            print("\nTarget (gates.yaml layer1.target — aspirational, never blocks):")
+            for name, passed in target_rows:
+                print(f"  [{'MET' if passed else 'not met'}] {name}")
 
     if verbose:
         if result.tp_details:
@@ -495,13 +544,20 @@ def main() -> None:
             json.dump(output, f, indent=2)
         logger.info(f"Results written to {args.output_json}")
 
-    # Exit with error if quality gate failed.
-    # Threshold is set just below current measured RAW F1 (v0.19.0, 2026-05-30 = 0.778)
-    # so the gate catches regressions without producing a permanent CI red.
-    # Raise to 0.84 once GT label refresh for new rules (AGENT-053+) lands (target: June 2026),
-    # at which point raw F1 ≈ adjusted F1 ≈ 0.84+.
-    if result.f1_score < 0.75:
-        sys.exit(1)
+    # This script MEASURES. It does not gate.
+    #
+    # It used to end with its own `if result.f1_score < 0.75: sys.exit(1)`, a second
+    # blocking Layer 1 floor living alongside `tests/benchmark/gates.yaml`, whose header
+    # calls itself the single source of truth and carries f1_min there. The two never
+    # knew about each other: on 2026-08-11 F1 measured 0.7467, so gates.yaml passed and
+    # this line failed the same build. Before that it was 0.7510 — one thousandth above
+    # the floor, which is the only reason the contradiction had not yet fired.
+    #
+    # The floor now lives in exactly one place. `quality_gate_check.py --config
+    # tests/benchmark/gates.yaml` reads the JSON this script writes and owns the exit
+    # code; .github/workflows/benchmark.yml runs it as a separate step. Do not
+    # reintroduce a threshold here. See DECISIONS.md item 31 and
+    # NIGHT_RUN_LEDGER.md § W24.
 
 
 if __name__ == "__main__":
