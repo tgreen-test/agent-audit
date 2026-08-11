@@ -3314,3 +3314,211 @@ quoting the contemporaneous FN = 124, restating the current figures in the same 
 and explaining the precision drop without leaning on it as mitigation — plus an ordering
 recommendation whose gating input is the one thing I could not determine: **which external
 surfaces carry these figures.** The search was inside the repository only.
+
+## W26 — the fixture gap: sixteen rules, not twelve
+
+### The count was wrong, and the guard is what found it
+
+RUN5 recorded twelve advertised rules with no fixture. Running the check against the
+**repository** rather than against RUN5's probe set adds four more:
+
+```
+$ python3 -m pytest tests/test_rule_fixture_coverage.py -q --tb=short   # twelve installed, four to go
+E   AssertionError: 4 advertised rule(s) are produced by no input anywhere in this
+    repository: ['AGENT-049', 'AGENT-083', 'AGENT-084', 'AGENT-085']
+```
+
+The reason RUN5 missed them is methodological and worth keeping. Its audit classified a
+rule LIVE if it fired on *any* of 122 probes, and five of those probes were files RUN5
+built itself. AGENT-083/084/085 fired on those. They have no input in the repository, and
+the reason is blunt:
+
+```
+graded corpus file types:  .py 95   .json 10   .md 9   .sh 3
+```
+
+**No `.sol`, no `.go`, no `.ts`, no `.js` anywhere in the graded corpus.** The Solidity
+scanner, the Go scanner and the TypeScript half of AGENT-049 have never had a single input
+to run on. That is the same fact as RUN5 § W20's "both corpora are overwhelmingly Python",
+stated as a measurement instead of an aside.
+
+### AGENT-049 is a different defect, and it is a new one
+
+The other fifteen fire once given an input. AGENT-049 does not, and it is not a fixture
+problem. Traced end to end:
+
+```
+$ python3 -c "PythonScanner().scan(<a file containing pickle.load>)"
+dangerous_patterns=[{'type': 'unsafe_deserialization', 'function': 'pickle.load',
+                     'library': 'pickle', 'line': 5, 'confidence': 0.85,
+                     'owasp_id': 'ASI-04', ...}]
+
+$ python3 -c "run_scan(<the same file>)"
+findings: []
+```
+
+**Detected, then discarded.** `PATTERN_TYPE_TO_RULE_MAP['unsafe_deserialization']` is
+`AGENT-049`; `_create_finding_from_pattern` does `self._rules.get(rule_id)` and returns
+`None` when that lookup misses; and the rule table is loaded from YAML:
+
+```
+$ python3 -c "engine.add_builtin_rules_dir(builtin); engine.load_rules()"
+loaded: 52
+  AGENT-049: ABSENT
+  AGENT-052: PRESENT     AGENT-018: PRESENT     AGENT-039: PRESENT
+
+advertised without a YAML definition: 20 rules, from AGENT-043 through AGENT-085
+```
+
+Twenty advertised rules have no YAML definition. Nineteen survive because their producers
+construct `Finding` objects directly — the privilege, skill, Solidity, Go and MCP-config
+scanners all do. **AGENT-049 is the only one whose sole path runs through the pattern-type
+table, so it is the only one the missing metadata silences.**
+
+It is silenced on a real, labelled input: one file in the graded corpus produces the
+`unsafe_deserialization` pattern, at the exact line the corpus labels — and the corpus
+labels that line under AGENT-018, with the note "Unsafe pickle deserialization".
+
+So this is a seventh rule of the class RUN5 withdrew six for — advertised and unable to
+fire — but arrived at differently. The other six had **no detection**. This one has working
+detection and **missing metadata**. That distinction decides the disposition, and it is not
+mine to take: supplying the YAML would make the rule fire and add an unlabelled finding on
+a line the corpus already labels under a different rule. Rule set plus corpus.
+**DECISIONS item 36.**
+
+Pinned in `test_rule_fixture_coverage.DETECTED_BUT_DISCARDED` — and the pin asserts the
+**mechanism**, not the outcome: the trigger fixture must exist, must not produce the rule,
+**and** the rule must still have no YAML definition. Add the YAML and the pin fails. That is
+the difference between a pin and an allow-list, and RUN5 was right that the second is what
+makes a defect permanent.
+
+### The sixteen triggers, built from each producer's own condition
+
+`tests/rule_fixtures/`, one directory per rule. Every one fires **scanned on its own**,
+which is the stronger claim — in a whole-tree scan AGENT-055 is attributed to whichever
+config the cross-server shadowing analysis reaches first, so a tree scan can credit the
+wrong directory.
+
+```
+agent-002    -> ['AGENT-002']                            18 @tool functions (threshold is >15)
+agent-027    -> ['AGENT-027']                            PromptTemplate(template="... {question}")
+agent-037    -> ['AGENT-028','AGENT-037','AGENT-050']    AgentExecutor(tools=[write_..., shell_...])
+agent-038    -> ['AGENT-038','AGENT-119']                "Pretend you are a human ..."
+agent-039    -> ['AGENT-039']                            Crew(agents=[3]) with no auth kwarg
+agent-040    -> ['AGENT-030','AGENT-040']                inputSchema.additionalProperties: true
+agent-042    -> ['AGENT-030','AGENT-042']                14 mcpServers
+agent-048    -> ['AGENT-048']                            an extension requiring ../../core
+agent-052    -> ['AGENT-004','AGENT-052']                logger.info(f"... password={password}")
+agent-055    -> ['AGENT-030','AGENT-055']                two servers exporting the same tool name
+agent-056    -> ['AGENT-030','AGENT-056']                tool description: "Ignore previous instructions ..."
+agent-057    -> ['AGENT-030','AGENT-057']                arg description: "Ignore previous instructions ..."
+agent-083    -> ['AGENT-083']                            target.delegatecall(payload)
+agent-084    -> ['AGENT-084']                            require(tx.origin == owner)
+agent-085    -> ['AGENT-085']                            import "math/rand" to mint a session token
+agent-049    -> []                                       see above
+```
+
+The AGENT-056/057 wording is deliberate. `tool_description_analyzer`'s regex is
+`ignore\s+(previous|all|above|prior)\s+(instructions?|...)`, which requires the noun
+directly after the first qualifier — so **"ignore previous instructions" matches and
+"ignore all previous instructions" does not**, and the second is the phrasing everyone
+reaches for first. DECISIONS item 33 recorded that; the fixture now encodes it, with a
+comment saying why, so nobody "improves" the string into one that stops working.
+
+### Layer 1 delta from the fixtures: exactly zero, measured
+
+```
+                    before                after                 delta
+true_positives      196                   196                   0
+false_positives     93                    93                    0
+false_negatives     40                    40                    0
+precision           0.6782006920415224    0.6782006920415224    0.0
+recall              0.8305084745762712    0.8305084745762712    0.0
+f1_score            0.7466666666666667    0.7466666666666667    0.0
+```
+
+Zero because the trigger tree is **not** inside the tree Layer 1 scans. **The W24 ratchet
+derivation is unaffected and is not re-derived.**
+
+### Why not in the graded corpus — the number, not the argument
+
+The brief anticipated the fixtures moving Layer 1's numbers. They would have, and by a lot.
+Measured on a scratch copy with the trigger tree grafted in under a directory named
+`fixtures`, so the evaluator's path normalisation still matches the corpus:
+
+```
+as shipped     TP=196 FP=93  FN=40 P=0.678201 F1=0.746667
+counterfactual TP=196 FP=119 FN=40 P=0.622222 F1=0.711434
+  delta dTP=+0 dFP=+26 dFN=+0 dP=-0.055978 dF1=-0.035233
+  ratchet the counterfactual would force: f1_min 0.69 vs today 0.72
+                                          precision_min 0.60 vs today 0.66
+```
+
+**Twenty-six new false positives, 5.6 points of precision, 0.035 of F1 — all of it test
+scaffolding, none of it detection quality — and it would push the published floor down from
+0.72 to 0.69.** That is exactly the "silently deflate the floor" outcome the brief warned
+against, and it would be the third time in this project that unlabelled fixtures produced a
+precision drop that reads as a regression. The two trees answer different questions: the
+graded corpus asks how accurate the tool is on realistic labelled code; the trigger tree
+asks whether a rule can fire at all. Grading the second against the first's oracle is a
+category error with a 26-finding price tag.
+
+`tests/rule_fixtures/README.md` states this, and
+`test_trigger_fixtures_are_not_graded_by_layer_1` plus
+`test_no_trigger_fixture_is_referenced_by_ground_truth` keep the trees disjoint — the second
+because a ground-truth label pointing into the trigger tree would move it into the benchmark
+without moving the file.
+
+### `vulnerable_hooks` — resolved, and it is four findings, not three
+
+With AGENT-120 now reaching below the scan root, the fixture written for it is finally being
+read. Everything it produces, all of it correct by the rules' own definitions — a
+`powershell -WindowStyle Hidden` SessionStart hook, a `curl ... | bash` PreToolUse hook, the
+same `curl ... | bash` as an MCP server command, and a stdio MCP server with no sandbox:
+
+```
+.../vulnerable_hooks/.claude/settings.json:6    AGENT-120  critical
+.../vulnerable_hooks/.claude/settings.json:12   AGENT-120  critical
+.../vulnerable_hooks/.mcp.json:4                AGENT-120  critical
+.../vulnerable_hooks/.mcp.json:1                AGENT-032  medium
+```
+
+**All four are counted as false positives:**
+
+```
+FP list:  all four, each marked "(not labeled)"
+TP list:  []
+FN list:  []
+ground-truth samples naming that fixture: NONE
+labels citing AGENT-120 anywhere in the corpus: 0
+```
+
+RUN5 counted three because it was tracking the precision movement, and the movement was
++3 FP (90 -> 93): the AGENT-032 finding was already firing, and already unlabelled, before
+`d4d2850`. Both statements are right about different things; the number that matters for
+labelling is **four**.
+
+**The labels are not mine to add.** All four are logged in DECISIONS item 35 with file,
+line, rule ID and severity, ready to paste.
+
+### Proof — the guard fails before, passes after
+
+Before (the twelve already installed, so it names the remaining four; against a bare HEAD it
+names all sixteen):
+
+```
+E   AssertionError: 4 advertised rule(s) are produced by no input anywhere in this
+    repository: ['AGENT-049', 'AGENT-083', 'AGENT-084', 'AGENT-085']
+FAILED tests/test_rule_fixture_coverage.py::test_every_advertised_rule_is_produced_by_some_input_in_the_repository
+FAILED tests/test_rule_fixture_coverage.py::test_each_trigger_fixture_still_fires[AGENT-049]
+FAILED tests/test_rule_fixture_coverage.py::test_each_trigger_fixture_fires_from_its_own_directory[AGENT-049]
+3 failed, 32 passed
+```
+
+After:
+
+```
+$ python3 -m pytest tests/test_rule_fixture_coverage.py -q
+..................................                                       [100%]
+34 passed in 3.02s
+```

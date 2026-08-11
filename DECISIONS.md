@@ -963,3 +963,161 @@ it fails if a scan ever starts producing it. No code change; the question of whe
   suite, with no allow-list. `KNOWN_ORPHAN_RULES` in the RUN4 guard is now empty.
 - No threshold, tier boundary, confidence value, ratchet, oracle, fixture or
   ground-truth label was changed.
+
+---
+
+# RUN 6 — items 35 to 39
+
+Same rule as before: everything under `NEEDS-HEADY` was deliberately **not** acted on.
+Everything else was done and is reversible.
+
+> **Correction to RUN5, item 30's neighbourhood.** `NIGHT_RUN_LEDGER.md § W19.5` and
+> `RUN5_REPORT.md § 1` state that `git_clone_exec.py:14` emits AGENT-034 at the exact
+> labelled line, and conclude that three of the five AGENT-015 labels are detected under a
+> different rule ID. It emits nothing — at HEAD and at `e4a939d`, in both scan modes,
+> verified from a worktree at that commit. **Two** are detected under a different ID and
+> **three** are genuine misses. The corrected arithmetic is in
+> `docs/decisions/AGENT-015_RESOLUTION.md`.
+
+---
+
+## NEEDS-HEADY
+
+### 35. `vulnerable_hooks` produces four unlabelled true positives, not three
+
+The fixture written for AGENT-120 is finally being read, and everything it produces is
+correct by the rules' own definitions. None of it is labelled — the corpus contains no
+sample naming that fixture and **no label citing AGENT-120 anywhere**, across 81 files.
+All four are therefore scored as false positives.
+
+| file | line | rule | severity | what it is |
+|---|---|---|---|---|
+| `tests/fixtures/agent_architecture/vulnerable_hooks/.claude/settings.json` | 6 | AGENT-120 | critical | `powershell -WindowStyle Hidden` SessionStart hook |
+| `tests/fixtures/agent_architecture/vulnerable_hooks/.claude/settings.json` | 12 | AGENT-120 | critical | `curl … \| bash` PreToolUse hook |
+| `tests/fixtures/agent_architecture/vulnerable_hooks/.mcp.json` | 4 | AGENT-120 | critical | the same `curl … \| bash` as an MCP server command |
+| `tests/fixtures/agent_architecture/vulnerable_hooks/.mcp.json` | 1 | AGENT-032 | medium | stdio MCP server with no sandbox isolation |
+
+RUN5 recorded three. Three is right for the *precision movement* — FP went 90 → 93 at
+`d4d2850`, and those three are the AGENT-120 findings that fix made reachable. The AGENT-032
+finding was already firing and already unlabelled before it. **For labelling purposes the
+number is four.**
+
+Labelling all four is worth roughly +4 TP / −4 FP / −4 FN against Layer 1 and would raise
+the ratchet. Ground truth is yours; I did not touch it.
+
+### 36. AGENT-049 is detected and then thrown away — a seventh rule that cannot fire
+
+Found by the new fixture-coverage guard, and it is a different mechanism from the six
+withdrawn in v0.19.3.
+
+`python_scanner._check_unsafe_deserialization` emits an `unsafe_deserialization` pattern on
+`pickle.load` at confidence 0.85 with an ASI-04 id and a written note.
+`PATTERN_TYPE_TO_RULE_MAP` maps it to AGENT-049. `_create_finding_from_pattern` then does
+`self._rules.get("AGENT-049")`, the rule table is loaded from the 52 builtin YAML
+definitions, **AGENT-049 is not one of them**, the lookup returns `None`, and the finding
+is never constructed. Measured end to end in `NIGHT_RUN_LEDGER.md § W26`.
+
+Twenty advertised rules have no YAML definition. Nineteen are unaffected because their
+producers build `Finding` objects directly. AGENT-049 is the only one reachable solely
+through the pattern-type table, so it is the only one this silences — and `ts_unsafe_
+deserialization`, the TypeScript half, dies the same way.
+
+**Why I did not fix it.** The fix is small — a YAML block supplying metadata for detection
+that already works — but it is not free. Exactly one file in the graded corpus produces the
+pattern, at a line the corpus already labels under **AGENT-018** with the note "Unsafe
+pickle deserialization". Supplying the YAML makes AGENT-049 fire there and adds an
+unlabelled finding on an already-labelled line, so the change is a rule-set decision *and*
+a corpus decision at once. Three coherent resolutions:
+
+1. **Add the YAML definition and label the line for AGENT-049**, keeping the AGENT-018
+   label if both rules genuinely apply (they describe different aspects of the same line —
+   memory poisoning versus unsafe deserialization). Cleanest; needs a ground-truth edit.
+2. **Add the YAML definition and accept one unlabelled finding** until the corpus catches
+   up. Costs about one point of precision.
+3. **Withdraw AGENT-049**, as the six were. Honest, but wasteful: unlike those six, the
+   detection exists and works, and CWE-502 is a real gap to leave open.
+
+I recommend **1**. This is the reverse of the six withdrawals — there the rule was a
+document with no code, here it is code with no document.
+
+Pinned meanwhile in `tests/test_rule_fixture_coverage.DETECTED_BUT_DISCARDED`. The pin
+asserts the *mechanism* — fixture exists, rule does not fire, rule still has no YAML — so
+it fails the moment anyone fixes it, and cannot decay into an allow-list.
+
+### 37. Six more second definitions of the same threshold, two of them unreachable by me
+
+From the W24 audit. The one that mattered — `precision_recall.py`'s own `f1 < 0.75` — is
+deleted, and `gates.yaml` is now what its header says it is. Six remain.
+
+**Two are dead files the guard hook protects.** `tests/benchmark/quality_gates_v2.yaml` and
+`tests/benchmark/quality_gates.yaml` both carry Layer 1 floors of 0.90 / 0.85 / 0.87, and
+the second carries an entire per-ASI precision/recall table as well. Neither is referenced
+by any code — only by ledger entries describing them as dead. The night-guard's `PROTECTED`
+pattern is `quality_gates[^/]*\.ya?ml$`, which matches both by name, so I could not delete
+them and did not work around it. **`git rm` on each is the entire fix.**
+
+**Two are the same defect in the Layer 2 path.** `owasp_coverage_min: 10` is written three
+times — in `gates.yaml`, in `tests/benchmark/benchmark_config.yaml`, and as a literal
+`.get(key, 10)` default inside `run_benchmark.py` — and `run_benchmark.py` blocks on its own
+verdict via `sys.exit(0 if PASS else 1)`. I left it alone because `layer2` is
+`enabled: false` in `gates.yaml` and the whole path is stale (item 3), so consolidating it
+belongs with the decision to re-enable it.
+
+**One is public-facing.** `docs/F1_REPRODUCTION.md:75` says the CI gate inside
+`precision_recall.py` "is set at `f1 < 0.75` (line 485) — passes today". The gate is gone,
+the line number was already wrong, and it was failing rather than passing. Listed in
+`docs/decisions/METRICS_RETRACTION.md` § 5 rather than edited.
+
+**One is `scripts/run_benchmark.sh`,** which scores the project out of 100 using its own
+0.90 / 0.85 / 0.87 thresholds. It gates nothing, but it is a fourth copy of those numbers.
+
+### 38. `tests/rule_fixtures/` needs a decision about whether it is a corpus
+
+I added a second fixture tree, deliberately outside the graded corpus, and it should be an
+explicit choice rather than a fait accompli.
+
+**The case for keeping it separate is measured, not argued.** Grafting the sixteen triggers
+into the graded corpus costs **+26 false positives, −5.6 points of precision, −0.035 F1**,
+and would force the ratchet down from `f1_min: 0.72` to 0.69 and `precision_min: 0.66` to
+0.60 — a published floor deflated entirely by test scaffolding. Full measurement in
+`NIGHT_RUN_LEDGER.md § W26`.
+
+**The case against** is that two fixture trees is two places, which is the defect this whole
+run is about. The difference is that they answer different questions and are graded by
+different things, and `tests/rule_fixtures/README.md` says so at the top. If you would
+rather have one tree, the coherent version is one tree **plus labels for every trigger** —
+that is 16 new corpus entries and a corpus decision, not a move.
+
+### 39. The corpus-label guard is committed red, and only you can make it green
+
+`tests/test_corpus_label_rules.py` fails today: six labels cite rule IDs no code path can
+construct. It is committed failing on purpose — the labels are not mine to edit and a guard
+that passes while the defect is present is what this project keeps rediscovering — but it
+does mean the suite reads **1 failed** until the labels are settled.
+
+The fix is three `rule_id` edits plus a decision about three more; both are laid out with
+measured arithmetic in `docs/decisions/AGENT-015_RESOLUTION.md`. Retargeting the three
+retargetable labels alone takes Layer 1 from F1 0.7467 to **0.7581**.
+
+---
+
+## Decisions taken (session 6, reversible, done)
+
+- `78d8fe5` — `precision_recall.py`'s own `f1 < 0.75 → sys.exit(1)` deleted. The script
+  measures; `quality_gate_check.py` against `gates.yaml` decides. The printed report's
+  hard-coded 0.90 / 0.85 / 0.87 / 0.05 now come from `gates.yaml` too. Same measurement
+  either side, exit code 1 → 0.
+- **No threshold was changed.** The ratchet was re-derived rather than assumed — measured
+  minus observed run-to-run spread minus a 0.02 margin, truncated — and the derivation puts
+  `f1_min` at 0.72 and `recall_min` at 0.81, exactly where they already are, and
+  `precision_min` at 0.65 against 0.66 in the file, which is tighter than the method and
+  already met. The spread is **zero** across ten identical runs. The brief's premise that
+  the ratchet had to be reset does not hold: `gates.yaml` carries 0.72, not 0.75.
+- `950e308` — `tests/test_corpus_label_rules.py`, no allow-list, committed failing (item 39).
+- `cc7da1b` — `docs/decisions/METRICS_RETRACTION.md`. No public claim edited.
+- `tests/rule_fixtures/` — sixteen trigger fixtures, each built from its producer's own
+  source condition and each verified to fire when scanned on its own.
+  `tests/test_rule_fixture_coverage.py` fails the suite if an advertised rule is produced by
+  no input anywhere in the repository. **Layer 1 delta: exactly zero, measured.**
+- No oracle, no dataset, no ground-truth label, no existing fixture, no confidence value,
+  no tier boundary and no threshold was modified. No push, merge, rebase, tag or publish.
