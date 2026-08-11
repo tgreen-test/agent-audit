@@ -248,3 +248,38 @@ Reversible, listed so they can be undone:
 3. `uv python install 3.13` → 3.13.11.
 4. Throwaway venvs under `/tmp/w5/venvs/{3.11,3.12,3.13,3.14}`; the 3.14 one additionally has
    the tree-sitter extras. Nothing under `eval/` was touched.
+
+---
+
+# SESSION 3
+
+## W9 — applying the guard I was told not to author
+
+The RUN3 brief says to apply the replacement guard verbatim, and that if I think it is
+wrong I should log the objection here and apply it anyway. I applied it verbatim; the
+installed file is byte-identical to the specified text (`0557e0a4…`). Two comment lines
+and one blank line that a previous hand-edit had added were removed to achieve that.
+
+Two objections, logged and not acted on:
+
+1. **`PROTECTED` matches a bare token anywhere in a write command, not the redirect
+   target.** The token loop splits the whole command and checks every fragment containing
+   a slash, so any command that both contains a write operator and mentions a protected
+   path anywhere — including inside a quoted string, a heredoc, or a commit message — is
+   denied. This fired twice on me within minutes of installing it: appending this
+   session's ledger entry, and building the very BEFORE reproduction that proves the guard
+   works. Both were legitimate and neither wrote to a protected path. The false-positive
+   direction is the safe one for a guard, so this is a note, not a request.
+2. **The `(^|/)eval/` anchor still denies a relative path typed without a leading
+   directory.** `eval/x.md` matches on `^`, which is intended, but so would a harness
+   subdirectory literally named `eval/`. Narrow enough in practice.
+
+Neither objection changes the verdict: the fix is a strict improvement on the original,
+which blocked the Phase -1 deliverable outright and ignored Bash-authored writes entirely.
+
+**Decision taken (reversible):** the self-test at `.claude/hooks/test-guard.sh` takes an
+optional guard path argument. Rejected: hardcoding the installed path. Reason: the
+argument is what made W9's BEFORE falsifiable at all, given the hook had already been
+repaired by hand before the session opened — the archived pre-fix guard could be put
+through the identical 11 cases. It costs one line and buys the same capability for the
+next regression.
