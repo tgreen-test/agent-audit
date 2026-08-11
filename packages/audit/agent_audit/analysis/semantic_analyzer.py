@@ -20,7 +20,11 @@ from typing import List, Optional, Dict, Any, Tuple
 
 from agent_audit.analysis.entropy import shannon_entropy, entropy_confidence
 from agent_audit.analysis.placeholder_detector import is_placeholder, is_vendor_example
-from agent_audit.analysis.value_analyzer import KNOWN_CREDENTIAL_FORMATS, detect_uuid_format
+from agent_audit.analysis.value_analyzer import (
+    KNOWN_CREDENTIAL_FORMATS,
+    detect_hex_digest_format,
+    detect_uuid_format,
+)
 from agent_audit.analysis.identifier_analyzer import (
     analyze_identifier,
     IdentifierCategory,
@@ -532,6 +536,27 @@ class SemanticAnalyzer:
                         0.02,
                         f"Masked/redacted value detected: {mask_reason}"
                     )
+
+        # === Hex Digest Shape Detection ===
+        # A bare 40-hex string is a SHA-1 — a git object id, a checksum-manifest
+        # entry — not a credential. The AWS secret-key pattern is a bare 40-char
+        # run over the base64 alphabet, which every SHA-1 satisfies, so without
+        # this a repository that pins content by hash reports hundreds of
+        # "Potential AWS Secret Key" findings. Checked with the same standing as
+        # UUID detection below, and for the same reason: it is a shape fact about
+        # the value, independent of context.
+        #
+        # A credential-named identifier does not rescue it. `api_key` set to a
+        # SHA-1 is a content hash stored under an unfortunate name far more often
+        # than it is a secret, and if it really is a secret the value is a digest
+        # of one rather than the secret itself.
+        digest_analysis = detect_hex_digest_format(value)
+        if digest_analysis.is_digest:
+            return (
+                False,
+                0.05,
+                f"Hex digest shape ({digest_analysis.format_name}), not a credential"
+            )
 
         # === NEW: UUID Format Detection ===
         # Check if value is UUID format BEFORE other analysis
