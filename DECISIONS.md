@@ -408,3 +408,53 @@ I did not ratchet it in this pass: tightening a second benchmark inside the same
 commit that re-derives Layer 1 would make the next regression ambiguous between
 the two, and W13 pins AVB recall at 100.0% as a P0A invariant regardless.
 **Recommendation:** ratchet AVB to 0.98 / 0.86 in its own commit, after P0A.
+
+### 16. P0A's two acceptance criteria are the same criterion, and contradict if read literally
+
+`docs/overhaul/P0A_ACCEPTANCE.md` freezes the contract. One thing in it needs
+your ruling rather than my assumption.
+
+The brief asks for "noise count < 118 **and** noise rate < 10%". There are 20
+high-value findings on the audit target and P0A may not change that number
+(recall is frozen at 0/6 by its own invariant). So if the rate is computed
+against the post-fix total:
+
+    noise / (noise + 20) < 0.10   is   noise <= 2
+
+That is not a denoise target, it is a demand to remove 1154 of 1156 findings.
+Against the frozen denominator instead:
+
+    noise / 1176 < 0.10   is   noise < 118
+
+which is criterion 1 exactly. Session 2 wrote them as the same thing ("noise <
+118, i.e. <10% of 1176"), so I adopted the frozen-denominator reading and said so
+in the contract.
+
+**Recommendation:** confirm the frozen-denominator reading. If you did mean the
+post-fix denominator, P0A as scoped cannot pass and should be rescoped before it
+starts rather than failed at the end. Separately, the post-fix rate is worth
+*reporting* even though it should not gate — it is precision on the target, 1.7%
+today, roughly 25% if the planned fixes land, and it is the number a human
+reviewer actually experiences.
+
+### 17. The phase brief undercounts the largest noise pattern by a factor of three
+
+Not a decision, a correction that changes the plan. The brief buckets the two
+`.exec` / `.spawn` patterns at 69 + 86 = 155 findings. The rule that carries them,
+AGENT-034, actually emits **466** noise findings on the audit target
+(`./run_eval.sh --commit 1c297d8 --verbose`).
+
+Consequences, both in the acceptance contract:
+
+- The four named patterns are 1012 of 1156, not 644. Clearing all four lands at
+  ~144 noise, which still misses the < 118 bar.
+- A fifth pattern the brief does not name, AGENT-026 SSRF at 84 findings, has to
+  be in scope to reach the bar. It is probably the same root cause — bare
+  method-name matching with no receiver resolution — so it should be cheap once
+  the AGENT-034 machinery exists, but it needs planning rather than discovery.
+
+Also worth knowing before touching anything: **AGENT-041 is the only rule that
+carries both true positives and noise** (3 high-value, 36 noise). Every other
+high-value finding is in AGENT-110 or AGENT-115, which the plan does not touch.
+So the SQL-sink predicate is the single place where a careless fix can destroy
+recall, and it deserves the most conservative treatment of the five.
