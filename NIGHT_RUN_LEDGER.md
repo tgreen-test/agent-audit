@@ -3203,3 +3203,114 @@ reached a published rule list, a published coverage figure and 238 labels simult
 
 The suite is therefore **1759 passed, 1 failed, 1 skipped** from this point on, and the one
 failure is a work order with a document attached.
+
+## W25 — the 98.51%: primary-source evidence, and the retraction path
+
+Full document: `docs/decisions/METRICS_RETRACTION.md`. **No public-facing claim was
+edited.** Search was read-only and confined to the repository.
+
+### RUN5 inferred the mechanism from arithmetic. It is stated in words, in the tree.
+
+RUN5 reconstructed `TP = 198, FP = 3, FN = 0` because those inputs reproduce all four
+published figures to four decimal places. That is strong, but it is still an inference.
+Widening the search from `-- tests/README.md` to the whole tree turns up the source
+document:
+
+```
+$ git log --all --oneline -S "98.51" -- .
+74ef74b docs: RUN5 …                       (this run's own report)
+e4a939d docs: RUN4 …                       (this run's own report)
+1ef3cbc release: agent-audit v0.7.0 …      (DELETES the source document)
+a65b341 feat: release v0.5.2 …             (origin)
+```
+
+`1ef3cbc` is the interesting one: it removes a line containing the figure. The file is
+`agent-audit-v041-prompt.md`, added at `a65b341` and deleted at v0.7.0, which is why
+RUN5's file-scoped search missed it. Its metrics block, verbatim:
+
+```
+$ git show a65b341:agent-audit-v041-prompt.md
+当前 benchmark 指标:
+  Precision = 98.51% (3 FP / 201 total)
+  Recall    = 100%   (0 FN)
+  F1        = 99.25%
+
+目标指标:
+  Precision = 100%   (0 FP)
+  Recall    = 100%   (0 FN)
+```
+
+**`Recall = 100% (0 FN)` — written down.** And `3 FP / 201 total` gives the precision
+directly as 198/201. The assumption is not reconstructed; it is documented. The "目标指标"
+block is where `CHANGELOG.md`'s "98.51% → 100%" and "F1 Score: 100%" come from: a target
+was recorded as an achievement.
+
+Alongside it, unchanged from RUN5 and still the sharpest single fact:
+
+```
+$ git show a65b341:results/layer1.json
+  "true_positives": 112,  "false_positives": 4,  "false_negatives": 124,
+  "precision": 0.9655…,   "recall": 0.4746…,     "f1_score": 0.6364…
+```
+
+**124 measured false negatives, R 47.46%, in the same commit that published R 100%.**
+
+### And the corpus was described three ways in that one commit
+
+```
+$ python3 -c "...git show a65b341:tests/ground_truth/labeled_samples.yaml | count..."
+at a65b341: version 2.2  samples declared 81  vulns declared 218
+  actual samples: 81   actual labels: 238
+```
+
+`tests/README.md` in that commit says **v2.1, 42 files, 198 annotations**. The file header
+says **v2.2, 81, 218**. Counting it gives **81, 238**. So the 198 that became TP was not the
+size of the dataset being measured, either.
+
+### Locations, classified
+
+Twelve locations carry the **same methodology error** and cannot be reproduced by any
+re-run: `tests/README.md` 116-119, 270, 279-282 (nine) and `CHANGELOG.md` 175-177 (three).
+The changelog three are the worst of them — a delta between an assumed figure and a perfect
+one, in the document a downstream reader trusts to be a factual record.
+
+Nine further locations carry a **different figure** — the real-but-drifted F1 0.778 family
+— which needs updating, not retracting. `docs/F1_REPRODUCTION.md` is flagged out of order
+within that group: a reproduction document whose whole claim is auditability, and it no
+longer reproduces.
+
+The AVB figures, the rule counts, the version staleness and the two unverifiable external
+claims are **unaffected**, and bundling them into a retraction would imply a defect that is
+not there.
+
+### Current values, measured now at `950e308`
+
+```
+$ python3 tests/benchmark/precision_recall.py
+INFO: Loaded 238 labels for 81 files
+INFO: Got 289 findings
+  True Positives:  196    False Positives: 93    False Negatives: 40
+  Precision: 67.82%   Recall: 83.05%   F1-Score: 74.67%   FP Rate: 32.18%
+$ echo $?
+0
+```
+
+### The one thing I would not let the restatement do
+
+67.82% is a **floor**, not a point estimate: at least 21 of the 93 false positives are
+correct by their own rule's definition and merely unlabelled (18 MCP + 3 AGENT-120), and 3
+more are the AGENT-015/036 double-counts, whose correction is measured at F1 0.7581.
+
+The temptation is to publish the adjusted number. **That is the 98.51% again, in the other
+direction** — a correction applied to one side of a ratio to compensate for corpus
+incompleteness. The difference between the adjusted-F1-0.84 figure in
+`docs/F1_REPRODUCTION.md` and the retracted 98.51% is not the arithmetic; it is that one is
+disclosed, bounded and attributed and the other was not. State the bound, do not fold it in.
+
+### What is in the document and not here
+
+A draft retraction paragraph — plain, naming the mechanism in the first three sentences,
+quoting the contemporaneous FN = 124, restating the current figures in the same paragraph,
+and explaining the precision drop without leaning on it as mitigation — plus an ordering
+recommendation whose gating input is the one thing I could not determine: **which external
+surfaces carry these figures.** The search was inside the repository only.
