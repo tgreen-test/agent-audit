@@ -30,15 +30,63 @@ logger = logging.getLogger(__name__)
 
 # ─── Internal Hostname Patterns ──────────────────────────────────────
 
+# A DNS label: lowercase alphanumerics and hyphens, no leading or trailing
+# hyphen. Case-sensitive on purpose, and load-bearing.
+#
+# The previous pattern was `[\w.-]+\.(?:internal|corp|staging)\.[\w.-]+` with
+# IGNORECASE, and `\w` includes underscores and capitals, so any dotted
+# JavaScript property chain through a property named `internal` matched:
+# `this.internal.loadCache`, `internal.sessions`, `this.internal.version`.
+# Hostnames written into source are lowercase; `loadCache` is not a DNS label.
+_HOSTNAME_LABEL = r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?"
+
 _INTERNAL_HOSTNAME_PATTERN = re.compile(
-    r"""
-    (?:https?://)?                          # optional scheme
-    [\w.-]+\.                               # subdomain(s)
+    rf"""
+    (?P<scheme>https?://)?                  # optional scheme
+    (?:{_HOSTNAME_LABEL}\.)+                # subdomain(s)
     (?:internal|corp|staging)               # internal TLD markers
-    \.[\w.-]+                               # remaining domain parts
+    (?:\.{_HOSTNAME_LABEL})+                # remaining domain parts
     """,
-    re.VERBOSE | re.IGNORECASE,
+    re.VERBOSE,
 )
+
+
+def _match_is_hostname_shaped(line: str, match: "re.Match") -> bool:
+    """Whether a hostname-looking match is actually written as a hostname.
+
+    Lowercase labels alone are not enough: `this.internal.version` is all
+    lowercase and is a property chain, not a host. A hostname appearing in
+    source is essentially always either inside a string literal or introduced
+    by an explicit scheme, and a property chain is neither.
+
+    Only *closed* quote spans count, so an unterminated quote leaves the match
+    reported rather than silently dropped.
+    """
+    if match.group("scheme"):
+        return True
+
+    start = match.start()
+    i = 0
+    n = len(line)
+    while i < n:
+        ch = line[i]
+        if ch in "\"'`":
+            j = i + 1
+            while j < n:
+                if line[j] == "\\":
+                    j += 2
+                    continue
+                if line[j] == ch:
+                    break
+                j += 1
+            if j >= n:
+                return False
+            if i < start < j:
+                return True
+            i = j + 1
+            continue
+        i += 1
+    return False
 
 # ─── Debug Mode Default On Pattern ───────────────────────────────────
 
@@ -458,6 +506,8 @@ class PackageScanner(BaseScanner):
 
             for match in _INTERNAL_HOSTNAME_PATTERN.finditer(line_text):
                 if i in seen_lines:
+                    continue
+                if not _match_is_hostname_shaped(line_text, match):
                     continue
                 seen_lines[i] = True
 
