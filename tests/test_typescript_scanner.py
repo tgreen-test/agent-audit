@@ -811,3 +811,108 @@ class TestConstantArgumentSuppression:
             );
         """)
         assert len(self._shell_findings(scanner, path)) >= 1
+
+
+class TestSqlStatementRequirement:
+    """
+    AGENT-041 must require SQL statement syntax, not merely a word that is also
+    a SQL keyword. ``insert``, ``create``, ``delete``, ``update`` and
+    ``replace`` are ordinary English verbs and ordinary UI vocabulary.
+
+    The old test was ``any(kw in value_upper for kw in SQL_KEYWORDS)``, a bare
+    substring check, so ``cannot create ${target}`` matched on CREATE. On the
+    audit target this reported error messages, aria-labels, test assertions and
+    prompt text as SQL injection.
+
+    Regression source: the audit-target evaluation recorded in
+    NIGHT_RUN_LEDGER.md § W14, pattern 4.
+    """
+
+    def _sql_findings(self, scanner, path):
+        return [f for f in scanner.scan_and_convert(path) if f.rule_id == "AGENT-041"]
+
+    # --- Must NOT trigger: English prose that contains a SQL keyword --------
+
+    def test_error_message_with_create_not_flagged(self, scanner):
+        path = _write_ts_file("""
+            throw new Error(`cannot create ${target}: not a directory`);
+        """)
+        assert self._sql_findings(scanner, path) == []
+
+    def test_aria_label_with_delete_not_flagged(self, scanner):
+        path = _write_ts_file("""
+            const label = `${t('delete')}: ${text.name}`;
+        """)
+        assert self._sql_findings(scanner, path) == []
+
+    def test_prompt_text_with_create_not_flagged(self, scanner):
+        path = _write_ts_file("""
+            const p = `Create ${path} containing exactly ${content} using bash.`;
+        """)
+        assert self._sql_findings(scanner, path) == []
+
+    def test_path_label_with_insert_not_flagged(self, scanner):
+        path = _write_ts_file("""
+            validateEntry(value.insert[index], file, `${path}.insert[${index}]`);
+        """)
+        assert self._sql_findings(scanner, path) == []
+
+    def test_update_without_set_not_flagged(self, scanner):
+        path = _write_ts_file("""
+            out.push(`# Translation update briefing: ${input.sourcePath}`);
+        """)
+        assert self._sql_findings(scanner, path) == []
+
+    # --- TRUE-POSITIVE CONTROLS: real SQL must still fire -------------------
+
+    def test_select_from_still_flagged(self, scanner):
+        path = _write_ts_file("""
+            const rows = await db.query(`SELECT * FROM users WHERE id = ${userId}`);
+        """)
+        assert len(self._sql_findings(scanner, path)) >= 1
+
+    def test_insert_into_still_flagged(self, scanner):
+        path = _write_ts_file("""
+            await db.query(`INSERT INTO users (name) VALUES ('${name}')`);
+        """)
+        assert len(self._sql_findings(scanner, path)) >= 1
+
+    def test_delete_from_still_flagged(self, scanner):
+        path = _write_ts_file("""
+            await db.query(`DELETE FROM sessions WHERE token = '${token}'`);
+        """)
+        assert len(self._sql_findings(scanner, path)) >= 1
+
+    def test_update_set_still_flagged(self, scanner):
+        path = _write_ts_file("""
+            await db.query(`UPDATE users SET email = '${email}' WHERE id = ${id}`);
+        """)
+        assert len(self._sql_findings(scanner, path)) >= 1
+
+    def test_create_table_still_flagged(self, scanner):
+        path = _write_ts_file("""
+            await db.query(`CREATE TABLE ${tableName} (id INTEGER PRIMARY KEY)`);
+        """)
+        assert len(self._sql_findings(scanner, path)) >= 1
+
+    def test_drop_table_still_flagged(self, scanner):
+        path = _write_ts_file("""
+            await db.query(`DROP TABLE ${tableName}`);
+        """)
+        assert len(self._sql_findings(scanner, path)) >= 1
+
+    def test_lowercase_sql_still_flagged(self, scanner):
+        """SQL written in lower case is still SQL."""
+        path = _write_ts_file("""
+            await db.query(`select * from audit_log where actor = '${actor}'`);
+        """)
+        assert len(self._sql_findings(scanner, path)) >= 1
+
+    def test_mixed_file_keeps_only_the_query(self, scanner):
+        """The discrimination itself: 1 of 3 interpolated templates is SQL."""
+        path = _write_ts_file("""
+            const msg = `cannot create ${target}`;
+            const label = `${t('delete')}: ${name}`;
+            const rows = await db.query(`SELECT id FROM users WHERE n = '${n}'`);
+        """)
+        assert len(self._sql_findings(scanner, path)) == 1

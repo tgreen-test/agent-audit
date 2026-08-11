@@ -204,6 +204,46 @@ SQL_KEYWORDS: Set[str] = {
     "CREATE", "TRUNCATE", "MERGE", "REPLACE", "GRANT", "REVOKE",
 }
 
+# A SQL statement, not merely a word that is also a SQL keyword.
+#
+# Presence of a keyword is far too weak on its own: `insert`, `create`,
+# `delete`, `update` and `replace` are ordinary English verbs and ordinary UI
+# vocabulary. On the audit target the keyword test reported error messages
+# (`cannot create ${target}`), aria-labels (`${t('delete')}: ${name}`), test
+# assertions and prompt text as SQL injection.
+#
+# Every keyword here is paired with the companion clause SQL requires, so the
+# test is for statement syntax rather than for a word:
+#   SELECT ... FROM      INSERT INTO      UPDATE ... SET      DELETE FROM
+#   CREATE/DROP/ALTER/TRUNCATE <object>   GRANT/REVOKE ... ON
+# `cannot create ${target}` has no object keyword after CREATE, and
+# `insert ${path}` has no INTO, so neither survives — while a real
+# `INSERT INTO users (name) VALUES ('${name}')` does.
+SQL_STATEMENT_RE = re.compile(
+    r"""
+    \bSELECT\b (?:.|\n){0,400}? \bFROM\b
+  | \bINSERT\s+INTO\b
+  | \bUPDATE\b (?:.|\n){0,200}? \bSET\b
+  | \bDELETE\s+FROM\b
+  | \b(?:CREATE|DROP|ALTER|TRUNCATE)\s+
+        (?:TEMP(?:ORARY)?\s+|UNIQUE\s+|MATERIALIZED\s+|OR\s+REPLACE\s+)*
+        (?:TABLE|INDEX|VIEW|DATABASE|SCHEMA|SEQUENCE|TRIGGER|FUNCTION|PROCEDURE)\b
+  | \b(?:GRANT|REVOKE)\b (?:.|\n){0,200}? \bON\b
+  | \bREPLACE\s+INTO\b
+  | \bMERGE\s+INTO\b
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def looks_like_sql_statement(text: str) -> bool:
+    """Whether `text` contains SQL statement syntax, not just a SQL keyword.
+
+    Used by every code path that can emit AGENT-041, so the predicate cannot be
+    satisfied on one path and bypassed on another.
+    """
+    return bool(SQL_STATEMENT_RE.search(text or ""))
+
 # Prompt-related variable/function names
 PROMPT_CONTEXT_NAMES: Set[str] = {
     "prompt", "system_prompt", "systemPrompt", "system_message",
@@ -572,8 +612,9 @@ class TypeScriptScanner(BaseScanner):
 
         value_upper = literal.value.upper()
 
-        # Check for SQL keywords in template string
-        has_sql = any(kw in value_upper for kw in SQL_KEYWORDS)
+        # Require SQL statement syntax, not merely a word that is also a SQL
+        # keyword. See looks_like_sql_statement().
+        has_sql = looks_like_sql_statement(value_upper)
         if has_sql and "${" in literal.raw_value:
             findings.append(
                 TSFinding(
@@ -799,17 +840,19 @@ class TypeScriptScanner(BaseScanner):
         findings: List[TSFinding] = []
 
         # Match template strings containing SQL keywords and interpolation
-        template_sql_pattern = re.compile(
-            r"`[^`]*\b(?:SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE)\b[^`]*\$\{[^}]+\}[^`]*`",
-            re.IGNORECASE,
-        )
+        # Template string containing an interpolation. Whether it is SQL is
+        # decided by looks_like_sql_statement() below rather than by the
+        # presence of a keyword: `cannot create ${target}` is an error message,
+        # not a query.
+        template_sql_pattern = re.compile(r"`[^`]*\$\{[^}]+\}[^`]*`")
 
         for line_num, line in enumerate(lines, start=1):
             stripped = line.strip()
             if stripped.startswith("//") or stripped.startswith("*"):
                 continue
 
-            if template_sql_pattern.search(line):
+            template_match = template_sql_pattern.search(line)
+            if template_match and looks_like_sql_statement(template_match.group(0)):
                 findings.append(
                     TSFinding(
                         rule_id="AGENT-041",
@@ -1002,7 +1045,7 @@ class TypeScriptScanner(BaseScanner):
         """Check if any argument is a template string containing SQL keywords."""
         combined = " ".join(args) + " " + raw_text
         combined_upper = combined.upper()
-        has_sql = any(kw in combined_upper for kw in SQL_KEYWORDS)
+        has_sql = looks_like_sql_statement(combined_upper)
         has_interpolation = "${" in combined
         return has_sql and has_interpolation
 
