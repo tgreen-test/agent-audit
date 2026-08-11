@@ -545,3 +545,224 @@ Items 18 and 19 are worth roughly 174 plus the declaration cases. Item 20 is
 what stands between that and the bar. **Recommendation:** treat items 18–20 as
 P0A part two rather than reopening the four patterns, all of which are done and
 guarded.
+
+---
+
+# SESSION 4
+
+## NEEDS-HEADY (session 4)
+
+### 22. Six advertised rules cannot be produced by any input
+
+`AGENT-003`, `AGENT-011`, `AGENT-013`, `AGENT-015`, `AGENT-016`, `AGENT-036` are
+in `docs/RULES.md` and in `engine.py`'s `RULE_CWE_MAPPING`, and **no code path
+constructs a finding with any of them**. Five map only to a `pattern_type` no
+scanner emits; AGENT-003 has no mapping at all and survives as an allow-list key
+in `config/ignore.py`.
+
+This is not a wiring gap that a scanner change closes — the detection was never
+written. Three options: implement them, remove them from the published list, or
+mark them explicitly as reserved. **Not mine to choose**, so
+`tests/test_rule_reachability.py::KNOWN_ORPHAN_RULES` pins the set with a reason
+each, and the test fails if a seventh appears or one of these comes to life.
+
+**This lands on W11.** Five ground-truth labels cite AGENT-015 and RUN3 recorded
+that as the largest single contributor to ASI-04 reading 0.0%. It is now measured
+rather than inferred: AGENT-015 can never fire, at any commit, on any input. The
+label-side diagnosis stands and the recall figure has a second, independent cause.
+
+### 23. `RuleEngine.evaluate()` is loaded on every scan and called only by a unit test
+
+The generic evaluator for the 52 YAML rule definitions in `rules/builtin/` — the
+ones carrying `detection.type` and `detection.patterns` — has exactly one caller
+in the repository: `tests/test_rules/test_engine.py:39`.
+
+`scan.py` calls `load_rules()` on every scan. The YAML is parsed, the rules are
+held, `logger.info("Loaded N rules")` fires, and then only the four hand-written
+`evaluate_dangerous_patterns` / `evaluate_mcp_config` / `evaluate_permission_scope`
+/ `evaluate_credentials` paths run. **No `detection.patterns` block in any builtin
+YAML file has ever matched anything on a real scan.**
+
+Findings affected on the audit target: 0, because the hand-written paths cover
+what fires. The reason to raise it anyway is that the YAML files read like the
+detection specification — that is how the rule-authoring checklist in `CLAUDE.md`
+describes them — and they are not. Anyone adding a rule by following that
+checklist gets a rule that never fires. Either wire `evaluate()` into `scan.py`
+or say plainly in the docs that YAML is metadata and detection lives in scanners.
+I did neither: wiring it would turn 52 dormant pattern sets on at once, which is
+a far larger behaviour change than this run's remit.
+
+### 24. W17 pattern 3 supersedes a contract W14 set, and gives up argument injection
+
+`_fixed_non_shell_program` suppresses AGENT-034 when the callee is in the
+execFile/spawn family, the program argument is a literal (or `process.execPath`),
+`shell: true` is absent, and the literal does not name a shell. Worth 84 findings
+directly and 8 more once multi-line calls resolve.
+
+Three W14 controls asserted the opposite — that a variable *argument* keeps the
+finding even when the program is fixed. They are renamed `*_superseded`,
+inverted, and kept in the suite rather than deleted, so the change of contract is
+visible where someone will trip over it.
+
+**What is given up: argument injection against a fixed binary.**
+`spawnSync('git', ['-C', root, ...userArgs])` with attacker-influenced `userArgs`
+is genuinely exploitable — `git --upload-pack=…` is the standard example. After
+this change AGENT-034 does not report it.
+
+My reasoning for doing it anyway: AGENT-034's TypeScript emission is titled
+"Shell Command Execution", its remediation talks about shell injection, and
+`execFile`/`spawn` do not involve a shell. Reporting argument injection under
+that title is reporting it under the wrong rule, and 84 of them buried the 50
+that are the rule's actual subject. **The counter-argument is real and it is
+yours**: if argument injection should be detected, it wants its own rule with its
+own title and remediation, and then this suppression should be narrowed to "fixed
+program AND fixed argv" — which is `_call_args_are_constant`, still present and
+still applied first.
+
+### 25. AGENT-034's TypeScript emission does not match its published definition
+
+Sharper than RUN3 item 20, and found by the W15 audit rather than inferred.
+
+`docs/RULES.md` and `rules/builtin/asi_coverage_v030.yaml` both define AGENT-034
+as **"Tool Function Without Input Validation"**: CWE-20, detection type `ast`,
+`pattern_type: tool_no_input_validation`, gated on `@tool` / `@function_tool` /
+`@register_function` decorators and `str`/`Any` parameter types.
+
+The Python scanner implements exactly that, and gates it on
+`tool_boundary_detector.is_tool_entry_point()` — outside a tool entry point,
+nothing fires. The TypeScript scanner emits the same rule ID under the titles
+"Shell Command Execution" and "Dangerous Code Execution", with **no tool-boundary
+gate at all**, and that path produced 187 of the 191 AGENT-034 findings on the
+audit target.
+
+**`agent_audit/analysis/ts_tool_boundary_detector.py` is the missing gate, it is
+325 lines long, it has a full test file, and nothing in the package imports it:**
+
+```
+$ grep -rn "ts_tool_boundary" packages/audit/agent_audit/ tests/
+tests/test_analysis/test_ts_tool_boundary_detector.py:14:from agent_audit.analysis.ts_tool_boundary_detector import (
+```
+
+Its own unit test is the only thing in the repository that mentions it. Third
+instance of the pattern in three runs, and the largest by findings.
+
+**I did not wire it**, for two reasons. It is written as a *confidence* helper
+(`get_tool_confidence_boost` returns a boost inside a boundary), not as the hard
+gate the Python side uses, so wiring it as a gate is a design decision rather
+than a connection. And doing so would remove essentially every TypeScript
+AGENT-034 finding and invalidate a dozen existing tests that encode the current
+behaviour — far beyond a predicate's blast radius.
+
+**Three options, recommendation last:**
+1. Split the rule: give the TypeScript shell-execution emission its own ID and
+   title, and leave AGENT-034 as the tool-input rule it is documented to be.
+2. Gate the TypeScript path on `ts_tool_boundary_detector`, promoting it from a
+   confidence helper to a boundary gate, matching the Python path exactly.
+3. Amend the published definition of AGENT-034 to cover both.
+
+I recommend **1**. It is the only one that leaves both behaviours available, and
+it makes the reachability test above meaningful for the rule — right now a
+directory scan reaches "AGENT-034" through three different pattern types with
+three different meanings.
+
+### 26. MCP config findings bypass every analyzer and are all BLOCK
+
+Found while triaging W16. All 20 findings the MCP fix restored carry
+`confidence=1.0` and `tier=BLOCK`, because `cli/commands/scan.py` constructs MCP
+security findings with no `confidence=` argument and takes the `Finding` default.
+
+The consequence is concrete. The one genuine false positive among the 20 is
+`API_KEY: "AKIAIOSFODNN7EXAMPLE"` — the AWS documentation example key, reported
+as AGENT-004 Hardcoded Credentials at BLOCK. `analysis/placeholder_detector.py`
+and `analysis/semantic_analyzer.py` exist to catch exactly that, and
+`analysis/rule_context_config.py` names that exact string in a comment as
+something that should be suppressed. **The AGENT-004 the secret scanner produces
+goes through all of it; the AGENT-004 the MCP path produces goes through none of
+it.**
+
+The same wiring pattern, at rule granularity. Fix is to route MCP-derived
+AGENT-004 through `semantic_analyzer` like the secret scanner does, and to give
+the other MCP rules a real confidence rather than the default. **Not done**: it
+changes tier assignment across an entire rule family, which is the boundary this
+run was told not to cross unilaterally.
+
+Related and smaller: findings 8 and 11 of the W16 table are the same config line
+reported twice, as AGENT-004 and AGENT-031, both at BLOCK. That is the same
+same-line redundancy `RULE_SUBSUMPTION_MAP` exists for.
+
+### 27. Eighteen corpus additions, from the W16 triage
+
+18 of the 20 restored MCP findings are correct against the rules' own published
+definitions and the corpus does not label them. Adding those labels moves Layer 1
+precision from **0.6853 to 0.7483** with no scanner change.
+
+They are listed with fixture, rule and reason in `NIGHT_RUN_LEDGER.md` § W16.
+**I added none of them** — ground truth is not mine to edit.
+
+One deserves a decision rather than a transcription: `benign/validated/mcp_restricted.json`
+is labelled a safe file, and AGENT-030 fires on it correctly, because the package
+`@anthropic-ai/mcp-server-filesystem` is genuinely unpinned. The fixture is
+restricted in *permissions* — path `./workspace`, `alwaysAllow: [read_file]` —
+not in *supply chain*. Either the negative label narrows to the permission axis
+or the fixture pins its version.
+
+And one is genuinely AMBIGUOUS: AGENT-029 on `supply_chain_vulnerable.json` fires
+because the server declares no path argument at all. The finding's text says "no
+explicit path restriction configured"; the rule is titled "Overly Broad
+Filesystem". Absent configuration is a proxy for broad access, not the same
+claim. Excluding it moves precision 0.6853 → 0.6877.
+
+### 28. `results/layer1.json` is two measurements behind the code
+
+The committed file reads FP 91 / P 0.6829 — the W12 measurement. HEAD produces
+FP 90 / P 0.6853. CI is unaffected: `run_all.sh:19` and `benchmark.yml:34` both
+pass `--output-json results/layer1.json` immediately before the gate, so the gate
+always grades a fresh measurement there. The staleness only bites a manual
+`quality_gate_check.py` run on a tree where nobody ran the benchmark first, which
+is how I first hit it.
+
+Refresh rather than defect. Flagged because `results/layer1_v0.19.0.json` is cited
+from `README.md` as the checked-in evidence for the headline figure, and it reads
+F1 0.7784 against a current 0.7510 — see the claims table in the ledger, row 9.
+
+### 29. Dead analysis modules with no findings attached
+
+From the W15 runtime wiring matrix. None of these changes a finding on the audit
+target, so per this run's brief they are notes, not tasks — recorded so the next
+audit does not rediscover them:
+
+- `analysis/confidence_matrix.py` — no importer, no caller anywhere.
+- `analysis/env_tracer.py` — no importer, no caller anywhere.
+- `analysis/dangerous_operation_analyzer.py` — imported by `python_scanner`; its
+  call site at `python_scanner.py:3082` sits in the branch marked "Fallback to
+  original logic if taint analysis fails", and `_analyze_function_taint` returns
+  `None` only when `TaintTracker` **raises**. It runs on a taint-tracker crash and
+  otherwise never. This is the module `CLAUDE.md` Phase 1 specifies in full, with
+  its own test file. Verified with a textbook trigger — a `@tool` function taking
+  `command: str` into `subprocess.run(command, shell=True)` — which reaches
+  `tool_boundary_detector` and never reaches this.
+- `analysis/tool_description_analyzer.py` — imported by three MCP scanners, never
+  called on a directory scan. `mcp_config_scanner._detect_tool_poisoning` is
+  defined and has **zero callers**, so AGENT-056/057 cannot fire from a static
+  config. Confirmed with a designed trigger: an `.mcp.json` whose tool
+  descriptions carry blatant injection text produces no AGENT-056/057. The live
+  path is `mcp_inspector`, which is the `inspect` command against a running
+  server. Pinned in `tests/test_rule_reachability.py::KNOWN_UNREACHABLE_MECHANISMS`.
+- `rule_context_config.is_browser_test_pattern` — defined, never called. Worth
+  saying that it should **not** be wired: its patterns are `page.evaluate(`,
+  `page.goto(` and friends, which are the AGENT-045 triggers themselves, so using
+  it as a suppressor would disable the rule entirely. It is a mis-designed helper,
+  not a missing connection.
+
+## Decisions taken (session 4, reversible, done)
+
+- Ten denoise predicates, each with its own commit, its own measured delta, and
+  regression tests split into suppression cases and controls. Noise 375 → 87 with
+  all 20 high-value findings intact at every commit and Layer 1 true positives
+  unchanged at 196.
+- `tests/test_rule_reachability.py` added: fails when a rule fires on a
+  file-argument scan and not on a directory scan; pins the orphan set, the
+  known-dead mechanisms, and probe coverage at 52 of 72 rules.
+- `RULE_SUBSUMPTION_MAP` extended with `AGENT-034: [AGENT-047]`, same-line only.
+- No threshold, tier boundary, confidence value, ratchet, oracle, fixture or
+  ground-truth label was changed.

@@ -1547,3 +1547,608 @@ I did not attempt either remaining predicate. Both are real and both are
 specified above; I stopped because the test-context change is the one place left
 where a careless predicate silently deletes true positives, and it deserves a
 fresh context rather than the end of a long one.
+
+---
+
+# SESSION 4
+
+Corrected metric for this run, per the brief: **signal-to-noise = noise findings per
+high-value finding.** Recomputed from scratch rather than inherited.
+
+```
+$ ./run_eval.sh --commit ef3a0a3 --verbose
+freeze verified: FREEZE.sha256 OK
+import check: .../src-ef3a0a3/packages/audit/agent_audit/__init__.py 0.19.2
+scanning target with ef3a0a3 on CPython 3.11.14
+total findings        : 395
+noise / high-value    : 375 / 20
+{"recall_hit":0,"recall_total":6,"noise":375,"total":395,"commit":"ef3a0a3","python":"3.11.14"}
+```
+
+High-value count is **still 20** — 13 AGENT-110 (10 + 2 + 1 across its three titles),
+4 AGENT-115, 3 AGENT-041 — unchanged from RUN3. So the ratio is **375 / 20 = 18.75:1**,
+matching the brief. Target ≤5:1 means **noise ≤ 100**.
+
+---
+
+## W15 — Wiring audit
+
+### W15.1 Which rule count is canonical: 72
+
+Four sources disagreed. Reconciled:
+
+| source | count | what it is |
+|---|---|---|
+| `engine.py RULE_CWE_MAPPING` | 92 | every rule ID the engine knows, **including** the 20 DeFi profile rules |
+| `docs/RULES.md` | 72 | the published list |
+| `packages/audit/agent_audit/rules/builtin/*.yaml` | 52 | YAML definitions only |
+| `engine.py PATTERN_TYPE_TO_RULE_MAP` | 60 distinct | rules reachable via scanner pattern types |
+
+`RULE_CWE_MAPPING` minus `AGENT-090..109` (DeFi, gated behind `--profile defi` and not
+part of a normal directory scan) is **exactly** the 72 in `docs/RULES.md` — set equality,
+not just cardinality. **72 is the canonical advertised set for the normal scan path.**
+The 20 DeFi rules are advertised too but behind an explicit flag, so they are audited
+separately and excluded from the reachability guard.
+
+### W15.2 Six advertised rules cannot be produced by any input
+
+Stronger than a wiring gap. For each of the 72 I asked: is there **any** code path that
+constructs a `Finding` with that `rule_id`? Two paths exist — a direct
+`rule_id="AGENT-0XX"` construction in a scanner, or a `pattern_type` that some scanner
+emits and `PATTERN_TYPE_TO_RULE_MAP` maps to the rule.
+
+Six have neither:
+
+| rule | published title | only production path | why it is dead |
+|---|---|---|---|
+| AGENT-003 | Data Exfiltration | none | appears only in `config/ignore.py` as an *allow-list key* for a rule that never fires |
+| AGENT-011 | (goal-hijack input guard) | `agent_without_input_guard` | no scanner emits that pattern type |
+| AGENT-013 | (identity/privilege) | `hardcoded_credential_in_agent` | idem |
+| AGENT-015 | Untrusted MCP Server Source | `npx_unfixed_version`, `unofficial_mcp_source` | idem |
+| AGENT-016 | (download without integrity check) | `unvalidated_rag_ingestion` | idem |
+| AGENT-036 | (tool output trusted blindly) | `tool_output_trusted_blindly` | idem |
+
+18 of the 113 mapped pattern types are emitted by no scanner. For 12 of them the rule
+survives because another pattern type does reach it; for these six it does not.
+
+**This lands on W11.** Five ground-truth labels cite AGENT-015, and RUN3 recorded that as
+the single largest contributor to ASI-04 reading 0.0%. It is now measured rather than
+inferred: **AGENT-015 has no code path at all**, so those five labels could not have been
+matched by any scan, at any commit, under any input. The label-side diagnosis stands and
+the recall figure has a second, independent cause.
+
+Method (reproducible):
+
+```
+$ python3 - <<'PY'   # summarised; full script in the W15 probe below
+canonical: 72  probed: 48
+ORPHANS (no direct emitter, no produced pattern type):
+  ['AGENT-003', 'AGENT-011', 'AGENT-013', 'AGENT-015', 'AGENT-016', 'AGENT-036']
+PY
+```
+
+### W15.3 The YAML rule engine is loaded on every scan and never consulted
+
+`RuleEngine.evaluate(context)` is the generic evaluator for the 52 YAML rule definitions
+in `rules/builtin/` — the ones carrying `detection.type` and `detection.patterns`.
+
+```
+$ grep -rn "rule_engine.evaluate(\|engine.evaluate(\|MatchContext" packages/audit/agent_audit/ tests/
+packages/audit/agent_audit/rules/engine.py:168:class MatchContext:
+packages/audit/agent_audit/rules/engine.py:519:    def evaluate(self, context: MatchContext) -> List[Finding]:
+packages/audit/agent_audit/rules/engine.py:858:        context: MatchContext
+tests/test_rules/test_engine.py:6:from agent_audit.rules.engine import RuleEngine, MatchContext
+tests/test_rules/test_engine.py:39:        findings = engine_with_rules.evaluate(context)
+```
+
+The only caller is a unit test. `scan.py` calls `rule_engine.load_rules(...)` on every
+scan — the YAML is parsed, the rules are held in `self._rules`, `logger.info("Loaded N
+rules")` fires — and then only the four hand-written `evaluate_dangerous_patterns` /
+`evaluate_mcp_config` / `evaluate_permission_scope` / `evaluate_credentials` paths are
+used. **No `detection.patterns` block in any builtin YAML file has ever matched anything
+on a real scan.** Third instance of the pattern, and the widest: it is not one rule, it
+is a whole detection mechanism.
+
+### W15.4 Analyzer wiring matrix — runtime calls, not imports
+
+Instrumented every public callable in all 21 `agent_audit/analysis/*` modules to record
+its immediate non-analysis caller, then ran real `run_scan()` over the audit target **and**
+`tests/fixtures`. An import is not a call; this records calls.
+
+| analysis module | called at runtime by | statically imported by | verdict |
+|---|---|---|---|
+| `base_taint_tracker` | `scanners.python_scanner` | — | CALLED |
+| `confidence_matrix` | — | — | **ABSENT** |
+| `context_classifier` | `rules.engine`, `scanners.privilege_scanner`, `scanners.secret_scanner` | engine.py, privilege_scanner.py | CALLED — **not by typescript_scanner** |
+| `dangerous_operation_analyzer` | — | python_scanner.py | **IMPORTED, NEVER CALLED** |
+| `entropy` | `scanners.secret_scanner` | — | CALLED |
+| `env_tracer` | — | — | **ABSENT** |
+| `framework_detector` | `scanners.secret_scanner` | — | CALLED |
+| `identifier_analyzer` | `scanners.secret_scanner` | — | CALLED |
+| `memory_method_detector` | `scanners.python_scanner` | python_scanner.py | CALLED |
+| `placeholder_detector` | `scanners.secret_scanner` | — | CALLED |
+| `rule_context_config` | `rules.engine`, `privilege_scanner`, `python_scanner` | 3 | CALLED |
+| `semantic_analyzer` | `scanners.secret_scanner` | secret_scanner.py | CALLED |
+| `skill_code_extractor` | `scanners.skill_scanner` | skill_scanner.py | CALLED |
+| `skill_description_judge` | `scanners.skill_scanner` | skill_scanner.py | CALLED |
+| `skill_frontmatter` | `scanners.skill_scanner` | skill_scanner.py | CALLED |
+| `skill_language_router` | `scanners.skill_scanner` | skill_scanner.py | CALLED |
+| `taint_tracker` | `scanners.python_scanner` | python_scanner.py | CALLED |
+| `tool_boundary_detector` | `scanners.python_scanner` | python_scanner.py | CALLED |
+| `tool_description_analyzer` | — | mcp_baseline.py, mcp_config_scanner.py, mcp_inspector.py | **IMPORTED, NEVER CALLED** |
+| `ts_tool_boundary_detector` | — | — | **ABSENT** |
+| `value_analyzer` | `scanners.secret_scanner` | — | CALLED |
+
+Four gaps, ranked by findings affected on the audit target:
+
+1. **`context_classifier` is never called by `typescript_scanner`** — 174 of 375 noise
+   findings. Item 18. Fixed in this run (W15.6).
+2. **`ts_tool_boundary_detector` is ABSENT — zero production references.**
+   ```
+   $ grep -rn "ts_tool_boundary" packages/audit/agent_audit/ tests/
+   tests/test_analysis/test_ts_tool_boundary_detector.py:14:from agent_audit.analysis.ts_tool_boundary_detector import (
+   ```
+   Its own unit test is the only thing in the repository that mentions it. It is the
+   TypeScript counterpart of `tool_boundary_detector`, which on the Python side is the
+   gate that stops AGENT-034 firing outside a `@tool` entry point. **On TypeScript there
+   is no gate at all, although the gate was written.** That is the structural reason
+   AGENT-034 emits 191 findings on this target where the Python path emits none of them.
+   Affects up to 191 findings; not fixed in this run — see W17 for what was done instead
+   and DECISIONS for why wiring it is not a free change.
+3. **`tool_description_analyzer` imported by three MCP scanners, never called on a
+   directory scan.** `mcp_config_scanner._detect_tool_poisoning` (AGENT-056/057 from
+   static config) has **zero callers**:
+   ```
+   $ grep -n "_detect_tool_poisoning" packages/audit/agent_audit/scanners/mcp_config_scanner.py
+   (only the def, line 1274 — no call site)
+   ```
+   The live path is `mcp_inspector`, which is the `inspect` command against a running
+   server, not a directory scan. Findings affected on the audit target: **0** (no MCP
+   config there declares `tools`), so by the brief's rule this is a note, not a task —
+   but it is a rule advertised as working on configs that only works live.
+4. **`dangerous_operation_analyzer` imported by `python_scanner`, never called.** The
+   call site exists at `python_scanner.py:3082`, inside
+   `_check_tool_no_input_validation`, but it sits in the branch labelled
+   `# === Fallback to original logic if taint analysis fails ===`. The preceding
+   `_analyze_function_taint` returns `None` **only when `TaintTracker` raises**, so the
+   analyzer runs only on a taint-tracker crash. Confirmed with a textbook trigger — a
+   `@tool`-decorated function taking `command: str` straight into
+   `subprocess.run(command, shell=True)` — which reaches `tool_boundary_detector` and
+   never reaches `dangerous_operation_analyzer`. This is the module `CLAUDE.md` Phase 1
+   specifies in full, with its own test file. Findings affected: 0 on this target.
+   Note, not a task.
+
+`confidence_matrix` and `env_tracer` are ABSENT: no importer and no caller anywhere in
+the package. Findings affected: 0. Notes.
+
+### W15.5 The permanent guard: `tests/test_rule_reachability.py` (`309e36e`)
+
+Five tests. The load-bearing one records, per advertised rule, whether it fires
+when its probe file is named directly and whether it fires when an **ancestor**
+directory is scanned. The corpus is laid out at `root/proj/src/deep/` — three
+levels down — because a probe at the scan root would not have caught `f649dcc`.
+
+**On HEAD:**
+
+```
+$ python3 -m pytest tests/test_rule_reachability.py -q
+.....
+5 passed, 799 warnings in 10.89s
+```
+
+**On deliberately re-broken wiring.** Reverted `_walk_candidate_files` from
+`os.walk` to a non-recursive `root.iterdir()` — the exact shape of the W10 bug —
+and reran the same command:
+
+```
+$ python3 -m pytest tests/test_rule_reachability.py -q
+.F...
+E   AssertionError: rules fire on a file-argument scan but not on a directory
+E   scan, so they are dead in normal use:
+E       AGENT-005: reached by ['fixture:mcp_configs/claude_desktop_config.json', ...]
+E       AGENT-029: reached by ['fixture:asi-04-supply-chain/direct/mcp_standalone_json.json', ...]
+E       AGENT-030: reached by [...]
+E       AGENT-031: reached by [...]
+E       AGENT-032: reached by [...]
+E       AGENT-033: reached by [...]
+```
+
+**Exactly the six rules `f649dcc` restored**, named individually, with the probe
+file that reached each. The scanner was restored from a byte copy taken before
+the edit and the suite returns to `5 passed`; `git diff` after restoration shows
+no change to `mcp_config_scanner.py`.
+
+Coverage is pinned rather than assumed: the probe corpus reaches **52 of the 72**
+advertised rules and the test fails if that falls. The 20 it does not reach break
+down as the six orphans of W15.2, the two dead mechanisms of W15.4 (AGENT-056/057),
+and 12 for which the fixture corpus has no trigger — those are a coverage gap in
+the corpus, not a claim that the rules are dead, and the test says so.
+
+---
+
+## W17 — Denoising, measured after every commit
+
+Every number below is `./run_eval.sh --commit <sha>`, last line verbatim. No
+threshold, tier boundary or confidence value was changed in any of them; the
+diffs contain no confidence table.
+
+| # | pattern | commit | before | after | delta |
+|---|---|---|---|---|---|
+| 1 | `fetch` receiver resolution | `709fcdc` | 375 | 310 | **−65** |
+| 2 | declarations, comments, quoted source | `a668822` | 310 | 265 | **−45** |
+| 3 | fixed non-shell executable | `5d92330` | 265 | 177 | **−88** |
+
+```
+{"recall_hit":0,"recall_total":6,"noise":375,"total":395,"commit":"ef3a0a3","python":"3.11.14"}
+{"recall_hit":0,"recall_total":6,"noise":310,"total":330,"commit":"709fcdc","python":"3.11.14"}
+{"recall_hit":0,"recall_total":6,"noise":265,"total":285,"commit":"a668822","python":"3.11.14"}
+{"recall_hit":0,"recall_total":6,"noise":177,"total":197,"commit":"5d92330","python":"3.11.14"}
+```
+
+`total − noise` is **20 at every one of the four commits**: all 20 high-value
+findings survive each pattern, verified at each commit rather than only at the
+end. Recall stays 0/6 in both directions.
+
+**Pattern 1 — `fetch` receiver resolution.** `\bfetch\s*\(` matched after a dot,
+so `handler.fetch(request)`, `provider().fetch({url})` and `route.fetch()` were
+reported as outbound SSRF. The case that matters is the
+`fetch(Request) -> Response` server-handler convention (Workers, Bun, Hono,
+Remix): a handler named `fetch` *receives* a request, so the finding pointed the
+wrong way down the wire. `fetch` is a WHATWG global, so this is the `eval` side
+of the problem rather than the `exec`/`spawn` side — the member form is the one
+that is almost never the subject — and the fix mirrors the existing `eval`
+treatment: `(?<![\w.$])` plus enumerated `window`/`globalThis`/`global`/`self`
+aliases. AGENT-026 went 84 → 8.
+
+**Pattern 2 — a declaration, a comment and a quoted string are not calls.**
+`ts_decl_signature_re` existed for exactly this and covered one shape: the
+return-type form, scoped to `eval|Function`. Three shapes it missed were the
+bulk of the remainder — interface and class method declarations named
+`spawn`/`exec`/`fetch` in their abstract, override, async and body-opener forms;
+JSDoc and block-comment openers (only `//` and a continuation `*` were skipped,
+so every `/**` line was scanned as code); and generated API-surface entries whose
+values are quoted source text.
+
+The discrimination that had to hold is `execFileSync('git', ['init'], { env })`
+— identifier, parens, end of line, and still a call. `_is_ts_declaration`
+requires balanced parentheses, no `=` or `(` before the name, and one positive
+declaration marker. `_index_inside_string_literal` counts only *closed* spans, so
+an unterminated template literal leaves the rest of the line reported. Applied to
+the three call-shaped scanners; the SQL and prompt template scanners are excluded
+by construction because their subject **is** a string literal, which is what
+protects AGENT-041's three true positives.
+
+**Pattern 3 — a fixed non-shell executable is not shell execution.** The largest
+single delta of the run. `execFile`/`spawn`/`execa` do not go through a shell,
+and a literal first argument fixes the executable, so neither half of the title
+"Shell Command Execution" is present. `_call_args_are_constant` (W14 pattern 3)
+already handled the all-literal case, which is far stricter than the title
+requires — a spread, a `cwd` variable or a computed argv defeats it, which is why
+84 findings of this shape survived W14. Three guards, each with a control test:
+`exec`/`execSync` excluded because they do use a shell; `shell: true` on the line
+keeps the finding; a program literal naming a shell keeps the finding, so
+`spawn('sh', ['-c', userCommand])` is untouched.
+
+**This one changed a contract W14 set, and that is recorded, not hidden.** Two
+W14 controls asserted that a variable *argument* keeps the finding even when the
+program is fixed. They are renamed `*_superseded`, inverted, and kept in the
+suite so the change is visible there rather than deleted from it. What is given
+up is argument injection against a known binary — `git --upload-pack=…` is the
+real one — which AGENT-034 never described and does not remediate. Logged as
+DECISIONS.md item 24 for Heady to ratify or reverse.
+
+### W17, patterns 4–10
+
+| # | pattern | commit | before | after | delta |
+|---|---|---|---|---|---|
+| 4 | AGENT-111: a property chain is not a hostname | `fca978a` | 177 | 165 | **−12** |
+| 5+6 | weak prompt names need corroboration; AGENT-034 subsumes AGENT-047 | `df962e4` | 165 | 142 | **−23** |
+| 7+8 | `page.evaluate` literal callback; js-yaml v4 `load` | `2701059` | 142 | 110 | **−32** |
+| 9+10 | the sandbox is not "without sandbox"; multi-line program resolution | `38fe5bd` | 110 | **87** | **−23** |
+
+```
+{"recall_hit":0,"recall_total":6,"noise":177,"total":197,"commit":"5d92330","python":"3.11.14"}
+{"recall_hit":0,"recall_total":6,"noise":165,"total":185,"commit":"fca978a","python":"3.11.14"}
+{"recall_hit":0,"recall_total":6,"noise":142,"total":162,"commit":"df962e4","python":"3.11.14"}
+{"recall_hit":0,"recall_total":6,"noise":110,"total":130,"commit":"2701059","python":"3.11.14"}
+{"recall_hit":0,"recall_total":6,"noise": 87,"total":107,"commit":"38fe5bd","python":"3.11.14"}
+```
+
+`total − noise` is 20 at every commit. **Final: 87 noise / 20 high-value = 4.35:1,
+against a target of ≤5:1.** Reached at `38fe5bd`, from 18.75:1 at the start of the run
+and 58:1 at the blind-audit anchor.
+
+**4 — AGENT-111.** `[\w.-]+\.(?:internal|corp|staging)\.[\w.-]+` with IGNORECASE. `\w`
+covers underscores and capitals and `.` is the JavaScript member operator, so any
+property chain through a property named `internal` was reported as an internal hostname
+shipped in a package. All 12 findings were property chains. Two conditions now hold:
+DNS labels matched case-sensitively (which rules out `loadCache` but not `version`), and
+the match must sit inside a closed string literal or carry an explicit scheme.
+
+**5 — weak prompt names.** `PROMPT_CONTEXT_NAMES` contained `message`, `messages`,
+`template`, `system`, `role`. `message` is the most common name in TypeScript for an
+error string; every AGENT-010 finding but one was an HTTP error message. Weak names now
+need an LLM marker within three lines; strong names fire alone. Proximity IS the
+corroboration, so the mixed-file test spaces its cases deliberately instead of hiding the
+granularity.
+
+**6 — AGENT-034 subsumes AGENT-047 on the same line.** They are one call seen twice: the
+execution, and the observation that it is unsandboxed. `RULE_SUBSUMPTION_MAP` already had
+AGENT-001 and AGENT-017 subsuming both; AGENT-034 sits between them. Same-line only.
+
+**7 — `page.evaluate` with a literal callback.** AGENT-045 is "Browser Automation Without
+Sandbox"; a function literal compiled from the scanned file is neither an injected script
+nor a weakened sandbox. 16 of 17 findings were Playwright end-to-end callbacks. Scoped to
+`page.evaluate` alone — `addScriptTag` and `exposeFunction` take an options object whose
+content is the dangerous part, so the same test would suppress the shape that matters
+there. AGENT-045 17 → 2.
+
+**8 — js-yaml v4.** The `yaml.load\((?!.*safe)` pattern predates js-yaml 4, which renamed
+`safeLoad` to `load`. From v4 the bare call uses DEFAULT_SCHEMA. Whether the call is a
+finding therefore depends on the declared dependency, so the nearest `package.json` above
+the file decides it. No declaration, an unreadable manifest, or a range admitting v3
+leaves the finding in place; `unsafeLoad` and an explicit full schema still fire on v4.
+AGENT-049 17 → 0.
+
+**9 — the sandbox is not "without sandbox".** AGENT-047's JavaScript path reported
+`spawnSync('bwrap', …)` and `spawnSync('sandbox-exec', …)` under the title "Subprocess
+Execution Without Sandbox" — the launchers whose entire purpose is confining the child.
+It also had no comment or declaration filter at all. AGENT-047 19 → 4.
+
+**10 — multi-line program resolution.** The fixed-program predicate could not see past
+the end of a line, so `const child = spawn(` was unknown when the program sat on the next
+one. It now joins a four-line window and re-asks.
+
+### W17 — what remains at 87, honestly
+
+| n | rule | why it is still there |
+|---|---|---|
+| 50 | AGENT-034 Shell Command Execution | genuine by the title: `spawn(command, args)` with a runtime executable. This is RUN3 item 20 and it is a rule-design question, not a predicate. |
+| 11 | AGENT-110 (1 noise, 10 high) | 1 in a test path |
+| 8 | AGENT-026 SSRF | 6 are real bare/`globalThis` `fetch` calls; 1 is a trailing `//` comment on a code line; 1 is a `this.#fetch` private field |
+| 7 | AGENT-034 Dangerous Code Execution | `eval`, `new Function`, `vm.runInNewContext` — correct by the rule |
+| 5 | AGENT-041 (2 noise, 3 high) | |
+| 5 | AGENT-115 (1 noise, 4 high) | |
+| 5 | AGENT-010 | all five are genuine `prompt`/`PROMPT` interpolations |
+| 4 | AGENT-034 Tool Function Without Input Validation | the Python path, correctly gated |
+| 4 | AGENT-047 | Python `subprocess.run(command)` and two declaration-shaped lines the JS filter does not cover |
+| 2 | AGENT-004 | a truncated PEM body and one masked env value |
+| 2 | AGENT-045 | one `exposeFunction`, one multi-line `page.evaluate(` |
+| 1 | AGENT-020 | |
+
+**58 of the remaining 87 are AGENT-034**, and by the rule's own emitted title they are
+correct. Closing them is item 20 and item 25, not another predicate.
+
+---
+
+## W16 — triage of the 20 restored MCP findings
+
+First, the set had to be established rather than assumed. Scanning `tests/fixtures` with
+the tool at `2e80a59` (pre-W10) and at `1c297d8` (post-W10), same interpreter, same
+corpus:
+
+```
+2e80a59 -> 267 findings
+1c297d8 -> 287 findings
+```
+
+**Exactly +20**, and the set difference is the 20 below. Every one is in an MCP config
+file, confirming the diagnosis was MCP-specific.
+
+| # | rule | fixture | verdict | reason, against the rule's published definition |
+|---|---|---|---|---|
+| 1 | AGENT-032 | `agent_architecture/vulnerable_hooks/.mcp.json` | **TP** | stdio transport, no sandbox |
+| 2 | AGENT-030 | `asi-04-supply-chain/direct/mcp_excessive_permissions.json` | **TP** | `mcp-server-postgres`, no version pin |
+| 3 | AGENT-032 | same | **TP** | stdio, no sandbox |
+| 4 | AGENT-029 | `asi-04-supply-chain/direct/mcp_standalone_json.json` | **TP** | filesystem server rooted at `/` |
+| 5 | AGENT-030 | same | **TP** | unpinned `@anthropic-ai/mcp-server-filesystem` |
+| 6 | AGENT-032 | same | **TP** | stdio, no sandbox |
+| 7 | AGENT-030 | `benign/validated/mcp_restricted.json` | **TP**, corpus disagrees | the package is genuinely unpinned. The fixture is "restricted" in *permissions* — path `./workspace`, `alwaysAllow: [read_file]` — not in *supply chain*. The rule is right and the file's negative label is about a different axis. |
+| 8 | AGENT-004 | `mcp_configs/claude_desktop_config.json` | **FP** | the value is `AKIAIOSFODNN7EXAMPLE`, the AWS documentation example key. `rule_context_config.py` names that exact string in a comment as something that should be suppressed. Reported at confidence 1.0 / BLOCK. |
+| 9 | AGENT-005 | same | **TP** | the config carries `"verified": false` |
+| 10 | AGENT-030 | same | **TP** | unpinned uvx `mcp-server-sqlite` |
+| 11 | AGENT-031 | same | **TP** | the key IS hardcoded rather than a `${VAR}` reference; AGENT-031 claims hardcoding, not credential validity, so the example value does not refute it |
+| 12 | AGENT-032 | same | **TP** | stdio, no sandbox |
+| 13 | AGENT-033 | same | **TP** | `http://…/sse`, no auth configured |
+| 14 | AGENT-029 | `mcp_configs/supply_chain_vulnerable.json` | **AMBIGUOUS** | the server declares *no* path argument at all. The finding's own text is "no explicit path restriction configured", but the rule is "Overly Broad Filesystem". Absent configuration is a proxy for broad access, not the same claim. |
+| 15 | AGENT-030 | same | **TP** | unpinned `some-unknown-mcp-package` |
+| 16 | AGENT-004 | `mcp_configs/vulnerable_config.json` | **TP** | `sk-` followed by 48 hex characters |
+| 17 | AGENT-005 | same | **TP** | `mcp://sketchy-domain.example.com`, no verification |
+| 18 | AGENT-029 | same | **TP** | filesystem server rooted at `/` |
+| 19 | AGENT-031 | same | **TP** | hardcoded `API_KEY` |
+| 20 | AGENT-032 | same | **TP** | stdio, no sandbox |
+
+**18 TP / 1 FP / 1 AMBIGUOUS.**
+
+**Verdict: the labelling-gap explanation is confirmed.** 18 of the 20 are correct against
+the rules' own published definitions, and the corpus simply does not label them. The
+family does not have a precision problem that the wiring bug was hiding. The proposed
+narrowing predicate is therefore not needed and is not proposed.
+
+**But two things the triage found are worth more than the verdict.**
+
+1. **The one FP is at confidence 1.0 / BLOCK, and so are all nineteen others.** Every one
+   of the 20 carries `confidence=1.0` and `tier=BLOCK`. `cli/commands/scan.py` constructs
+   MCP security findings with no `confidence=` argument at all, so they take the
+   `Finding` default. **No analyzer is in the loop on this path**: the AGENT-004 that the
+   secret scanner produces goes through `semantic_analyzer` → `placeholder_detector` →
+   `value_analyzer`, which is exactly the machinery that exists to catch
+   `AKIAIOSFODNN7EXAMPLE`; the AGENT-004 that the MCP path produces goes through none of
+   it. That is the wiring pattern again, at rule granularity rather than module
+   granularity, and it is why the family's single false positive is a BLOCK rather than a
+   SUPPRESSED. Logged as DECISIONS item 26.
+2. **Findings 8 and 11 are the same config line reported twice**, once as AGENT-004
+   ("Hardcoded Credentials") and once as AGENT-031 ("Sensitive Env Exposure"), both at
+   BLOCK. Not wrong, but the same same-line redundancy `RULE_SUBSUMPTION_MAP` exists for.
+
+### Layer 1 precision, both ways
+
+Measured at `38fe5bd`, `PYTHONHASHSEED` pinned, four seeds, identical results:
+
+```
+True Positives: 196   False Positives: 90   False Negatives: 40
+Precision: 68.53%   Recall: 83.05%   F1-Score: 75.10%
+```
+
+| basis | precision | note |
+|---|---|---|
+| as measured | **0.6853** | 196 / 286 |
+| excluding the 1 AMBIGUOUS from the denominator | **0.6877** | 196 / 285 |
+| if the 18 TP-by-definition were labelled | **0.7483** | 214 / 286 |
+
+**Which one the ratchet should sit on: the as-measured 0.6853, unchanged from the current
+0.66 floor.** The ratchet's job is catching regression in what the script actually
+produces, and the script produces 0.6853. Moving it onto a basis that subtracts findings
+the script still emits would make the floor unfalsifiable by the same script that has to
+enforce it. The 0.7483 figure is the argument for adding the labels — which is Heady's
+call, item 27 — not for changing the floor now. **I did not change the ratchet.**
+
+Worth recording: Layer 1 precision *rose* 0.6829 → 0.6853 across the ten W17 patterns,
+with TP 196 and FN 40 **unchanged**. Ten denoise patterns, one Layer 1 false positive
+removed, and **zero true positives lost**.
+
+---
+
+## W18.1 — Where the live gate configuration is
+
+**`tests/benchmark/gates.yaml`.** `quality_gate_check.py` reads it by default:
+
+```
+$ grep -n "default=" tests/benchmark/quality_gate_check.py
+207:    parser.add_argument("--config", default="tests/benchmark/gates.yaml", ...)
+208:    parser.add_argument("--results", default="results/", ...)
+```
+
+**Exit 0 on current results:**
+
+```
+$ python3 tests/benchmark/quality_gate_check.py
+  config: tests/benchmark/gates.yaml
+  ℹ️ [INFO] Layer 1 precision 68.3% below target 90% (aspirational, non-blocking)
+  ℹ️ [INFO] Layer 1 recall 83.1% below target 85% (aspirational, non-blocking)
+  ℹ️ [INFO] Layer 1 F1 75.0% below target 87% (aspirational, non-blocking)
+Summary: 0 failures, 0 warnings, 0 skipped, 3 below target (non-blocking)
+exit=0
+```
+
+**Exit 1 one point below the ratchet** — a copy of `results/` with precision set to 0.65
+against the 0.66 floor, written outside the repository:
+
+```
+$ python3 tests/benchmark/quality_gate_check.py --results <scratch>/gate_probe/
+  config: tests/benchmark/gates.yaml
+  ❌ [FAIL] Layer 1 precision 65.0% < 66%
+Summary: 1 failures, 0 warnings, 0 skipped, 3 below target (non-blocking)
+🚫 QUALITY GATE BLOCKED — fix failures before merging
+exit=1
+```
+
+`tests/benchmark/quality_gates_v2.yaml` is still on disk and is referenced by nothing.
+**Not deleted** — the W9 guard protects that filename and this is Heady's `git rm`, as
+RUN3 recorded (DECISIONS item 12). The consolidated gate landed at `gates.yaml`, which is
+the path this section was asked to establish.
+
+One thing found while proving it, and then corrected: the committed
+`results/layer1.json` still reads FP 91 / P 0.6829 — the W12 measurement, not HEAD's
+FP 90 / P 0.6853 — so the exit-0 above graded a stale input. I first wrote that down as a
+gate defect, then checked, and it is not one in CI:
+
+```
+$ grep -n "layer1.json" tests/benchmark/run_all.sh .github/workflows/benchmark.yml
+tests/benchmark/run_all.sh:19:    --output-json "$RESULTS_DIR/layer1.json" \
+.github/workflows/benchmark.yml:34:            --output-json results/layer1.json \
+```
+
+Both refresh the file immediately before the gate runs. The staleness is confined to a
+manual `quality_gate_check.py` invocation on a tree where nobody ran the benchmark first,
+which is what I did. Recorded because a reader doing the same thing will see a number
+that is one measurement old, and because the committed file is now two runs behind the
+code — DECISIONS item 28, a refresh rather than a defect.
+
+## W18.2 — Every quoted Layer 1 / AVB number, and its current value
+
+### The run-to-run spread, measured
+
+RUN3 found the Layer 1 evaluator non-deterministic under `PYTHONHASHSEED` (it matched
+findings to labels while iterating over sets) and fixed it in `cca9265`. The spread it
+recorded was **±1 TP**.
+
+I confirmed determinism at HEAD directly — `precision_recall.py` run end to end under
+`PYTHONHASHSEED` 0, 1, 7 and 42 gives one distinct result:
+
+```
+seed=   0  TP=196 FP=90 FN=40  Precision=68.53% Recall=83.05% F1=75.10%
+seed=   1  TP=196 FP=90 FN=40  Precision=68.53% Recall=83.05% F1=75.10%
+seed=   7  TP=196 FP=90 FN=40  Precision=68.53% Recall=83.05% F1=75.10%
+seed=  42  TP=196 FP=90 FN=40  Precision=68.53% Recall=83.05% F1=75.10%
+distinct results across 4 seeds: 1
+```
+
+**I could not re-measure the pre-fix distribution**, and I am not going to claim I did.
+Running the `2e80a59` copy of the harness from a `git archive` extraction produces TP 4 /
+FN 232 — its scan subprocess does not resolve the package from that tree, so the number
+is an artifact of the extraction, not a sample of the old evaluator. The pre-fix spread
+therefore stands at RUN3's observation of ±1 TP, from two consecutive runs disagreeing.
+
+Converted to the metrics, on this corpus (286 reported, 236 labelled positives):
+
+| metric | ±1 TP is worth |
+|---|---|
+| precision | ±0.0035 |
+| recall | ±0.0042 |
+| F1 | ±0.004 |
+
+**So the run-to-run spread is about ±0.004 on each metric.** Any delta below is inside
+the noise; every delta in the table below is one to two orders of magnitude above it.
+
+### The claims table
+
+Current reproducible values: commit `38fe5bd`, CPython 3.14.3, `PYTHONHASHSEED` pinned.
+Layer 1 from `python3 tests/benchmark/precision_recall.py`; AVB from
+`python3 -m "agent-vuln-bench.harness.run_eval" --tool agent-audit --dataset knowns`.
+
+| # | claim | source file | current reproducible value | delta | exceeds spread? |
+|---|---|---|---|---|---|
+| 1 | P 73.58% / R 82.63% / F1 0.778, TP 195 / FP 70 / FN 41 | `CLAUDE.md:11` | P 68.53% / R 83.05% / F1 0.751, TP 196 / FP 90 / FN 40 | P **−5.05pp**, R +0.42pp, F1 **−0.027**, FP **+20** | **YES** (P, F1, FP) |
+| 2 | same three figures | `README.md:97`, `README.md:233` | as above | as above | **YES** |
+| 3 | same three figures | `README_CN.md:98`, `README_CN.md:214` | as above | as above | **YES** |
+| 4 | R 82.63% / F1 0.778 hero tiles | `docs/index.html:923,927` | R 83.05% / F1 0.751 | F1 **−0.027** | **YES** |
+| 5 | R 82.63% / P 73.58% / F1 0.778 comparison row | `docs/index.html:1074–1076` | as row 1 | as row 1 | **YES** |
+| 6 | "F1 0.778 (raw, reproducible) — P 73.58% / R 82.63%, TP 195 / FP 70 / FN 41" | `docs/BENCHMARK-RESULTS.md:7`, `:228` | as row 1 | as row 1 | **YES** |
+| 7 | "Raw F1 0.7784 matches the documented 0.778 exactly"; transcript showing P 73.58% / R 82.63% / F1 77.84% | `docs/F1_REPRODUCTION.md:35,38` | F1 75.10% | **−0.027** | **YES** |
+| 8 | adjusted F1 0.840–0.846 table | `docs/F1_REPRODUCTION.md:50–51` | not recomputed; its inputs (TP 195 / FP 30–33) have moved | inputs stale | **YES** (indirect) |
+| 9 | `"f1_score": 0.7784431137724551` | `results/layer1_v0.19.0.json:7` | 0.7510 | **−0.027** | **YES** |
+| 10 | `"false_positives": 91, "precision": 0.6829` | `results/layer1.json` | FP 90, P 0.6853 | FP −1, P +0.0024 | precision **no**, FP count yes |
+| 11 | "49 Detection Rules" | `docs/index.html:919` | 72 advertised (92 incl. DeFi) | **+23** | n/a — not a metric |
+| 12 | AVB: R 94.6% / P 87.5% / F1 0.909 (AVB-19, 2026-02-19) | `docs/BENCHMARK-RESULTS.md:5,24,25` | knowns set: R 100.0% / P 88.0% / F1 0.9362 | different dataset — **not comparable** | see note |
+| 13 | AVB per-set recall 100.0% / 100.0% / 85.7%; R 95.2% / P 87.0% / F1 0.9091 over 22 samples | `results/avb_report.md` (untracked, 2026-08-11 01:02) | knowns set (12 samples): R 100.0% / P 88.0% / F1 0.9362 | different sample set | see note |
+| 14 | Precision 98.51% / Recall 100% / F1 99.25% / FP rate 1.49% | `tests/README.md:116–120`, `:279–281` | P 68.53% / R 83.05% / F1 75.10% / FP rate 31.47% | P **−30.0pp**, F1 **−0.24** | **YES**, by far the largest |
+| 15 | "Precision: 98.51% → 100%", "F1 Score: 100%" | `CHANGELOG.md:175,177` | as above | as above | **YES** — but it is a v0.5.0 changelog entry, historically scoped |
+| 16 | "validated against 18,899 ClawHub skills at 80% precision" | `README.md:146` | not reproducible from this repository | unverifiable here | separate claim |
+| 17 | "BLOCK-tier precision: 80% (16/20 TP, Wilson CI 58.4–91.9%)" | `blog_post.md:88`, `twitter_thread.md:85` | not recomputed — a 20-sample manual draw, not a script output | unverifiable here | separate claim |
+| 18 | "Test count: 1542 collected (1541 passing, 1 skipped)" | `CLAUDE.md:11` | 1731 passed, 1 skipped | **+190** | n/a — not a metric |
+| 19 | Version 0.19.0 | `CLAUDE.md:5` | `agent_audit.__version__` is 0.19.2 | +2 patch | n/a |
+
+**Nothing in this table was edited.** Every row is a report.
+
+**The one that matters most.** Rows 1–9 all trace to a single measurement, and the delta
+has a known and innocent cause: **20 of the +20 false positives are the MCP findings
+W10 made reachable**, of which W16 has now shown 18 are correct against the rules' own
+definitions and simply unlabelled. Published precision fell because the tool started
+finding things the corpus never labelled. It is a labelling gap, not a regression — and
+the F1 0.778 figure additionally sat at the high end of a ±1 TP coin flip when it was
+recorded. Both facts have to travel with the number wherever it has gone.
+
+**Row 14 is the one I would look at first anyway.** `tests/README.md` claims P 98.51% /
+F1 99.25% against a v2.1 ground truth from 2026-02-04. That is 30 points of precision
+above the current reproducible figure, it predates GT v2.2, and unlike rows 1–9 it has no
+retraction note attached. `docs/F1_REPRODUCTION.md` already carries a retraction for the
+0.842 adjusted figure; nothing carries one for 98.51%.
+
+**Rows 12 and 13 are not deltas.** AVB has been run against three different sample sets
+(19, 22, and the 12-sample `knowns`) and the numbers are not comparable across them.
+The P0A invariant is the `knowns` set, and it is **unchanged at R 100.0% / P 88.0% /
+F1 0.9362** — verified at HEAD, output below in the invariants section. What is worth
+flagging is that `docs/BENCHMARK-RESULTS.md` puts an F1 of 0.909 in a headline position
+with the caveat in a block quote above it, and `results/avb_report.md` is an untracked
+artifact reporting a fourth combination.
