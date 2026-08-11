@@ -2,9 +2,10 @@
 
 import json
 import logging
+import os
 import re
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Set
+from typing import List, Dict, Any, Iterator, Optional, Set
 from dataclasses import dataclass, field
 
 import yaml
@@ -82,6 +83,9 @@ class MCPConfigScanner(BaseScanner):
         '*.mcp.json',
         '.cursor/mcp.json',
     ]
+
+    # Directories never descended into during recursive config discovery.
+    SKIP_DIRS = {'node_modules', '.git', '__pycache__', '.venv', 'venv'}
 
     # Trusted MCP server sources
     TRUSTED_SOURCES = [
@@ -203,10 +207,16 @@ class MCPConfigScanner(BaseScanner):
 
     def _find_config_files(self, path: Path) -> List[Path]:
         """
-        Find MCP configuration files.
+        Find MCP configuration files at or below `path`.
 
-        KNOWN-003 FIX: Now scans all JSON/YAML files in directory to detect
-        MCP configs with mcpServers/servers/gateway keys, not just known filenames.
+        KNOWN-003 FIX: scans JSON/YAML files for MCP configs with
+        mcpServers/servers/gateway keys, not just known filenames.
+
+        Discovery recurses. It previously used a non-recursive `iterdir()` over
+        the scan root while every other scanner in the package uses `rglob`, so
+        a config one directory down was invisible and AGENT-029/030/032 could
+        not fire on an ordinary directory scan — the way the tool is normally
+        invoked. See TestMCPConfigRecursiveDiscovery.
         """
         if self.config_paths:
             return [p for p in self.config_paths if p.exists()]
@@ -219,48 +229,43 @@ class MCPConfigScanner(BaseScanner):
         config_files: List[Path] = []
         seen_paths: Set[str] = set()
 
-        # Check for known config file names first (highest priority)
-        for filename in self.CONFIG_FILENAMES:
-            config_path = path / filename
-            if config_path.exists():
-                config_files.append(config_path)
-                seen_paths.add(str(config_path.resolve()))
+        def consider(file_path: Path, *, sniff: bool) -> None:
+            """Record `file_path` as a config, at most once."""
+            resolved = str(file_path.resolve())
+            if resolved in seen_paths:
+                return
+            if sniff and not self._looks_like_mcp_config(file_path):
+                return
+            config_files.append(file_path)
+            seen_paths.add(resolved)
 
-        # Check .claude directory
-        claude_dir = path / '.claude'
-        if claude_dir.exists():
-            for json_file in claude_dir.glob('*.json'):
-                resolved = str(json_file.resolve())
-                if resolved not in seen_paths and self._looks_like_mcp_config(json_file):
-                    config_files.append(json_file)
-                    seen_paths.add(resolved)
-
-        # Check .cursor directory (common IDE config location)
-        cursor_dir = path / '.cursor'
-        if cursor_dir.exists():
-            for json_file in cursor_dir.glob('*.json'):
-                resolved = str(json_file.resolve())
-                if resolved not in seen_paths and self._looks_like_mcp_config(json_file):
-                    config_files.append(json_file)
-                    seen_paths.add(resolved)
-
-        # KNOWN-003 FIX: Scan all JSON/YAML files in directory for MCP config patterns
-        # This catches configs with non-standard names that contain mcpServers/servers/gateway
         json_yaml_extensions = {'.json', '.yaml', '.yml'}
-        for file_path in path.iterdir():
-            if not file_path.is_file():
+
+        for file_path in self._walk_candidate_files(path):
+            name = file_path.name
+            # Known config filenames are trusted on name alone, at any depth.
+            if name in self.CONFIG_FILENAMES:
+                consider(file_path, sniff=False)
                 continue
             if file_path.suffix.lower() not in json_yaml_extensions:
                 continue
-            resolved = str(file_path.resolve())
-            if resolved in seen_paths:
-                continue
-            # Check if file contains MCP config indicators
-            if self._looks_like_mcp_config(file_path):
-                config_files.append(file_path)
-                seen_paths.add(resolved)
+            # Everything else must actually look like an MCP config.
+            consider(file_path, sniff=True)
 
         return config_files
+
+    def _walk_candidate_files(self, root: Path) -> Iterator[Path]:
+        """Yield files below `root`, skipping dependency and VCS directories.
+
+        Skip-dirs mirror the convention used elsewhere in the package (see
+        `cli/commands/scan.py::_count_files_by_extension`). Without them the
+        recursive discovery above would read every JSON file in every vendored
+        dependency of every scanned repository.
+        """
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames if d not in self.SKIP_DIRS]
+            for filename in filenames:
+                yield Path(dirpath) / filename
 
     @staticmethod
     def _is_openapi_spec(data: dict) -> bool:
