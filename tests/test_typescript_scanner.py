@@ -1,4 +1,22 @@
-"""Tests for TypeScript/JavaScript security scanner."""
+"""Tests for TypeScript/JavaScript security scanner.
+
+**AGENT-034 is gated on a tool boundary from v0.19.3.** The rule is published as
+"Tool Function Without Input Validation" and the Python scanner has always gated it
+on `is_tool_entry_point()`; this scanner emitted the same rule ID with no such gate
+until `analysis/ts_tool_boundary_detector.py` was wired in. See
+`TypeScriptScanner._apply_tool_boundary_gate` and NIGHT_RUN_LEDGER § W20.
+
+That changes what a bare snippet means here. Every test whose subject is *whether a
+call shape is recognised* — receiver resolution, constant-argument suppression, the
+fixed-non-shell-program predicate — now writes its snippet inside a real MCP tool
+handler via `_write_ts_file`, so the predicate under test is what decides the
+outcome and not the new gate. Tests whose subject is the gate itself use
+`_write_bare_ts_file`, which produces a file with no tool entry point anywhere.
+
+Keeping the suppression tests inside a boundary matters more than it looks: if they
+kept using bare files they would still pass, but vacuously — the gate would suppress
+the finding whatever the predicate did.
+"""
 
 import tempfile
 import textwrap
@@ -15,8 +33,8 @@ def scanner():
     return TypeScriptScanner()
 
 
-def _write_ts_file(content: str, suffix: str = ".ts") -> Path:
-    """Write content to a temporary TypeScript file and return the path."""
+def _write_bare_ts_file(content: str, suffix: str = ".ts") -> Path:
+    """Write content verbatim — no tool entry point anywhere in the file."""
     tmp = tempfile.NamedTemporaryFile(
         mode="w", suffix=suffix, delete=False, encoding="utf-8"
     )
@@ -24,6 +42,32 @@ def _write_ts_file(content: str, suffix: str = ".ts") -> Path:
     tmp.flush()
     tmp.close()
     return Path(tmp.name)
+
+
+def _in_tool_boundary(content: str) -> str:
+    """Wrap a snippet in an MCP SDK tool handler.
+
+    `server.tool(name, schema, handler)` is the canonical MCP tool definition and
+    the highest-confidence pattern `detect_ts_tool_boundaries` recognises. The
+    boundary spans from the `server.tool(` line to the end of the handler scope,
+    so everything in `content` sits inside a tool entry point.
+    """
+    body = textwrap.indent(textwrap.dedent(content).strip("\n"), "  ")
+    return (
+        'import { z } from "zod";\n'
+        'server.tool("run_task", { input: z.string() }, async ({ input }) => {\n'
+        f"{body}\n"
+        "});\n"
+    )
+
+
+def _write_ts_file(content: str, suffix: str = ".ts") -> Path:
+    """Write content inside a tool entry point and return the path.
+
+    AGENT-034 is scoped to tool boundaries, so a snippet written bare would be
+    suppressed by the gate before the predicate under test ever ran.
+    """
+    return _write_bare_ts_file(_in_tool_boundary(content), suffix=suffix)
 
 
 class TestEvalDetection:
@@ -414,7 +458,9 @@ class TestScanAndConvert:
         sub_dir.mkdir()
 
         ts_file = sub_dir / "app.ts"
-        ts_file.write_text("const x = eval(input);", encoding="utf-8")
+        ts_file.write_text(
+            _in_tool_boundary("const x = eval(input);"), encoding="utf-8"
+        )
 
         safe_file = sub_dir / "safe.ts"
         safe_file.write_text("const x = 42;", encoding="utf-8")
@@ -1513,3 +1559,92 @@ class TestJsYamlVersionAwareLoad:
         manifest = '{"name":"p","dependencies":{"js-yaml":"^4.1.0"}}'
         source = "const obj = unserialize(payload);\n"
         assert len(self._deser(tmp_path, manifest, source)) >= 1
+
+
+class TestToolBoundaryGate:
+    """AGENT-034 fires inside a tool entry point and nowhere else.
+
+    `analysis/ts_tool_boundary_detector.py` shipped with 325 lines and its own test
+    file, and nothing in the package imported it. On the Python side the equivalent
+    gate — `is_tool_entry_point()` — is what keeps AGENT-034 inside a `@tool`
+    function. The TypeScript path had no such constraint from the day it shipped, so
+    the rule's published precision was never measured under the constraint its own
+    definition assumes.
+
+    The pair below is the contract: identical dangerous call, one inside a tool
+    handler and one outside.
+    """
+
+    DANGEROUS = "const out = spawnSync(userCommand, userArgs);"
+
+    def _agent_034(self, scanner, path):
+        return [f for f in scanner.scan_and_convert(path) if f.rule_id == "AGENT-034"]
+
+    def test_dangerous_call_outside_any_tool_entry_point_is_not_reported(self, scanner):
+        path = _write_bare_ts_file(f"""
+            export function helper(userCommand: string, userArgs: string[]) {{
+                {self.DANGEROUS}
+                return out.stdout;
+            }}
+        """)
+        assert self._agent_034(scanner, path) == []
+
+    def test_the_same_call_inside_a_tool_entry_point_is_reported(self, scanner):
+        path = _write_ts_file(f"""
+            {self.DANGEROUS}
+            return out.stdout;
+        """)
+        assert len(self._agent_034(scanner, path)) >= 1
+
+    @pytest.mark.parametrize(
+        "wrapper",
+        [
+            # Vercel AI SDK
+            'export const t = tool({{ description: "d", parameters: schema,'
+            ' execute: async ({{ input }}) => {{\n  {body}\n}} }});',
+            # LangChain.js
+            "class RunTool extends StructuredTool {{\n"
+            "  async _call(input: string) {{\n    {body}\n  }}\n}}",
+            # Express route handler
+            'app.post("/api/run", async (req, res) => {{\n  {body}\n}});',
+        ],
+        ids=["vercel-ai", "langchain-js", "express"],
+    )
+    def test_other_recognised_frameworks_also_open_a_boundary(self, scanner, wrapper):
+        path = _write_bare_ts_file(wrapper.format(body=self.DANGEROUS))
+        assert len(self._agent_034(scanner, path)) >= 1
+
+    def test_rules_that_are_not_tool_scoped_are_untouched(self, scanner):
+        """SQL injection and prompt injection are not scoped to a tool.
+
+        Their published definitions say nothing about tool entry points, so the
+        gate must not touch them however the file is shaped. Only AGENT-034 is in
+        `TOOL_SCOPED_RULES`, and this is what pins that.
+        """
+        path = _write_bare_ts_file("""
+            export async function report(name: string, cmd: string) {
+                const rows = await db.query(`SELECT * FROM users WHERE n = '${name}'`);
+                const prompt = `You are a helpful assistant. The user asked: ${name}.`;
+                const out = spawnSync(cmd, { shell: true });
+                return { rows, prompt, out };
+            }
+        """)
+        rule_ids = {f.rule_id for f in scanner.scan_and_convert(path)}
+        assert "AGENT-041" in rule_ids
+        assert "AGENT-010" in rule_ids
+        assert "AGENT-034" not in rule_ids
+
+    def test_a_call_below_the_handler_scope_is_outside_the_boundary(self, scanner):
+        """The boundary is a scope, not a whole file."""
+        path = _write_bare_ts_file("""
+            import { z } from "zod";
+            server.tool("safe", { a: z.string() }, async ({ a }) => {
+                return a.trim();
+            });
+
+            export function laterHelper(cmd: string) {
+                return spawnSync(cmd, { shell: true });
+            }
+        """)
+        findings = self._agent_034(scanner, path)
+        assert findings == [], [f.location.start_line for f in findings]

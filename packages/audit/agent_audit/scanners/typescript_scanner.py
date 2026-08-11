@@ -39,8 +39,20 @@ from agent_audit.models.finding import (
 )
 from agent_audit.models.risk import Severity, Category, Location
 from agent_audit.scanners.base import BaseScanner, ScanResult
+from agent_audit.analysis.ts_tool_boundary_detector import (
+    detect_ts_tool_boundaries,
+    is_within_tool_boundary,
+)
 
 logger = logging.getLogger(__name__)
+
+# Rules whose published definition scopes them to an agent tool entry point.
+# AGENT-034 is "Tool Function Without Input Validation" (CWE-20) in docs/RULES.md
+# and in rules/builtin/asi_coverage_v030.yaml; the Python scanner gates it on
+# `tool_boundary_detector.is_tool_entry_point()`. This scanner emitted the same
+# rule ID with no such gate from the day it shipped — see TOOL_SCOPED_RULES use
+# below and NIGHT_RUN_LEDGER § W20.
+TOOL_SCOPED_RULES: frozenset = frozenset({"AGENT-034"})
 
 
 # ============================================================================
@@ -715,9 +727,44 @@ class TypeScriptScanner(BaseScanner):
         # Unsafe deserialization detection (always regex-based, patterns are simple)
         findings.extend(self._scan_unsafe_deserialization(lines, file_str))
 
+        findings = self._apply_tool_boundary_gate(findings, content)
+
         if findings:
             return TSScanResult(source_file=file_str, findings=findings)
         return None
+
+    @staticmethod
+    def _apply_tool_boundary_gate(
+        findings: List[TSFinding], content: str
+    ) -> List[TSFinding]:
+        """Drop tool-scoped findings that sit outside any tool entry point.
+
+        `analysis/ts_tool_boundary_detector.py` is the TypeScript counterpart of the
+        gate the Python scanner applies through `is_tool_entry_point()`. It shipped
+        with 325 lines and a full test file, and until now nothing in the package
+        imported it — so AGENT-034 on TypeScript was unbounded for its entire life,
+        and its published precision was never measured under the constraint its own
+        definition assumes.
+
+        Applied once per file, after both the tree-sitter and the regex paths have
+        run, so the two cannot diverge. Only rules in `TOOL_SCOPED_RULES` are
+        affected; SQL injection, prompt injection, SSRF and unsafe deserialization
+        are not scoped to a tool boundary by their definitions and pass through.
+
+        Membership only — the detector's `get_tool_confidence_boost` is deliberately
+        not used. This gate decides whether a finding is in scope; it does not move
+        any confidence value.
+        """
+        if not any(f.rule_id in TOOL_SCOPED_RULES for f in findings):
+            return findings
+
+        boundaries = detect_ts_tool_boundaries(content)
+        return [
+            finding
+            for finding in findings
+            if finding.rule_id not in TOOL_SCOPED_RULES
+            or is_within_tool_boundary(finding.line, boundaries) is not None
+        ]
 
     # ========================================================================
     # Tree-sitter-based analysis
