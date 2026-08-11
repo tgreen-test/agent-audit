@@ -11,8 +11,8 @@ accounted for in NIGHT_RUN_LEDGER.md § W14 and DECISIONS.md item 21.
 Next session starts at DECISIONS.md item 18: wire the TypeScript scanner to
 context_classifier.py. Worth 174 of the remaining 375, additive, no new capability.
 
-Read `RUN3_REPORT.md` first when it exists, then `NIGHT_RUN_LEDGER.md` § SESSION 3
-for evidence, then `DECISIONS.md` items 9–17 for what needs Heady.
+Then `NIGHT_RUN_LEDGER.md` § SESSION 3 for evidence, then `DECISIONS.md` items 9-21
+for what needs Heady.
 
 ## Current commit
 
@@ -64,26 +64,29 @@ Out of scope by construction: any threshold or confidence-floor change.
   contributed exactly zero. Gate consolidated into `tests/benchmark/gates.yaml`
   with a blocking ratchet (0.66 / 0.81 / 0.72) and a non-blocking target tier.
 
-## W14 plan, corrected against measured data
+## W14 outcome against the plan
 
-The brief's bucketing is wrong by a factor of three on the largest pattern. Real
-distribution from `./run_eval.sh --commit 1c297d8 --verbose`:
+The brief's bucketing was wrong by a factor of three on the largest pattern.
+Distribution at the start of W14, from `./run_eval.sh --commit 1c297d8 --verbose`,
+with where each family ended up:
 
-| noise | rule |
-|---|---|
-| 474 | AGENT-004 Hardcoded Credentials (the 40-hex-in-Markdown pattern) |
-| 466 | AGENT-034 Shell Command Execution + 2 sibling titles |
-| 84 | AGENT-026 SSRF |
-| 36 | AGENT-041 SQL Injection via Template String |
-| 36 | AGENT-047 Subprocess Without Sandbox |
-| 60 | everything else |
+| before | after | rule |
+|---|---|---|
+| 474 | **2** | AGENT-004 Hardcoded Credentials (the 40-hex pattern; it is YAML, not Markdown) |
+| 466 | 191 | AGENT-034 Shell Command Execution + 2 sibling titles |
+| 84 | 84 | AGENT-026 SSRF — never reached |
+| 39 (3 high) | **5 (3 high)** | AGENT-041 SQL Injection via Template String |
+| 36 | 36 | AGENT-047 Subprocess Without Sandbox — Python-side, out of scope |
+| 60 | 60 | everything else |
 
-Clearing the four *named* patterns lands at ~144 — short of the bar. **AGENT-026
-must be in scope as a fifth pattern** to reach ~60.
+My W13 estimate of ~144 was optimistic: receiver resolution was never going to clear
+AGENT-034, whose survivors are genuine child_process calls that the rule fires on
+regardless of input provenance. See DECISIONS.md item 20.
 
-**The one place this phase can do damage:** AGENT-041 is the only rule carrying
-both true positives and noise (3 high-value, 36 noise). All other high-value
-findings are in AGENT-110 (13) and AGENT-115 (4), which the plan does not touch.
+**The one place this phase could have done damage:** AGENT-041 is the only rule
+carrying both true positives and noise. It went 39 findings to 5 and kept all 3
+high-value ones. All other high-value findings are in AGENT-110 (13) and AGENT-115
+(4), which nothing in W14 touched.
 
 ## Environment
 
