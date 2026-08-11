@@ -53,3 +53,9 @@ v*.md
 # macOS
 .DS_Store
 eval/
+
+# SkillScanner Phase 2A snapshot — third-party Skill bytes; PRIVATE; never commit.
+# Per docs/skillscanner/eval/PROTOCOL.md §1 and the user's option-D rail (2A.0):
+# the eval run holds bytes locally; the published artifact is the manifest +
+# fetch-and-verify script only. Third-party SKILL.md bytes are not redistributable.
+eval/snapshot/private/

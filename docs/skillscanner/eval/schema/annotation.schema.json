@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/HeadyZhang/agent-audit/docs/skillscanner/eval/schema/annotation.schema.json",
+  "title": "SkillScannerAnnotation",
+  "description": "One annotation record produced by a native-speaker annotator (Pass B) or an auditor (Pass A) under PROTOCOL.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "skill_id",
+    "language",
+    "rule_id",
+    "annotator_id",
+    "verdict",
+    "rubric_pass"
+  ],
+  "properties": {
+    "skill_id": {
+      "type": "string",
+      "description": "Stable identifier of the Skill being annotated. Matches the dataset's Skill identifier (e.g., HeadyZhang/skills-crosslingual-security row id) or the relative SKILL.md path.",
+      "minLength": 1
+    },
+    "language": {
+      "type": "string",
+      "description": "Primary language of the Skill as declared in the dataset row. The annotator MUST be a native speaker of this language (Pass B).",
+      "enum": ["en", "zh", "ja", "ko", "es", "fr", "de", "pt"]
+    },
+    "rule_id": {
+      "type": "string",
+      "description": "Rule the finding was emitted under. For Pass A this is an AGENT-* code-level rule; for Pass B this is SKILL-010.",
+      "pattern": "^(SKILL|AGENT)-[0-9]{3}$"
+    },
+    "annotator_id": {
+      "type": "string",
+      "description": "Stable, pseudonymous identifier for the annotator (e.g., 'ja-A', 'ja-B', 'ja-adjudicator'). Same identifier MUST refer to the same human across records.",
+      "minLength": 1
+    },
+    "verdict": {
+      "type": "string",
+      "description": "Final label for this finding. TP = the scanner's flag was correct; FP = the scanner's flag was incorrect.",
+      "enum": ["TP", "FP"]
+    },
+    "rubric_pass": {
+      "type": "boolean",
+      "description": "Pass B only. TRUE iff the description contains >=1 sentence communicating the Skill's functionality, written in the Skill's primary language. PROTOCOL §3.2: rubric_pass=true => verdict='FP'; rubric_pass=false => verdict='TP'. The two fields are intentionally redundant to catch annotator slips."
+    },
+    "is_adjudication": {
+      "type": "boolean",
+      "description": "TRUE iff this record is the third-annotator adjudication that resolves a disagreement (PROTOCOL §3.4). The adjudication record's verdict is the ground truth for that skill_id+rule_id pair.",
+      "default": false
+    },
+    "notes": {
+      "type": "string",
+      "description": "Optional free-text annotator notes. Kept verbatim; not used in scoring."
+    }
+  },
+  "allOf": [
+    {
+      "description": "Consistency: rubric_pass=true must imply verdict=FP; rubric_pass=false must imply verdict=TP (PROTOCOL §3.2 binary rubric).",
+      "oneOf": [
+        {
+          "properties": {
+            "rubric_pass": { "const": true },
+            "verdict": { "const": "FP" }
+          },
+          "required": ["rubric_pass", "verdict"]
+        },
+        {
+          "properties": {
+            "rubric_pass": { "const": false },
+            "verdict": { "const": "TP" }
+          },
+          "required": ["rubric_pass", "verdict"]
+        }
+      ]
+    }
+  ]
+}

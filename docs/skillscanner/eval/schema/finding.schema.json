@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/HeadyZhang/agent-audit/docs/skillscanner/eval/schema/finding.schema.json",
+  "title": "SkillScannerFinding",
+  "description": "A single finding emitted by the agent-audit SkillScanner. Compatible-by-subset with agent_audit.models.finding.Finding: rule_id, tier, confidence, file_path, line, and message map onto the existing dataclass. Additional fields (language, layer) are SkillScanner-specific and are required for cross-lingual evaluation. judge_model and judge_prompt_version are required on SKILL-010 emits so every behavioral finding carries the judge provenance (PLAN §2.3.1 Judge Freeze).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "rule_id",
+    "tier",
+    "language",
+    "file",
+    "line",
+    "message",
+    "confidence",
+    "layer"
+  ],
+  "properties": {
+    "rule_id": {
+      "type": "string",
+      "description": "Rule identifier. Behavioral / policy: SKILL-NNN. Code-level (Layer 2): existing AGENT-NNN reused via PythonScanner / PrivilegeScanner.",
+      "pattern": "^(SKILL|AGENT)-[0-9]{3}$"
+    },
+    "tier": {
+      "type": "string",
+      "description": "Reporting tier from confidence_to_tier(). Behavioral SkillScanner rules are clamped to a ceiling of WARN (PLAN §2.4).",
+      "enum": ["BLOCK", "WARN", "INFO", "SUPPRESSED"]
+    },
+    "language": {
+      "type": "string",
+      "description": "Detected primary language of the Skill (per skill_language_router). 'unsupported' triggers NullJudge and suppresses behavioral emit.",
+      "enum": ["en", "zh", "ja", "ko", "es", "fr", "de", "pt", "unsupported"]
+    },
+    "file": {
+      "type": "string",
+      "description": "Forward-slash-normalized path to the SKILL.md (matches Location._normalize_path).",
+      "minLength": 1
+    },
+    "line": {
+      "type": "integer",
+      "description": "1-based start line of the finding within the SKILL.md.",
+      "minimum": 1
+    },
+    "message": {
+      "type": "string",
+      "description": "Human-readable description; corresponds to Finding.description.",
+      "minLength": 1
+    },
+    "confidence": {
+      "type": "number",
+      "description": "Confidence in [0.0, 1.0]. Tier is derived from this by confidence_to_tier() with a WARN ceiling for behavioral layer.",
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "layer": {
+      "type": "string",
+      "description": "Which SkillScanner layer produced this finding. 'frontmatter' = Layer 1 (SKILL-000), 'code' = Layer 2 (AGENT-* via PythonScanner/PrivilegeScanner), 'behavioral' = Layer 3 (SKILL-010, never BLOCK), 'policy' = Layer 4 (SKILL-020, INFO only).",
+      "enum": ["frontmatter", "code", "behavioral", "policy"]
+    },
+    "judge_verdict": {
+      "type": "string",
+      "description": "For behavioral findings, the DescriptionJudge verdict that produced the emit. Only 'vague' produces a finding; 'clear' and 'cannot_judge' must NOT emit (fail-closed-to-silent, PLAN §0 constraint #4).",
+      "enum": ["clear", "vague", "cannot_judge"]
+    },
+    "judge_backend": {
+      "type": "string",
+      "description": "Which DescriptionJudge backend produced the verdict. NullJudge MUST never appear with judge_verdict='vague'.",
+      "enum": ["SemanticJudge", "NullJudge"]
+    },
+    "judge_reason": {
+      "type": "string",
+      "description": "Free-text reason from the DescriptionJudge backend, kept verbatim for annotation context."
+    },
+    "judge_model": {
+      "type": "string",
+      "description": "Provenance: the LLM model identifier used by SemanticJudge. Required on every SKILL-010 emit (PLAN §2.3.1 Judge Freeze). For JUDGE_PROMPT_VERSION='v2' this MUST equal 'claude-sonnet-4-6' (the pinned model id; never the 'sonnet' alias and never the retired 'claude-sonnet-4-20250514'). v2 emits via the pre-judge short-circuit (PROTOCOL §3.2.1) still stamp the model id even though no API call is made — provenance is the version tag.",
+      "minLength": 1
+    },
+    "judge_prompt_version": {
+      "type": "string",
+      "description": "Provenance: the frozen judge-prompt version tag. Required on every SKILL-010 emit. Version 'v2' is provisional until the Phase 1 freeze gate; later bumps require both prompt text and recorded sha256 to change.",
+      "pattern": "^v[0-9]+$"
+    },
+    "cwe_id": {
+      "type": "string",
+      "description": "Optional CWE identifier for code-level findings reused via AGENT-* IDs.",
+      "pattern": "^CWE-[0-9]+$"
+    },
+    "owasp_id": {
+      "type": "string",
+      "description": "Optional OWASP Agentic Top 10 identifier (ASI-01 .. ASI-10).",
+      "pattern": "^ASI-[0-9]{2}$"
+    }
+  },
+  "allOf": [
+    {
+      "description": "Behavioral findings cannot reach BLOCK tier (PLAN §0 constraint #5).",
+      "if": { "properties": { "layer": { "const": "behavioral" } }, "required": ["layer"] },
+      "then": { "properties": { "tier": { "enum": ["WARN", "INFO", "SUPPRESSED"] } } }
+    },
+    {
+      "description": "Policy findings are INFO only (PLAN §2.4).",
+      "if": { "properties": { "layer": { "const": "policy" } }, "required": ["layer"] },
+      "then": { "properties": { "tier": { "enum": ["INFO", "SUPPRESSED"] } } }
+    },
+    {
+      "description": "NullJudge must never produce a vague verdict (fail-closed-to-silent).",
+      "if": {
+        "properties": { "judge_backend": { "const": "NullJudge" } },
+        "required": ["judge_backend"]
+      },
+      "then": {
+        "properties": { "judge_verdict": { "enum": ["cannot_judge"] } }
+      }
+    },
+    {
+      "description": "Every SKILL-010 emit MUST carry judge provenance (PLAN §2.3.1 Judge Freeze): judge_model and judge_prompt_version are required so the verdict can be reproduced.",
+      "if": {
+        "properties": { "rule_id": { "const": "SKILL-010" } },
+        "required": ["rule_id"]
+      },
+      "then": {
+        "required": ["judge_model", "judge_prompt_version", "judge_verdict", "judge_backend"]
+      }
+    },
+    {
+      "description": "Judge-prompt freeze: for JUDGE_PROMPT_VERSION='v2', the judge model is pinned to 'claude-sonnet-4-6'. Bumping the prompt requires bumping the version tag, which lifts this pin.",
+      "if": {
+        "properties": { "judge_prompt_version": { "const": "v2" } },
+        "required": ["judge_prompt_version"]
+      },
+      "then": {
+        "properties": { "judge_model": { "const": "claude-sonnet-4-6" } },
+        "required": ["judge_model"]
+      }
+    }
+  ]
+}
