@@ -1,4 +1,17 @@
 {
+  "provenance": {
+    "schema_version": 1,
+    "corpus_fingerprint": "515f4e47fbdc18b6fb79a563282c5768a89ed28bf6ed964ae9cd4643c3784d6c",
+    "source_fingerprint": "847ad7aba356c190d9a2ac7b510d35219aa1abdf33e1974ce345265ec3dfc2b7",
+    "git_rev": "fda9f06274eb6eb6bee132a3cd1b776f641ad5bb",
+    "generated_at": "2026-08-11T23:38:19+00:00",
+    "runtime_package": {
+      "path": "/Users/heady/Documents/Research/agent-audit/agent-security-suite/packages/audit/agent_audit",
+      "version": "0.20.0",
+      "error": null,
+      "is_this_checkout": true
+    }
+  },
   "true_positives": 199,
   "false_positives": 90,
   "false_negatives": 37,

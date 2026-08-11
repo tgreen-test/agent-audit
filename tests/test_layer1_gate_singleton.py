@@ -49,6 +49,22 @@ _LITERAL_COMPARISON = re.compile(
 )
 
 
+def _current_stamp():
+    """The real provenance stamp for this checkout.
+
+    Tests in this file invent metrics but must not invent provenance: since W38 the gate
+    refuses to evaluate a results file that cannot name the corpus and scanner behind it,
+    so a synthetic file that omits the stamp fails for a reason the test is not about.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "_layer1_provenance", BENCHMARK_DIR / "provenance.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module.current_stamp()
+
+
 def _load_evaluator():
     """Import precision_recall.py by path; tests/benchmark is not a package."""
     spec = importlib.util.spec_from_file_location("_layer1_gate_evaluator", EVALUATOR)
@@ -249,6 +265,10 @@ class TestExitContract:
         (results / "layer1.json").write_text(
             json.dumps(
                 {
+                    # Real stamp, so this blocks for the reason the test names — see
+                    # _current_stamp. Without it the gate would block on provenance and
+                    # the assertion below would pass while testing nothing.
+                    "provenance": _current_stamp(),
                     "true_positives": 1,
                     "false_positives": 0,
                     "false_negatives": 0,
@@ -265,6 +285,7 @@ class TestExitContract:
                 sys.executable, str(GATE_CHECKER),
                 "--config", str(GATES_YAML),
                 "--results", str(results),
+                "--layers", "layer1",
             ],
             capture_output=True,
             text=True,
@@ -272,6 +293,10 @@ class TestExitContract:
         assert proc.returncode == 1, (
             f"quality_gate_check.py exited {proc.returncode} on F1 one point below the "
             f"ratchet ({f1_min}).\n{proc.stdout}"
+        )
+        assert "F1" in proc.stdout and "provenance" not in proc.stdout, (
+            "it blocked, but not on the ratchet — the assertion above would pass on any "
+            f"blocking reason at all.\n{proc.stdout}"
         )
 
     def test_gate_checker_passes_on_the_ratchet(self, tmp_path):
@@ -283,6 +308,11 @@ class TestExitContract:
         (results / "layer1.json").write_text(
             json.dumps(
                 {
+                    # Synthetic metrics, real stamp. The numbers below are invented to sit
+                    # exactly on the ratchet; the stamp is the true one for this checkout,
+                    # because since W38 the gate refuses to evaluate a file that cannot say
+                    # which corpus and which scanner produced it.
+                    "provenance": _current_stamp(),
                     "true_positives": 1,
                     "false_positives": 0,
                     "false_negatives": 0,
@@ -302,6 +332,7 @@ class TestExitContract:
                 sys.executable, str(GATE_CHECKER),
                 "--config", str(GATES_YAML),
                 "--results", str(results),
+                "--layers", "layer1",
             ],
             capture_output=True,
             text=True,

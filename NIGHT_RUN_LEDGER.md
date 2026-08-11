@@ -4369,3 +4369,228 @@ new files this session    scripts/finalize_run7.sh   (untracked, uncommitted)
 No push, merge, rebase, tag or publish. No oracle, dataset, ground-truth label, fixture,
 confidence value, tier boundary or threshold modified — the script that would modify two of
 those was written, and left unrun.
+
+---
+
+# RUN 8 — session 9, 2026-08-11
+
+Opening state: `fda9f06`, `fix/py314-blocker`. `scripts/finalize_run7.sh` had been run by
+Heady and its result committed as this session's first act, with the before/after F1 in the
+commit message. Layer 1 at the open: **TP 199 / FP 90 / FN 37, P 0.688581 / R 0.843220 /
+F1 0.758095**; suite `1 failed, 1796 passed, 3 skipped` under `pytest tests/`.
+
+---
+
+## W38 — the quality gate reads a stale file, and passes when it reads nothing
+
+The eighth instance of the shape in `CAPABILITY_BOUNDARIES.md` § 3, this time with the gate
+itself in the detector's place.
+
+### The defect, measured before any change
+
+`quality_gate_check.py` decided the build by reading `results/layer1.json` and reading
+nothing else. Two ways it exited 0 while proving nothing.
+
+**A. A results file describing a tree that no longer exists.** `results/layer1.json` is
+committed, so every checkout has one whether or not anything measured it. Taking the copy
+from the immediately preceding commit — the pre-correction numbers, three labels out of date:
+
+```
+$ git show HEAD~1:results/layer1.json    # -> scratch/stale/layer1.json
+stale file says: TP=196 FP=93 FN=40 P=0.678201 R=0.830508 F1=0.746667
+
+$ python3 tests/benchmark/quality_gate_check.py --config tests/benchmark/gates.yaml \
+      --results scratch/stale
+  ℹ️ [INFO] Layer 1 precision 67.8% below target 90% (aspirational, non-blocking)
+  ℹ️ [INFO] Layer 1 recall 83.1% below target 85% (aspirational, non-blocking)
+  ℹ️ [INFO] Layer 1 F1 74.7% below target 87% (aspirational, non-blocking)
+  ⏭️ [SKIP] Agent-Vuln-Bench results not found
+Summary: 0 failures, 0 warnings, 1 skipped, 3 below target (non-blocking)
+exit=0
+```
+
+Note what that would have hidden. F1 0.746667 clears the ratchet that was raised in the same
+session to `f1_min: 0.73`, and R 0.830508 clears `recall_min: 0.82`. Running the gate to
+confirm the raise — which is exactly what `RELEASE_CHECKLIST.md` § 2 instructs — would have
+returned PASS **against the measurement the raise was supposed to be checked against**, and
+nothing in the output distinguishes that from a real pass.
+
+This is not hypothetical drift. `gates.yaml`'s own header records the historical case: the
+`results/layer1.json` committed at `a65b341` reported R 0.4746 and sat in the tree for six
+months.
+
+**B. No results file at all.**
+
+```
+$ python3 tests/benchmark/quality_gate_check.py --config tests/benchmark/gates.yaml \
+      --results scratch/empty
+  ⏭️ [SKIP] Layer 1 results not found (run precision_recall.py --output-json)
+  ⏭️ [SKIP] Agent-Vuln-Bench results not found
+Summary: 0 failures, 0 warnings, 2 skipped, 0 below target (non-blocking)
+exit=0
+```
+
+Both layers are `enabled: true, blocking: true` in `gates.yaml`. `SKIP` is not counted in the
+blocking set, so an empty results directory is a green build. A gate that evaluated the wrong
+corpus, a gate that evaluated nothing, and a gate that evaluated a passing build all print
+the same exit code.
+
+### Why the fix could not be another assertion about the numbers
+
+Every check the gate had was a statement about values. No statement about a value can
+distinguish a value with the wrong referent from one with the right referent. The fix has to
+be a statement about **where the numbers came from**, carried in the file and re-derived from
+the tree at check time.
+
+`tests/benchmark/provenance.py` fingerprints the three things a Layer 1 number is a function
+of — the labels, the corpus they point at, and the scanner source — plus a fourth the
+project has been bitten by before: which `agent_audit` the interpreter that ran the scan
+actually imported. `precision_recall.py --output-json` writes the stamp; the gate recomputes
+it and refuses to score a file that does not match.
+
+Deliberately **content**, not time. In CI the gate runs in a different job from the
+measurement and the artifact is minutes old when it is read; an age limit would fail correct
+builds and be switched off inside a week.
+
+Deliberately **no escape flag**. A `--allow-stale` would be the next place the contradiction
+hides. `--layers` exists instead, and it makes a job state which claim it is making rather
+than letting an absent file stand in for success.
+
+### After, same three commands
+
+```
+$ ... --results scratch/stale --layers layer1
+  ❌ [FAIL] Layer 1 results are not about this tree: results file carries no provenance
+     stamp, so nothing can say which corpus or which scanner produced it — regenerate with:
+     python3 tests/benchmark/precision_recall.py --output-json .../stale/layer1.json
+exit=1
+
+$ ... --results scratch/empty
+  ❌ [FAIL] Layer 1 is enabled and blocking, but its results file is missing — nothing
+     measured it. Either produce it (...) or exclude this layer from this job with --layers.
+  ❌ [FAIL] Agent-Vuln-Bench is enabled and blocking, but its results file is missing ...
+exit=1
+
+$ ... --results results/          # the real file, regenerated with a stamp
+  ℹ️ [INFO] Layer 1 precision 68.9% below target 90% (aspirational, non-blocking)
+  ℹ️ [INFO] Layer 1 recall 84.3% below target 85% (aspirational, non-blocking)
+  ℹ️ [INFO] Layer 1 F1 75.8% below target 87% (aspirational, non-blocking)
+  ℹ️ [INFO] Agent-Vuln-Bench results ... carry no provenance stamp ...
+Summary: 0 failures, 0 warnings, 0 skipped, 4 below target (non-blocking)
+exit=0
+```
+
+The stale file blocks on the reason it should, the empty directory blocks on the reason it
+should, and the honest case still exits 0 — the last one being what separates a fix from a
+blocker.
+
+### Every verification branch, proved firing rather than assumed
+
+`provenance.verify_stamp` called with the real stamp and one input swapped at a time:
+
+```
+1. against the tree it was measured on:            OK — no problems
+2. fixtures swapped for tests/differential_corpus: FAIL ground-truth labels and/or the
+     fixture corpus changed (corpus_fingerprint 515f4e47fbdc… != 5f5d5e344f16…)
+3. source swapped for .../agent_audit/scanners:    FAIL the scanner source under
+     packages/audit/agent_audit changed (source_fingerprint 847ad7aba356… != 33d776dadb6a…)
+4. stamp claiming an install outside the checkout: FAIL the measurement was produced by an
+     agent_audit outside this checkout (/usr/lib/python3/site-packages/agent_audit, 0.18.2)
+```
+
+Branch 4 is the one with no other symptom: right corpus, right scanner source, numbers
+produced by a wheel installed somewhere else. `precision_recall.py` measures by shelling out
+to `<python> -m agent_audit`, and on this machine that resolves into the checkout only
+because the install is editable.
+
+### What the results file now carries
+
+```json
+"provenance": {
+  "schema_version": 1,
+  "corpus_fingerprint": "515f4e47fbdc18b6fb79a563282c5768a89ed28bf6ed964ae9cd4643c3784d6c",
+  "source_fingerprint": "847ad7aba356c190d9a2ac7b510d35219aa1abdf33e1974ce345265ec3dfc2b7",
+  "git_rev": "fda9f06274eb6eb6bee132a3cd1b776f641ad5bb",
+  "generated_at": "2026-08-11T23:38:19+00:00",
+  "runtime_package": {"path": ".../packages/audit/agent_audit", "version": "0.20.0",
+                      "is_this_checkout": true, "error": null}
+}
+```
+
+`git_rev` and `generated_at` are recorded and **never compared** — forensics, not gates.
+
+### The measurement did not move
+
+```
+BEFORE  TP=199  FP=90  FN=37   P=0.688581  R=0.843220  F1=0.758095
+AFTER   TP=199  FP=90  FN=37   P=0.688581  R=0.843220  F1=0.758095
+```
+
+No detection code was touched. The only change to `results/layer1.json` is the new
+`provenance` block.
+
+### Guard
+
+`tests/test_gate_provenance.py`, twelve tests, asserting the *mechanism* rather than any one
+instance: unstamped results block; a wrong corpus fingerprint blocks; a wrong source
+fingerprint blocks; a measurement from another install blocks; a current stamp passes; a
+stale file is not scored underneath its own staleness failure; a missing blocking layer
+blocks; the count of blocking failures equals the count of unmeasured blocking layers; a
+layer not named in `--layers` is not checked; an unknown layer name is rejected; the
+committed `results/layer1.json` survives the check CI would apply to it; and
+`precision_recall.py --output-json` stamps what it writes — with the synthetic-corpus case
+asserted to produce a stamp that does **not** verify, so a toy measurement can never gate a
+real build.
+
+Two existing tests in `tests/test_layer1_gate_singleton.py` were repaired rather than
+deleted. `test_gate_checker_blocks_below_the_ratchet` would have kept passing after this
+change while testing nothing — it asserts `returncode == 1`, and an unstamped synthetic file
+now exits 1 for provenance rather than for the ratchet. It now writes a real stamp and
+additionally asserts the failure text mentions F1 and not provenance.
+
+```
+$ python3 -m pytest tests/ -q --tb=no
+BEFORE  1 failed, 1796 passed, 3 skipped
+AFTER   1 failed, 1808 passed, 3 skipped        (+12 = the new guard, exactly)
+```
+
+The one failure is `tests/test_corpus_label_rules.py`, red on purpose, unchanged.
+
+### Left open, deliberately
+
+* **Agent-Vuln-Bench results carry no stamp.** Same hole, other benchmark. Reported as an
+  `INFO` line by the gate rather than enforced, because stamping it is a change to the AVB
+  harness and not to this gate. Recorded in `DECISIONS.md`.
+* **`results/layer1.json` stays committed.** Its presence in every checkout is what made
+  defect A reachable, so untracking it was considered. Rejected: it is also the recorded
+  measurement, and a stamped file that fails loudly when stale is more useful than an absent
+  one that reports SKIP.
+
+---
+
+## W39 — the repository's own ignore config has been disabled since February
+
+Found while fingerprinting the corpus, not looked for.
+
+```
+$ git ls-files | grep agent-audit.yaml
+.agent-audit.yaml.bak
+packages/audit/.agent-audit.yaml
+
+$ ls -la .agent-audit.yaml*
+-rw-r--r--  294  Feb  3  2026  .agent-audit.yaml.bak
+```
+
+`precision_recall.run_scan` renames the nearest `.agent-audit.yaml` to `.yaml.bak` for the
+duration of a benchmark scan and restores it in a `finally`. On 2026-02-03 a run did not
+reach the restore, and **the renamed file was committed in that state**. The repository root
+has had no `.agent-audit.yaml` for six months: `git ls-files` shows only the `.bak`.
+
+Layer 1 is unaffected — the benchmark disables that file on purpose, so a missing one and a
+renamed one measure identically, which is exactly why nothing noticed. What is affected is
+every `agent-audit scan .` run against this repository, which has silently not honoured the
+project's own ignore rules since February.
+
+Not fixed here: restoring it changes what a scan of this repository reports, which is a
+judgement call about the project's own configuration rather than a defect in the tool.
+Recorded in `DECISIONS.md` with the one-line fix.

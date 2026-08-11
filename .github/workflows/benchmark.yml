@@ -57,11 +57,18 @@ jobs:
       # place, tests/benchmark/gates.yaml, and are evaluated by
       # quality_gate_check.py — which honours its documented exit contract
       # (0 = pass, 1 = blocking failure, 2 = warnings).
+      # NOTE (2026-08-11): --layers layer1 is required, not cosmetic. A missing results
+      # file for an enabled+blocking layer is now a FAIL rather than a SKIP — because a
+      # SKIP is not counted as a failure, and an empty results directory used to exit 0
+      # (NIGHT_RUN_LEDGER.md § W38). This job measures Layer 1 only; Agent-Vuln-Bench is
+      # measured in its own job and both are checked together by the quality-gate job
+      # below. Naming the layer is how this step says which claim it is making.
       - name: Layer 1 Quality Gate Check
         run: |
           python tests/benchmark/quality_gate_check.py \
             --config tests/benchmark/gates.yaml \
-            --results results/
+            --results results/ \
+            --layers layer1
 
   atlas-coverage:
     runs-on: ubuntu-latest
@@ -230,6 +237,12 @@ jobs:
       # the step with continue-on-error, which made the "Quality Gate" job incapable
       # of ever failing. Thresholds live in tests/benchmark/gates.yaml, the single
       # source of truth as of 2026-08-11.
+      #
+      # This job checks every layer, and both artifacts it needs are downloaded above.
+      # Note that `actions/checkout` also brings the committed results/layer1.json into
+      # the tree; if the artifact download ever failed to overwrite it, the gate now
+      # rejects it on provenance rather than gating on a file from another commit
+      # (NIGHT_RUN_LEDGER.md § W38).
       - name: Run Quality Gate (v2)
         run: |
           set +e

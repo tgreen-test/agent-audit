@@ -22,11 +22,18 @@ import logging
 import subprocess
 import sys
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import yaml
+
+# Same directory, no package here — this file is always run as a script, which puts its
+# own directory on sys.path. Written explicitly so importing it from a test by path (see
+# tests/test_layer1_determinism.py) does not depend on the caller's cwd.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import provenance  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -124,9 +131,23 @@ def load_ground_truth(path: Path) -> Dict[str, List[VulnerabilityLabel]]:
     return labels
 
 
-def run_scan(fixtures_path: Path) -> List[Finding]:
+@dataclass(frozen=True)
+class ScanOutcome:
+    """A scan's findings, plus which interpreter produced them.
+
+    The interpreter is part of the result, not an implementation detail: this script
+    measures by shelling out to `<python> -m agent_audit`, so the build being measured is
+    whichever `agent_audit` that interpreter imports. `provenance.resolve_runtime_package`
+    asks it, and the answer goes into the stamp written alongside the numbers.
+    """
+
+    findings: List[Finding]
+    python_cmd: Optional[str] = None
+
+
+def run_scan(fixtures_path: Path) -> ScanOutcome:
     """Run agent-audit scan and parse results.
-    
+
     Temporarily disables .agent-audit.yaml ignore rules by renaming the file,
     since benchmark needs to evaluate all findings in test fixtures.
     """
@@ -162,12 +183,12 @@ def run_scan(fixtures_path: Path) -> List[Finding]:
                     break
             except subprocess.TimeoutExpired:
                 logger.error("Scan timed out")
-                return []
+                return ScanOutcome([], python_cmd)
             except FileNotFoundError:
                 continue
         else:
             logger.error("agent-audit not found - tried: " + ", ".join(python_cmds))
-            return []
+            return ScanOutcome([], None)
     finally:
         # Restore config file
         if backup_file and backup_file.exists():
@@ -176,7 +197,7 @@ def run_scan(fixtures_path: Path) -> List[Finding]:
 
     if not result.stdout.strip():
         logger.warning("Empty scan output")
-        return []
+        return ScanOutcome([], python_cmd)
 
     try:
         data = json.loads(result.stdout)
@@ -191,7 +212,7 @@ def run_scan(fixtures_path: Path) -> List[Finding]:
                     continue
         else:
             logger.error(f"Could not parse JSON: {result.stdout[:200]}")
-            return []
+            return ScanOutcome([], python_cmd)
 
     findings = []
     items = data.get("findings", data) if isinstance(data, dict) else data
@@ -221,7 +242,7 @@ def run_scan(fixtures_path: Path) -> List[Finding]:
             )
         )
 
-    return findings
+    return ScanOutcome(findings, python_cmd)
 
 
 @dataclass
@@ -505,9 +526,13 @@ def main() -> None:
         with open(args.scan_results) as f:
             data = json.load(f)
         findings = [Finding(**f) for f in data.get("findings", data)]
+        # Pre-recorded findings: no interpreter ran here, so there is no runtime package
+        # to attribute the numbers to and the stamp says so rather than guessing.
+        scan_python_cmd = None
     else:
         logger.info(f"Running scan on {args.fixtures}")
-        findings = run_scan(args.fixtures)
+        outcome = run_scan(args.fixtures)
+        findings, scan_python_cmd = outcome.findings, outcome.python_cmd
 
     logger.info(f"Got {len(findings)} findings")
 
@@ -527,7 +552,25 @@ def main() -> None:
                 "tp": metrics.tp,
             }
 
+        # The stamp says what this number is a number ABOUT: which labels, which corpus,
+        # which scanner source, and which interpreter's agent_audit actually ran. It is
+        # computed over the paths this invocation used, not the repository defaults — a
+        # measurement against a synthetic corpus must not carry the real corpus's
+        # fingerprint. quality_gate_check.py refuses to gate on a file whose stamp does
+        # not describe the tree it is checking; see tests/benchmark/provenance.py.
+        try:
+            stamp = provenance.current_stamp(
+                python_cmd=scan_python_cmd,
+                ground_truth=args.ground_truth,
+                fixtures=args.fixtures,
+                generated_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            )
+        except provenance.ProvenanceError as exc:
+            logger.warning(f"Could not compute a provenance stamp: {exc}")
+            stamp = {"schema_version": provenance.SCHEMA_VERSION, "error": str(exc)}
+
         output = {
+            "provenance": stamp,
             "true_positives": result.true_positives,
             "false_positives": result.false_positives,
             "false_negatives": result.false_negatives,
