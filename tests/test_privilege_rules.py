@@ -728,3 +728,92 @@ echo "agent ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
         scanner = PrivilegeScanner()
         findings = scanner.scan_and_convert(tmp_path)
         assert findings == []
+
+
+class TestBrowserEvaluateCallbackLiteral:
+    """
+    AGENT-045 is "Browser Automation Without Sandbox". `page.evaluate(() => {
+    ... })` passes a function literal compiled from the file being scanned: no
+    injected script, no weakened sandbox, so neither half of the title holds.
+    16 of the 17 AGENT-045 findings on the audit target were literal callbacks
+    in Playwright end-to-end tests.
+
+    Scoped to page.evaluate alone, deliberately. addScriptTag and exposeFunction
+    take an options object whose *content* is the dangerous part, so "the
+    argument is an object literal" would suppress exactly the shape that matters
+    there. The explicit sandbox-weakening flags are untouched — they say
+    "without sandbox" outright.
+
+    Regression source: the audit-target measurement recorded in
+    NIGHT_RUN_LEDGER.md section W17, pattern 7.
+    """
+
+    def _browser(self, tmp_path, body, name="probe.ts"):
+        target = tmp_path / name
+        target.write_text(body, encoding="utf-8")
+        scanner = PrivilegeScanner()
+        return [
+            f for f in scanner.scan_and_convert(target) if f.rule_id == "AGENT-045"
+        ]
+
+    # --- Must NOT trigger: literal callbacks -------------------------------
+
+    def test_arrow_callback_not_flagged(self, tmp_path):
+        body = (
+            "import { test } from '@playwright/test';\n"
+            "test('x', async ({ page }) => {\n"
+            "  await page.evaluate(() => document.title);\n"
+            "});\n"
+        )
+        assert self._browser(tmp_path, body) == []
+
+    def test_async_arrow_callback_not_flagged(self, tmp_path):
+        body = (
+            "import { chromium } from 'playwright';\n"
+            "await page.evaluate(async () => { await window.ready; });\n"
+        )
+        assert self._browser(tmp_path, body) == []
+
+    def test_parameterised_arrow_callback_not_flagged(self, tmp_path):
+        body = (
+            "import { chromium } from 'playwright';\n"
+            "await page.evaluate((width) => window.resizeTo(width, 800), 1024);\n"
+        )
+        assert self._browser(tmp_path, body) == []
+
+    def test_function_expression_callback_not_flagged(self, tmp_path):
+        body = (
+            "const puppeteer = require('puppeteer');\n"
+            "await page.evaluate(function () { return document.body.innerHTML; });\n"
+        )
+        assert self._browser(tmp_path, body) == []
+
+    # --- Must STILL trigger -------------------------------------------------
+
+    def test_variable_script_flagged(self, tmp_path):
+        body = (
+            "import { chromium } from 'playwright';\n"
+            "await page.evaluate(userSuppliedScript);\n"
+        )
+        assert len(self._browser(tmp_path, body)) >= 1
+
+    def test_no_sandbox_flag_flagged(self, tmp_path):
+        body = (
+            "import { chromium } from 'playwright';\n"
+            "const browser = await chromium.launch({ args: ['--no-sandbox'] });\n"
+        )
+        assert len(self._browser(tmp_path, body)) >= 1
+
+    def test_bypass_csp_flagged(self, tmp_path):
+        body = (
+            "import { chromium } from 'playwright';\n"
+            "await page.setBypassCSP(true);\n"
+        )
+        assert len(self._browser(tmp_path, body)) >= 1
+
+    def test_disable_web_security_flagged(self, tmp_path):
+        body = (
+            "const puppeteer = require('puppeteer');\n"
+            "await puppeteer.launch({ args: ['--disable-web-security'] });\n"
+        )
+        assert len(self._browser(tmp_path, body)) >= 1

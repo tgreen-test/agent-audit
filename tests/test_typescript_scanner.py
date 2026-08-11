@@ -1422,3 +1422,76 @@ class TestWeakPromptNames:
             const prompt = `Rewrite this: ${userText}`;
         """)
         assert len(self._prompts(scanner, path)) == 1
+
+
+class TestJsYamlVersionAwareLoad:
+    """
+    js-yaml renamed `safeLoad` to `load` in v4 (2021). From v4 onward `load`
+    uses DEFAULT_SCHEMA, which does not construct arbitrary JavaScript objects;
+    the unsafe entry points are `unsafeLoad` and an explicit full schema. In v3
+    `load` genuinely was the unsafe loader, which is why the pattern exists.
+
+    So whether `yaml.load(x)` is a finding depends on the declared dependency,
+    not on the call alone. The nearest package.json above the file decides it,
+    and only a range that clearly admits v4 or later suppresses. No declaration,
+    an unreadable manifest, or a range admitting v3 leaves the finding in place —
+    which is the direction that keeps a v3 project reported.
+
+    Regression source: the audit-target measurement recorded in
+    NIGHT_RUN_LEDGER.md section W17, pattern 8.
+    """
+
+    def _deser(self, tmp_path, manifest, source):
+        pkg = tmp_path / "pkg"
+        (pkg / "src").mkdir(parents=True)
+        if manifest is not None:
+            (pkg / "package.json").write_text(manifest, encoding="utf-8")
+        target = pkg / "src" / "load.ts"
+        target.write_text(source, encoding="utf-8")
+        scanner = TypeScriptScanner()
+        return [
+            f for f in scanner.scan_and_convert(target) if f.rule_id == "AGENT-049"
+        ]
+
+    CALL = "const parsed = yaml.load(readFileSync(path, 'utf8'));\n"
+
+    # --- Must NOT trigger: v4 and later ------------------------------------
+
+    def test_caret_v4_not_flagged(self, tmp_path):
+        manifest = '{"name":"p","dependencies":{"js-yaml":"^4.1.0"}}'
+        assert self._deser(tmp_path, manifest, self.CALL) == []
+
+    def test_exact_v4_not_flagged(self, tmp_path):
+        manifest = '{"name":"p","devDependencies":{"js-yaml":"4.2.0"}}'
+        assert self._deser(tmp_path, manifest, self.CALL) == []
+
+    def test_v5_not_flagged(self, tmp_path):
+        manifest = '{"name":"p","dependencies":{"js-yaml":">=5.0.0"}}'
+        assert self._deser(tmp_path, manifest, self.CALL) == []
+
+    # --- Must STILL trigger -------------------------------------------------
+
+    def test_v3_still_flagged(self, tmp_path):
+        """v3 load IS the unsafe loader — the case the pattern was written for."""
+        manifest = '{"name":"p","dependencies":{"js-yaml":"^3.14.1"}}'
+        assert len(self._deser(tmp_path, manifest, self.CALL)) >= 1
+
+    def test_no_manifest_still_flagged(self, tmp_path):
+        assert len(self._deser(tmp_path, None, self.CALL)) >= 1
+
+    def test_manifest_without_js_yaml_still_flagged(self, tmp_path):
+        manifest = '{"name":"p","dependencies":{"zod":"^3.0.0"}}'
+        assert len(self._deser(tmp_path, manifest, self.CALL)) >= 1
+
+    def test_unreadable_manifest_still_flagged(self, tmp_path):
+        assert len(self._deser(tmp_path, "{not json", self.CALL)) >= 1
+
+    def test_unsafe_load_still_flagged_on_v4(self, tmp_path):
+        manifest = '{"name":"p","dependencies":{"js-yaml":"^4.1.0"}}'
+        source = "const parsed = yaml.load(doc, { schema: DEFAULT_FULL_SCHEMA });\n"
+        assert len(self._deser(tmp_path, manifest, source)) >= 1
+
+    def test_other_deserialization_patterns_unaffected(self, tmp_path):
+        manifest = '{"name":"p","dependencies":{"js-yaml":"^4.1.0"}}'
+        source = "const obj = unserialize(payload);\n"
+        assert len(self._deser(tmp_path, manifest, source)) >= 1

@@ -150,6 +150,24 @@ class PrivilegeScanner(BaseScanner):
         'screenshot', 'pdf', 'title', 'url', 'content', 'textContent',
     }
 
+    # `page.evaluate(() => { ... })` passes a function literal, which is
+    # compiled from this source file and carries no untrusted input. The rule is
+    # "Browser Automation Without Sandbox"; a literal callback neither weakens a
+    # sandbox nor introduces attacker-controlled script. What the rule is for is
+    # `page.evaluate(userScript)` and `page.evaluate(`...${value}`)`, plus the
+    # explicit sandbox-weakening flags, all of which still match.
+    #
+    # Scoped to `page.evaluate` alone, deliberately. addScriptTag and
+    # exposeFunction take an options object whose *content* is the dangerous
+    # part, so "the argument is an object literal" would suppress exactly the
+    # shape that matters there. --no-sandbox, --disable-web-security,
+    # setBypassCSP(true) and the devtools socket are untouched: they say
+    # "without sandbox" outright.
+    BROWSER_FUNCTION_LITERAL_ARG: re.Pattern = re.compile(
+        r"page\.evaluate\s*\(\s*(?:async\s+)?(?:function\b|\(|[A-Za-z_$][\w$]*\s*=>)",
+        re.IGNORECASE,
+    )
+
     # AGENT-046: Credential store access patterns
     CREDENTIAL_STORE_PATTERNS: List[tuple] = [
         # macOS Keychain (command line and in strings/arrays)
@@ -588,6 +606,12 @@ class PrivilegeScanner(BaseScanner):
 
         for line_num, line in enumerate(lines, start=1):
             line_lower = line.lower()
+
+            # A page.evaluate whose argument is a function literal is compiled
+            # from this file; there is no injected script and no weakened
+            # sandbox. See BROWSER_FUNCTION_LITERAL_ARG.
+            if self.BROWSER_FUNCTION_LITERAL_ARG.search(line):
+                continue
 
             # Check for dangerous patterns
             for pattern in self.BROWSER_DANGEROUS_PATTERNS:

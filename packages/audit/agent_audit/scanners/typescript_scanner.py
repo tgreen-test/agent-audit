@@ -22,6 +22,7 @@ Maps findings to existing OWASP Agentic rule IDs:
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -276,6 +277,57 @@ def _fixed_non_shell_program(line: str, open_paren: int) -> bool:
     if program.strip().lower() in _SHELL_PROGRAMS:
         return False
     return bool(program.strip())
+
+
+# js-yaml renamed `safeLoad` to `load` in v4 (2021): from v4 onward `load` uses
+# DEFAULT_SCHEMA, which does not construct arbitrary JavaScript objects, and the
+# unsafe entry point is `unsafeLoad` or an explicit full schema. In v3 `load`
+# genuinely was the unsafe loader, which is why the pattern exists.
+#
+# So the finding depends on the declared dependency, not on the call alone. This
+# resolves the nearest package.json above the file and suppresses the bare
+# `yaml.load` finding only when a v4-or-later range is declared. No declaration,
+# an unparseable range, or a range that admits v3 leaves the finding in place.
+_JS_YAML_SAFE_MAJOR = 4
+_YAML_LOAD_RE = re.compile(r"\byaml\.load\s*\(", re.IGNORECASE)
+_YAML_UNSAFE_MARKERS_RE = re.compile(
+    r"\bunsafeLoad\b|DEFAULT_FULL_SCHEMA|FULL_SCHEMA|JS_YAML_SCHEMA", re.IGNORECASE
+)
+_SEMVER_MAJOR_RE = re.compile(r"^\D*(\d+)")
+
+
+def _declared_js_yaml_major(start: Path, _cache: Dict[str, Optional[int]] = {}) -> Optional[int]:
+    """Lowest js-yaml major admitted by the nearest package.json above `start`.
+
+    Returns None when nothing is declared or the range cannot be read, which
+    means "keep reporting".
+    """
+    directory = start.parent if start.is_file() else start
+    key = str(directory)
+    if key in _cache:
+        return _cache[key]
+
+    result: Optional[int] = None
+    for candidate in [directory, *directory.parents]:
+        manifest = candidate / "package.json"
+        if not manifest.is_file():
+            continue
+        try:
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001 - unreadable manifest means "report"
+            break
+        for section in ("dependencies", "devDependencies", "peerDependencies"):
+            spec = (data.get(section) or {}).get("js-yaml")
+            if not isinstance(spec, str):
+                continue
+            match = _SEMVER_MAJOR_RE.match(spec.strip())
+            if match:
+                result = int(match.group(1))
+                break
+        if result is not None:
+            break
+    _cache[key] = result
+    return result
 
 
 def _call_args_are_constant(line: str, open_paren: int) -> bool:
@@ -1217,9 +1269,23 @@ class TypeScriptScanner(BaseScanner):
         """Scan for unsafe deserialization patterns."""
         findings: List[TSFinding] = []
 
+        js_yaml_major = _declared_js_yaml_major(Path(file_str))
+        yaml_load_is_safe = (
+            js_yaml_major is not None and js_yaml_major >= _JS_YAML_SAFE_MAJOR
+        )
+
         for line_num, line in enumerate(lines, start=1):
             stripped = line.strip()
             if _TS_COMMENT_LINE_RE.match(line):
+                continue
+
+            # js-yaml >= 4 renamed safeLoad to load; the bare call is the safe
+            # loader there. An explicit unsafe entry point still fires.
+            if (
+                yaml_load_is_safe
+                and _YAML_LOAD_RE.search(line)
+                and not _YAML_UNSAFE_MARKERS_RE.search(line)
+            ):
                 continue
 
             for pattern, description, confidence in UNSAFE_DESER_PATTERNS:
