@@ -3591,3 +3591,696 @@ session 3: write the content with the Write tool into the scratchpad, then appen
 `python3`. The guard's protected-path list was not edited and no denied command was retried
 in a disguised form. The false-positive direction is the safe one for a guard, but it is
 worth knowing that it fires on prose about the corpus as readily as on writes to it.
+
+---
+
+# RUN 7 — W27 through W32
+
+Target confidentiality unchanged: the audit target is referred to only as "the audit
+target". No target path, repository name or source excerpt appears in this file.
+
+Measured at `ec0a29b` on `fix/py314-blocker`, `python3` = CPython 3.14.3.
+
+---
+
+## W27 — the three authorised `rule_id` retargets
+
+### W27.1 — verification at HEAD, before touching anything
+
+The brief authorises three edits and instructs that each be re-confirmed at HEAD before
+application, because RUN6 already corrected RUN5 on exactly this point. Verified with two
+independent scan modes, as RUN6 did: the whole-corpus scan Layer 1 itself runs
+(`precision_recall.run_scan`, 289 findings) and a single-file scan of each fixture alone.
+Line tolerance 3 — the value `evaluate()` actually uses, not the 5 used in an earlier
+draft of this check.
+
+```
+==============================================================================
+MODE A — whole-corpus scan (the exact scan Layer 1 runs)
+==============================================================================
+total findings: 289
+distinct files with findings: 79
+
+row 1  asi-04-supply-chain/direct/npm_install_runtime.py:13  label=AGENT-015
+   recorded expectation : AGENT-001@13 exact
+   all findings in file : [('AGENT-001', 13)]
+   within +/-3 of 13: [('AGENT-001', 13)]
+
+row 2  asi-04-supply-chain/direct/curl_pipe_bash.sh:11  label=AGENT-015
+   recorded expectation : nothing
+   all findings in file : NONE
+
+row 3  asi-04-supply-chain/direct/git_clone_exec.py:14  label=AGENT-015
+   recorded expectation : nothing
+   all findings in file : NONE
+
+row 4  asi-04-supply-chain/indirect/dynamic_requirements.py:14  label=AGENT-015
+   recorded expectation : nothing
+   all findings in file : NONE
+
+row 5  asi-04-supply-chain/indirect/pypi_typosquatting.py:12  label=AGENT-015
+   recorded expectation : AGENT-034@14 within tol
+   all findings in file : [('AGENT-034', 14)]
+   within +/-3 of 12: [('AGENT-034', 14)]
+
+row 6  asi-02-tool-misuse/direct/subprocess_unsandboxed.py:8  label=AGENT-036
+   recorded expectation : AGENT-001@9 within tol
+   all findings in file : [('AGENT-001', 9)]
+   within +/-3 of 8: [('AGENT-001', 9)]
+
+==============================================================================
+AGREEMENT AND VERDICT
+==============================================================================
+row 1: modes agree=True  A=[('AGENT-001', 13)]  B=[('AGENT-001', 13)]
+row 2: modes agree=True  A=[]  B=[]
+row 3: modes agree=True  A=[]  B=[]
+row 4: modes agree=True  A=[]  B=[]
+row 5: modes agree=True  A=[('AGENT-034', 14)]  B=[('AGENT-034', 14)]
+row 6: modes agree=True  A=[('AGENT-001', 9)]  B=[('AGENT-001', 9)]
+```
+
+**All three authorised retargets survive verification at HEAD.** Rows 2–4 remain silent,
+confirming RUN6's correction to RUN5 a second time and from a clean re-derivation.
+
+### W27.2 — the guard hook denies the corpus write, and it was not worked around
+
+`.claude/hooks/night-guard.sh` protects `(^|/)tests/ground_truth/`. The `Edit` call was
+made and denied:
+
+```
+PreToolUse:Edit hook error: BLOCKED: .../tests/ground_truth/labeled_samples.yaml
+属于基准/语料。修工具,不要修基准。写进 DECISIONS.md 由 Heady 处理,不要绕过。
+```
+
+The hook's own instruction is "do not bypass; write it into DECISIONS.md for Heady". The
+brief's authorisation and the session guard disagree about the *mechanism*, not about the
+decision, and the guard is the one that governs what this session may write. **No
+workaround was attempted** — not a `python3` write with the path assembled at runtime, not
+a redirect, not a temporary edit to the hook. The three edits are therefore staged for
+Heady in `RELEASE_CHECKLIST.md`, with the arithmetic below measured on a scratch copy.
+
+### W27.3 — the arithmetic, measured on a scratch copy against the same 289 findings
+
+The corpus was copied, the three `rule_id` values changed in the copy, and
+`precision_recall.evaluate` run against **the same findings list**, scanned once and reused
+for both scorings — so the delta cannot contain any scan variation.
+
+```
+==============================================================================
+THE THREE EDITS, line by line
+==============================================================================
+  labeled_samples.yaml:1636
+    -        rule_id: "AGENT-036"
+    +        rule_id: "AGENT-001"
+  labeled_samples.yaml:1669
+    -        rule_id: "AGENT-015"
+    +        rule_id: "AGENT-001"
+  labeled_samples.yaml:1709
+    -        rule_id: "AGENT-015"
+    +        rule_id: "AGENT-034"
+
+findings scanned once, reused for both scorings: 289
+
+BEFORE — corpus as committed
+  TP=196  FP=93  FN=40
+  P=0.678201  R=0.830508  F1=0.746667
+
+AFTER — the three authorised edits
+  TP=199  FP=90  FN=37
+  P=0.688581  R=0.843220  F1=0.758095
+
+==============================================================================
+DELTA
+==============================================================================
+  dTP +3   dFP -3   dFN -3
+  P  0.678201 -> 0.688581
+  R  0.830508 -> 0.843220
+  F1 0.746667 -> 0.758095
+```
+
+Exactly the RUN6 prediction, to six decimal places, and **zero detection code was
+touched** — the scan is byte-identical either side because only the scoring key moved.
+
+### W27.4 — the brief's expectation that the guard turns green does not hold
+
+This is the one place the brief is wrong, and `docs/decisions/AGENT-015_RESOLUTION.md` § 4
+already said so in as many words: *"Option A alone does not clear the guard."* Measured by
+running the guard's own predicate against the patched copy:
+
+```
+BEFORE: labels citing a rule with no producer = 6
+    AGENT-036  asi-02-tool-misuse/direct/subprocess_unsandboxed.py:8   (yaml:1636)
+    AGENT-015  asi-04-supply-chain/direct/npm_install_runtime.py:13    (yaml:1669)
+    AGENT-015  asi-04-supply-chain/direct/curl_pipe_bash.sh:11         (yaml:1679)
+    AGENT-015  asi-04-supply-chain/direct/git_clone_exec.py:14         (yaml:1689)
+    AGENT-015  asi-04-supply-chain/indirect/dynamic_requirements.py:14 (yaml:1699)
+    AGENT-015  asi-04-supply-chain/indirect/pypi_typosquatting.py:12   (yaml:1709)
+
+AFTER : labels citing a rule with no producer = 3
+    AGENT-015  asi-04-supply-chain/direct/curl_pipe_bash.sh:11         (yaml:1679)
+    AGENT-015  asi-04-supply-chain/direct/git_clone_exec.py:14         (yaml:1689)
+    AGENT-015  asi-04-supply-chain/indirect/dynamic_requirements.py:14 (yaml:1699)
+```
+
+**6 → 3, not 6 → 0.** The suite reads `1 failed` after the three edits exactly as it does
+before them. Rows 2–4 describe a capability the tool does not have — untrusted package or
+code acquisition in general application code — and row 2 additionally sits in a `.sh` file
+no scanner in the package opens. They are a recorded gap, and closing the guard by moving
+them onto an approximately-related rule would recreate the drift that let one identifier
+mean three things. That decision was explicitly *not* included in the three authorised
+edits and was not taken here.
+
+### W27.5 — the ratchet, re-derived because the number it comes from moved
+
+Method unchanged from RUN6 § W24: measured minus observed run-to-run spread minus a 0.02
+margin, truncated. Ten identical runs, seven default seeds plus `PYTHONHASHSEED` 0, 1, 42.
+Both scorings are taken from the same ten scans, so the two derivations differ only in the
+ground truth they are scored against.
+
+```
+run  1  PYTHONHASHSEED=default  findings=289  committed F1=0.746667 (TP196/FP93/FN40)  patched F1=0.758095 (TP199/FP90/FN37)
+run  2  PYTHONHASHSEED=default  findings=289  committed F1=0.746667 (TP196/FP93/FN40)  patched F1=0.758095 (TP199/FP90/FN37)
+run  3  PYTHONHASHSEED=default  findings=289  committed F1=0.746667 (TP196/FP93/FN40)  patched F1=0.758095 (TP199/FP90/FN37)
+run  4  PYTHONHASHSEED=default  findings=289  committed F1=0.746667 (TP196/FP93/FN40)  patched F1=0.758095 (TP199/FP90/FN37)
+run  5  PYTHONHASHSEED=default  findings=289  committed F1=0.746667 (TP196/FP93/FN40)  patched F1=0.758095 (TP199/FP90/FN37)
+run  6  PYTHONHASHSEED=default  findings=289  committed F1=0.746667 (TP196/FP93/FN40)  patched F1=0.758095 (TP199/FP90/FN37)
+run  7  PYTHONHASHSEED=default  findings=289  committed F1=0.746667 (TP196/FP93/FN40)  patched F1=0.758095 (TP199/FP90/FN37)
+run  8  PYTHONHASHSEED=      0  findings=289  committed F1=0.746667 (TP196/FP93/FN40)  patched F1=0.758095 (TP199/FP90/FN37)
+run  9  PYTHONHASHSEED=      1  findings=289  committed F1=0.746667 (TP196/FP93/FN40)  patched F1=0.758095 (TP199/FP90/FN37)
+run 10  PYTHONHASHSEED=     42  findings=289  committed F1=0.746667 (TP196/FP93/FN40)  patched F1=0.758095 (TP199/FP90/FN37)
+
+SPREAD, all ten runs, six decimals
+  committed precision  distinct values across 10 runs: [0.678201]
+  committed recall     distinct values across 10 runs: [0.830508]
+  committed f1_score   distinct values across 10 runs: [0.746667]
+  patched   precision  distinct values across 10 runs: [0.688581]
+  patched   recall     distinct values across 10 runs: [0.84322]
+  patched   f1_score   distinct values across 10 runs: [0.758095]
+
+DERIVATION — corpus as committed (the floor in gates.yaml today)
+  precision_min  measured 0.678201  spread 0.000000  - 0.02 = 0.658201  -> 0.65   (file: 0.66)  below file
+  recall_min     measured 0.830508  spread 0.000000  - 0.02 = 0.810508  -> 0.81   (file: 0.81)  = file
+  f1_min         measured 0.746667  spread 0.000000  - 0.02 = 0.726667  -> 0.72   (file: 0.72)  = file
+
+DERIVATION — corpus with the three authorised edits
+  precision_min  measured 0.688581  spread 0.000000  - 0.02 = 0.668581  -> 0.66   (file: 0.66)  = file
+  recall_min     measured 0.843220  spread 0.000000  - 0.02 = 0.823220  -> 0.82   (file: 0.81)  ABOVE file
+  f1_min         measured 0.758095  spread 0.000000  - 0.02 = 0.738095  -> 0.73   (file: 0.72)  ABOVE file
+```
+
+**Proposed, not applied.** Once the three labels are corrected the method puts `f1_min` at
+**0.73** and `recall_min` at **0.82**, both a point above the file. `precision_min` lands
+exactly on 0.66, where it already is. A rising ratchet is a promise about future builds and
+it is Heady's to make; `gates.yaml` is unchanged and **no threshold was modified this run.**
+The three numbers are in `RELEASE_CHECKLIST.md` next to the label edits that justify them,
+so they move together or not at all.
+
+---
+
+## W29 — tree-sitter, decided
+
+The brief allows two outcomes and forbids a third. The measurement chose for me.
+
+### W29.1 — the reported defect is real, and it is one of three
+
+Issue #12 reports that `_init_tree_sitter` recognises a `LANGUAGE` attribute and a
+`language()` function but not `tree_sitter_typescript`'s `language_typescript()` /
+`language_tsx()`. Confirmed at the module level:
+
+```
+py attrs ['HIGHLIGHTS_QUERY', 'TAGS_QUERY', 'language']
+js attrs ['HIGHLIGHTS_QUERY', 'INJECTIONS_QUERY', 'LOCALS_QUERY', 'TAGS_QUERY', 'language']
+ts attrs ['language_tsx', 'language_typescript']
+```
+
+**But TypeScript is not the only dead language, and the issue's fix would not have been
+enough.** With the extra installed exactly as declared, *nothing* activates:
+
+```
+_TREE_SITTER_AVAILABLE = True
+  a.py   lang=python      tree_sitter_active=False
+  a.js   lang=javascript  tree_sitter_active=False
+  a.ts   lang=typescript  tree_sitter_active=False
+  a.tsx  lang=typescript  tree_sitter_active=False
+```
+
+Two further defects, both silent:
+
+* **The capsule.** `tree_sitter.Parser(lang)` is handed the raw return of `language()`,
+  which on grammar packages ≥0.23 is a `PyCapsule`, not a `tree_sitter.Language`:
+  ```
+  lang obj: <class 'PyCapsule'> <capsule object "tree_sitter.Language" at 0x...>
+  Parser(lang) FAILED: TypeError __init__() argument 1 must be tree_sitter.Language, not PyCapsule
+  Parser(Language(lang)) OK
+  ```
+  The `except Exception` at line 203 catches this and logs at **debug**, so Python and
+  JavaScript die exactly as quietly as TypeScript does — and for a different reason than
+  the one in the issue.
+
+* **The declared extra cannot work at any code revision.** `pyproject.toml` pins
+  `tree-sitter = "^0.22.0"`, which Poetry resolves to `<0.23`, against grammar packages
+  pinned `^0.23.0`. A 0.22 core cannot consume a 0.23 capsule at all. Version matrix, run
+  with the accessor and capsule fixes applied:
+  ```
+  ===== tree-sitter core 0.22.3 =====
+  tree-sitter init failed for python (TypeError: an integer is required); using regex fallback
+      a.py=False  a.js=False  a.ts=False  a.tsx=False
+  ===== tree-sitter core 0.23.2 =====   a.py=True  a.js=True  a.ts=True  a.tsx=True
+  ===== tree-sitter core 0.24.0 =====   a.py=True  a.js=True  a.ts=True  a.tsx=True
+  ===== tree-sitter core 0.25.0 =====   a.py=True  a.js=True  a.ts=True  a.tsx=True
+  ===== tree-sitter core 0.26.0 =====   a.py=True  a.js=True  a.ts=True  a.tsx=True
+  ```
+  `poetry install -E tree-sitter` installs `tree-sitter 0.22.3`. **The shipped extra is
+  provably inoperable, whatever the parser code says.**
+
+### W29.2 — the differential, built first and then made honest
+
+`tests/differential_corpus/` and `tests/test_treesitter_differential.py` are new. The test
+runs two subprocess scans of the same corpus with the same interpreter, differing only in
+whether `import tree_sitter` succeeds — the regex side is forced by an `ImportError` shim
+first on `PYTHONPATH`, so no production code was modified and no test-only environment
+variable was added to the package. Findings are keyed on `(relative path, line, rule_id)`,
+the key Layer 1 scores on.
+
+**Its first version reported a clean bill of health, and was wrong.** Against a scratch
+copy with all three defects fixed and the AST path live for all four languages:
+
+```
+  present with regex, ABSENT with tree-sitter (must be empty): (empty)
+  present with tree-sitter only (allowed): (empty)
+  agreed on by both paths: 15
+```
+
+and over the full graded corpus, likewise empty with 289 agreed. Meanwhile the same build
+failed 40 TypeScript scanner tests. **The corpus could not see the regression**, because it
+contained only the eval and child_process families and none of the shapes that moved. That
+is the more useful half of this work: an insensitive differential is worse than no
+differential, because it certifies.
+
+Corpus enriched from the test classes that actually moved — `TestFixedNonShellProgram`,
+`TestWeakPromptNames`, `TestToolBoundaryGate`, `TestFetchReceiver`,
+`TestConstantArgumentSuppression`, `TestExecSpawnReceiver`, and the two Python cases in
+`test_treesitter_parser.py`. Re-run, same build:
+
+```
+  present with regex, ABSENT with tree-sitter (must be empty): 2
+      AGENT-034  ts/framework_boundaries.ts:16    return cp.execSync(cmd).toString();      <- inside a vercel-ai tool()
+      AGENT-034  ts/framework_boundaries.ts:33    const out = cp.execSync(req.body.cmd);   <- inside an express handler
+  present with tree-sitter only (allowed): 8
+      AGENT-010  ts/prompt_names.ts:5      `Request to ${url} failed with status ${status}`   <- negative control
+      AGENT-010  ts/prompt_names.ts:9      `Operation timed out after ${seconds}s`            <- negative control
+      AGENT-010  ts/prompt_names.ts:13     `<div class="greeting">Hello, ${userName}</div>`   <- negative control
+      AGENT-010  ts/prompt_names.ts:18     a real system prompt                               <- genuine gain
+      AGENT-010  ts/receiver_shapes.ts:31  cp.execSync(`ls -la ${userInput}`)                 <- a shell call, not a prompt
+      AGENT-026  ts/receiver_shapes.ts:67  handler.fetch(url)                                 <- negative control
+      AGENT-026  ts/receiver_shapes.ts:71  provider.get().fetch(url)                          <- negative control
+      AGENT-026  ts/receiver_shapes.ts:75  a.b.fetch(url)                                     <- negative control
+  agreed on by both paths: 20
+
+VERDICT: tree-sitter LOSES findings — must not become default
+```
+
+**Two true positives lost. Six of the eight additions are the exact false positives the
+regex path was fixed to suppress** — the Redis/receiver `.fetch` family and the weak-prompt-
+name family. One addition is genuine. That is not an upgrade with rough edges; it is a
+different, worse detector.
+
+### W29.3 — the full suite, same environment either side
+
+The suite is the larger instrument and it agrees. Same venv, same commit, the only variable
+being whether `tree_sitter` imports:
+
+```
+tree-sitter absent (ImportError shim):   8 failed, 1787 passed, 4 skipped
+tree-sitter present, AST path DEAD:      8 failed, 1788 passed, 3 skipped
+tree-sitter present, AST path LIVE:     50 failed, 1746 passed, 3 skipped
+```
+
+The 8 in the baseline are 7 e2e tests that need an installed console script this venv does
+not have, plus the deliberate corpus-label failure. So **the AST path costs 42 regressions**,
+and installing the extra against the shipping code costs none — the third row is only
+reachable with the fixes applied.
+
+The 42, by test class:
+
+```
+test_typescript_scanner.py   40   TestFixedNonShellProgram (8), TestConstantArgumentSuppression (6),
+                                  TestFetchReceiver (5), TestExecSpawnReceiver (4),
+                                  TestDeclarationsAndQuotedSource (4), TestToolBoundaryGate (4),
+                                  TestWeakPromptNames (4), TestChildProcessExec (2),
+                                  TestNewFunctionDetection (1), TestEvalMemberCallDistinction (1),
+                                  TestSqlStatementRequirement (1)
+test_parsers/test_treesitter_parser.py   2   TestPythonStringLiterals::test_detect_fstring
+                                             TestValueTypeClassification[os.environ["KEY"] -> ENV_READ]
+```
+
+Two of them are on the **Python** side. `semantic_analyzer` builds a `TreeSitterParser` per
+file, so this was never a TypeScript-only question, and a differential that had only looked
+at `.ts` files would have answered the wrong one.
+
+Failures are absences, not errors — the shape is `assert 0 >= 1`:
+
+```
+tests/test_typescript_scanner.py:1597: in test_the_same_call_inside_a_tool_entry_point_is_reported
+    assert len(self._agent_034(scanner, path)) >= 1
+E   AssertionError: assert 0 >= 1
+```
+
+### W29.4 — the decision, and what was reverted to reach it
+
+**Declared, not fixed.** TypeScript and JavaScript analysis is regex-level and is documented
+as such in `CAPABILITY_BOUNDARIES.md`. The extra stays optional. Issue #12 is answered with
+the measurement rather than the patch it asks for.
+
+Issue #12's fix — plus the capsule wrap it does not mention — **was written, applied to the
+repository, measured, and reverted.** `git diff` on
+`packages/audit/agent_audit/parsers/treesitter_parser.py` is empty at the end of this run.
+The revert is the point: the fix works, the API loads, and the result is worse. Enabling it
+because it now parses is the outcome the brief names as wrong, and it is exactly what the
+patch, taken on its own evidence, would have produced.
+
+What is kept instead:
+
+* `tests/differential_corpus/` — nine files, both language families plus Python, with the
+  shapes that actually move.
+* `tests/test_treesitter_differential.py` — four tests. Two run unconditionally (the corpus
+  covers both language families; the `ImportError` shim genuinely forces the regex path).
+  Two skip loudly today, with reasons that say a skip is not a pass. Proven to fire against
+  the wired build:
+  ```
+  languages reaching the AST path: .py, .js, .ts, .tsx
+  ASSERTION FIRED, as it must:
+  enabling tree-sitter REMOVES findings the shipping regex path produces...
+    present with regex, ABSENT with tree-sitter: 2
+        AGENT-034  ts/framework_boundaries.ts:16
+        AGENT-034  ts/framework_boundaries.ts:33
+  ```
+* A vacuity guard, because the trap here is subtle: with `tree_sitter` installed but the AST
+  path dead, an empty differential looks like agreement and is actually a comparison of the
+  regex path with itself. `test_an_empty_differential_is_not_reported_when_it_is_vacuous`
+  skips with that stated rather than passing.
+
+### W29.5 — and therefore issue #11
+
+`#11` asks CI to install the `tree-sitter` extra so Codecov measures the AST branches. It is
+blocked, and not merely by ordering.
+
+Installing the extra today raises the measured coverage of code that **does not execute** —
+the AST branches are unreachable for every language, so the number would move while the
+behaviour does not. That is the same defect as the six advertised-but-unproducible rules,
+in a coverage report instead of a rule list. And the version pin means the install does not
+even do what the issue expects: `-E tree-sitter` resolves `tree-sitter 0.22.3`, which cannot
+load a 0.23 grammar at all.
+
+If the AST path stays unreached — which is this run's decision — then #11's premise is gone:
+there is nothing to measure, and the honest fix is to delete the dead branches rather than
+to cover them. That is a larger change than v0.20.0 should carry, so #11 stays open with the
+reason recorded.
+
+---
+
+## W28 — the five open issues, reproduced rather than assumed
+
+Full detail, with per-issue reproduction commands, before/after output and drafted replies,
+in `ISSUE_TRIAGE.md`. The headline is that **two of five can close, and the brief's
+expectations for two of the others did not survive contact with the code.**
+
+| # | expected by the brief | measured at HEAD |
+|---|---|---|
+| 10 | "RUN3's SQL sink requirement likely covers this" | **it does not.** Reproduces exactly: two AGENT-041 findings, both BLOCK, both confidence 1.0 |
+| 8 | claim 1 plausibly fixed, claim 2 may still be live | **correct, and there are four claims not two.** 1 fixed, 2/3/4 live |
+| 12 | do not close here | **closed as won't-fix**, because W29 answered it with a measurement |
+| 11 | blocked on #12 | blocked, **and its premise is gone** |
+| 5 | out of scope, defer with a real reason | deferred; the reason is that step 1 of the proposal is a capability the tool does not have |
+
+### #10 — not fixed
+
+```
+$ cd packages/audit && python3 -m agent_audit scan /tmp/issue10 --format json
+total findings: 2
+AGENT-041  tp_control.py:8  tier=BLOCK  conf=1.0  sev=critical
+AGENT-041  fp_case.py:8     tier=BLOCK  conf=1.0  sev=critical
+```
+
+`fp_case.py:8` is `return target_agent.execute(task)`. `_check_sql_tainted_param`
+(`python_scanner.py:3597`) is unchanged: the receiver gate at line 3610 is still a bare
+method-name test and `sink_type` is still hard-coded to `'sql_execution'` at line 3629. The
+reporter's analysis is correct to the line number.
+
+### #8 — one of four claims fixed
+
+Default view, the reporter's five shapes:
+
+```
+📊 Summary:
+  BLOCK: 2 | WARN: 2 | INFO: 0 | SUPPRESSED: 4
+```
+
+with the suppressed set shown:
+
+```
+AGENT-053  tests/conftest.py:7  sev=critical  tier=SUPPRESSED  conf=0.25
+AGENT-053  tests/conftest.py:8  sev=critical  tier=SUPPRESSED  conf=0.25
+AGENT-053  tests/conftest.py:9  sev=critical  tier=SUPPRESSED  conf=0.25
+AGENT-001  tests/test_deferred_tool_promotion_real_llm.py:9  sev=critical  tier=SUPPRESSED  conf=0.2
+```
+
+**Claim 1 fixed** — everything under `tests/` is tier SUPPRESSED and hidden; AGENT-017 and
+AGENT-020 no longer fire at all. One caveat recorded in the draft reply rather than glossed:
+the `severity` field still reads `critical`, so a JSON consumer keying on severity alone sees
+the old value.
+
+**Claims 2 and 3 live** — `AGENT-041 BLOCK conf 1.0` on
+`conn.execute(f'CREATE DATABASE "{db_name}"')` where `db_name` comes from `urlparse(config)`,
+and `AGENT-010 BLOCK conf 1.0` on a `<skill_system>` template built from internal metadata.
+Both are the same missing thing: no provenance model separating configuration and internal
+computation from untrusted input.
+
+**Claim 4 improved, not fixed** — `AGENT-034 WARN conf 0.65` where the reporter saw
+`AGENT-047 HIGH ×13`. A fixed `["docker", "run", ...]` argv with no shell still should not
+fire.
+
+**Partial credit is not a closure.** Stays open.
+
+---
+
+## W30 — the dead files, and the 98.51%'s mechanism
+
+### W30.1 — `docs/decisions/DEAD_FILES.md`
+
+Both `tests/benchmark/quality_gates.yaml` and `quality_gates_v2.yaml` carry Layer 1 floors of
+P 0.90 / R 0.85 / F1 0.87 — 24 points above the floors that actually run — and neither is
+loaded by anything. Every surviving reference classified:
+
+```
+quality_gates.yaml
+    [string only ] tests/test_layer1_gate_singleton.py:143   (an assertion message)
+
+quality_gates_v2.yaml
+    [string only ] tests/test_layer1_gate_singleton.py:143
+    [comment     ] .github/workflows/benchmark.yml:54
+    [string only ] .claude/hooks/test-guard.sh:60, :67       (guard test DATA, never opened)
+    [comment     ] tests/benchmark/gates.yaml:4, :7, :65, :81
+```
+
+No `LOADS`. And the proof rather than the argument — both moved aside, the three things that
+could plausibly depend on them run:
+
+```
+  test-guard self-test:   exit 0   passed=11 failed=0
+  layer1 gate singleton:  exit 0   11 passed in 0.35s
+  quality_gate_check:     exit 0   Summary: 0 failures, 0 warnings, 0 skipped
+  restored: quality_gates.yaml
+  restored: quality_gates_v2.yaml
+```
+
+The guard hook's `PROTECTED` pattern `quality_gates[^/]*\.ya?ml$` matches both by name, so
+`git rm` is denied to me. Not worked around; the two commands are in `RELEASE_CHECKLIST.md`
+§ 3 and in the decision document with the evidence attached.
+
+**One thing the RUN6 catalogue did not have:** `tests/README.md:40` lists
+`quality_gates.yaml` in the directory tree, and `tests/README.md:160-164` documents its
+0.90 / 0.85 / 0.87 as "the release standard". After the `git rm` those passages describe a
+file that does not exist. That edit belongs to the metrics-retraction sequence, not to the
+deletion, and DEAD_FILES.md says so rather than making it.
+
+### W30.2 — the 98.51%: a goal recorded as an achievement
+
+`docs/decisions/METRICS_RETRACTION.md` § 1 gained the mechanism stated precisely, because
+"the methodology differed" is the wrong correction and would leave a reader assuming the
+figure was accurate once.
+
+The v0.4.1 brief has two blocks. `CHANGELOG.md:175-177` reads "Precision: 98.51% → 100%",
+"Recall maintained at 100%", "F1 Score: 100%". **The left of that arrow is the `当前` block.
+The right of it is the `目标` block** — the numbers the brief set out to reach, published as
+a completed result. Combined with `Recall = 100% (0 FN)` written in words, and a
+`results/layer1.json` in the same commit measuring 124 false negatives, there is no commit at
+which any of it was measured.
+
+So: not an update, a withdrawal, with the mechanism stated. That distinction is now written
+into the document and into the draft retraction's wording.
+
+### W30.3 — § 3a, one row per surface with the command
+
+Fifteen rows: what the surface says, the reproducible value, and the command that produces
+it. Where no command can produce it — `CHANGELOG.md:175-177` — the row says so instead of
+offering a replacement number, because supplying one would imply the original was a
+measurement.
+
+Two commands verified while writing the table:
+
+```
+$ python3 -c "import yaml;d=yaml.safe_load(open('tests/ground_truth/labeled_samples.yaml'));..."
+version 2.2 | samples 81 | labels 238
+
+$ python3 -c "import sys;sys.path.insert(0,'tests');from test_rule_producers import advertised_rules;print(len(advertised_rules()))"
+66
+```
+
+**`tests/README.md` is named as the priority**, and the reason given is not traffic: it
+carries the largest error (30 points of precision, 17 of recall, twice over) with **no
+retraction note at all**, while `docs/F1_REPRODUCTION.md`, whose figure is merely stale, opens
+with one. It also sits in a file called `README.md` inside a directory called `tests/`, next
+to the corpus and the script — everything about its location tells a reader the numbers came
+from the code beside it.
+
+**No public-facing claim was edited.**
+
+---
+
+## W31 — `CAPABILITY_BOUNDARIES.md`
+
+Written at the repository root. Each of the seven instances was re-confirmed at HEAD before
+being written down rather than restated from the brief:
+
+```
+2: ts_tool_boundary_detector importers  -> packages/audit/agent_audit/scanners/typescript_scanner.py   (now wired)
+1: mcp_config_scanner discovery          -> recurses; the fix comment records the iterdir defect
+5: package_scanner._find_ai_tool_configs -> path.rglob(file_name); the docstring records the join defect
+3: RuleEngine.evaluate callers           -> none in the package (three matches, all comments or an unrelated page.evaluate)
+6: AGENT-049 in rules/builtin/           -> no match; still no YAML definition, still discarded
+   advertised rules                      -> 66
+```
+
+The document states the boundaries — no cross-file analysis, no call graph, no import
+following, no type resolution, no object-lifecycle or resource-ownership modelling, no
+runtime dispatch-order reasoning, no runtime behaviour — then the blind-audit result in the
+cleared framing, then the structural lesson, then what the guards catch and what they still
+cannot.
+
+The paragraph that took the longest to get right is the one about the guards' own limits:
+
+> All three ask "can this fire at all?" — none asks "does this fire on the code people
+> actually write". A rule that fires on its own fixture and on nothing else in the world
+> passes every one of them.
+
+It also carries the language-coverage table, including the two lines nobody had written down
+before: **TypeScript/JavaScript is regex-level**, and **shell scripts are not read at all.**
+
+No target-identifying detail. The blind-audit paragraph uses the cleared framing verbatim.
+
+---
+
+## W32 — v0.20.0, staged
+
+### Versions
+
+`0.19.2 → 0.20.0` in all three tracked files, plus `Programming Language :: Python :: 3.13`
+and `:: 3.14` classifiers.
+
+### Build
+
+```
+Successfully built agent_audit-0.20.0.tar.gz and agent_audit-0.20.0-py3-none-any.whl
+
+-rw-r--r--  357,007  agent_audit-0.20.0-py3-none-any.whl
+-rw-r--r--  307,519  agent_audit-0.20.0.tar.gz
+```
+
+Both unpacked and listed in full. sdist top-level `['PKG-INFO', 'README.md', 'agent_audit',
+'pyproject.toml']`; wheel top-level `['agent_audit', 'agent_audit-0.20.0.dist-info']`.
+
+```
+forbidden path components (audit-eval, eval/, /eval, datasets/, knowns, wilds, noise/,
+results/, ground_truth, labeled_samples, NIGHT_RUN, DECISIONS, .claude/):
+    sdist: 0   (none)
+    wheel: 0   (none)
+
+in sdist not wheel: []
+in wheel not sdist: []
+sdist pkg files: 98   wheel pkg files: 98
+```
+
+**No local evaluation data and no target-identifying string.** One content match, and it is a
+nit rather than a leak: `agent_audit/scanners/typescript_scanner.py:54` carries the comment
+`… see TOOL_SCOPED_RULES use below and NIGHT_RUN_LEDGER § W20`, shipping a pointer to a
+document that is not in the distribution. Flagged in `RELEASE_CHECKLIST.md` § 5, not edited.
+
+### Clean-venv installs, both
+
+```
+$ /tmp/.../venv312/bin/python --version
+Python 3.12.12
+$ /tmp/.../venv312/bin/agent-audit --version
+agent-audit, version 0.20.0
+
+$ /tmp/.../venv314/bin/python --version
+Python 3.14.3
+$ /tmp/.../venv314/bin/agent-audit --version
+agent-audit, version 0.20.0
+```
+
+and a real scan from each — output identical between the two interpreters:
+
+```
+$ agent-audit scan tests/differential_corpus
+  AGENT-026: Server-Side Request Forgery (SSRF)
+    Location: .../differential_corpus/ts/receiver_shapes.ts:80
+    Code: return fetch(url);
+
+⬛ SUPPRESSED — Tier 4 (hidden, use --verbose to show) — 16 findings
+
+📊 Summary:
+  BLOCK: 1 | WARN: 5 | INFO: 0 | SUPPRESSED: 16
+  Risk Score: 5.2/10 (MEDIUM)
+```
+
+Installed from the locally built wheel by relative path into fresh venvs; no existing
+installation was touched.
+
+### The published rule count
+
+**Four different numbers are currently published for one set: 40, 49, 53 and 72.** Twenty
+locations, enumerated with exact replacement text in `RELEASE_CHECKLIST.md` § 4a. `docs/RULES.md:1419`
+is the only one already correct.
+
+`packages/audit/pyproject.toml:4` — the PyPI description, "53 rules" — is the highest
+priority and is **wrong in the artifacts this run built.** Deliberately: editing a public
+claim was out of scope, and building the artifact with the claim intact is the honest way to
+leave that decision where it belongs. The checklist says rebuild after fixing it.
+
+### Invariants at the end of the run
+
+```
+full suite                1796 passed, 1 failed, 3 skipped   (the failure is the corpus-label guard)
+Layer 1                   TP 196 / FP 93 / FN 40   P 0.678201  R 0.830508  F1 0.746667  — unchanged
+quality_gate_check        exit 0
+git diff -- packages/ rules/   version bump (3 files) + 2 classifier lines, nothing else
+```
+
+Layer 1 is unchanged because no detection code changed: the tree-sitter fix was applied,
+measured and reverted, and `git diff` on `treesitter_parser.py` is empty.
+
+### Confirmation
+
+**I did NOT push, merge, rebase, tag or publish**, and I did not modify any oracle, dataset,
+ground-truth label, existing fixture, confidence value, tier boundary or threshold —
+including the three label edits this run was authorised to make and the ratchet it was
+authorised to re-derive, because the guard denied the first and the second is a promise for
+Heady to make.
+
+**Guard-hook friction, four times, none of it bypassed.** One `Edit` on
+`tests/ground_truth/labeled_samples.yaml` (W27, the authorised edit), one scan command naming
+a fixture path alongside a `2>/dev/null` redirect, one `rm -rf` on a scratch directory, and
+one `grep` whose `2>/dev/null` made the guard scan its tokens. Each was solved by changing my
+command, never by editing the hook, disguising a path, or assembling one at runtime.

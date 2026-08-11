@@ -1,100 +1,113 @@
 # PROGRESS
 
-**Session 6 state: COMPLETE. W23–W26 all done and committed.** Read `RUN6_REPORT.md`
-first (one page), then the two decision documents under `docs/decisions/`.
+**Session 7 state: COMPLETE. W27–W32 all done.** Read `RUN7_REPORT.md` first (one page),
+then `RELEASE_CHECKLIST.md`, which is the only file that asks anything of you.
 
-**CI is green again, and it went green by deleting a threshold rather than moving one.**
-`precision_recall.py` carried its own `f1 < 0.75 → sys.exit(1)` while `gates.yaml`, which
-calls itself the single source of truth, carried 0.72. The hard-coded floor is gone. The
-ratchet was re-derived rather than assumed and the derivation returns the values already
-in the file, so **no threshold was changed.**
+**v0.20.0 is staged, not released.** Artifacts built and verified, both clean-venv installs
+green, nothing pushed, merged, tagged or published, and no public-facing claim edited.
 
-**The suite is 1794 passed / 1 failed / 1 skipped, and the one failure is deliberate.**
-`tests/test_corpus_label_rules.py` fails because six corpus labels cite rule IDs no code
-path can construct. Those labels are not the scanner author's to edit. It is committed red
-for the same reason `test_rule_producers.py` was in v0.19.3 — and that one ended with six
-rules coming out of the published list.
+## Start here
 
-## Start here next session
+**`RELEASE_CHECKLIST.md`.** Seven steps, in order. The first three change measured numbers:
 
-**`DECISIONS.md` item 39 — three `rule_id` edits.** F1 0.7467 → **0.7581**, measured, with
-no detection change, and the corpus guard goes green. Then re-derive the ratchet upward:
-0.7581 − 0.02 → `f1_min: 0.73`. Full arithmetic in `docs/decisions/AGENT-015_RESOLUTION.md`.
+1. **Three `rule_id` edits** in `tests/ground_truth/labeled_samples.yaml` — lines 1636, 1669,
+   1709. The guard hook denied them and I did not work around it. Each was re-verified at
+   HEAD with two scan modes agreeing. F1 **0.7467 → 0.7581**, +3 TP / −3 FP / −3 FN, zero
+   detection change.
+2. **The ratchet**, re-derived from the new number: `f1_min` 0.72 → **0.73**, `recall_min`
+   0.81 → **0.82**, `precision_min` unchanged at 0.66. Proposed, not applied — a rising floor
+   is a promise about every future build.
+3. **Two `git rm`** for the dead threshold files, with the evidence in
+   `docs/decisions/DEAD_FILES.md`.
 
-Then item 35 (four `vulnerable_hooks` labels), then 36 (AGENT-049), then the retraction
-ordering in `docs/decisions/METRICS_RETRACTION.md` § 5 — whose first step only Heady can
-take: which external surfaces carry the 98.51%.
+Then step 4: **twenty published rule counts**, in four contradictory values (40, 49, 53, 72),
+with exact replacement text. The PyPI description is the priority and is wrong in the built
+artifacts, deliberately.
+
+## The one thing the brief got wrong
+
+**The three authorised label edits do not turn the corpus-label guard green.** Measured, not
+argued: unmatchable labels go **6 → 3**, and the suite still reads `1 failed`. The three
+survivors describe untrusted package acquisition in general code — a capability no rule
+covers — and one of them is a `.sh` file no scanner opens.
+`docs/decisions/AGENT-015_RESOLUTION.md` § 4 said this before the run started, and closing
+the guard by moving those labels onto a nearby rule would recreate the drift that let one
+identifier mean three things.
 
 ## Current commit
 
-`fix/py314-blocker`. Four commits this session:
+`fix/py314-blocker`.
 
-| sha | W | what |
-|---|---|---|
-| `78d8fe5` | W24 | the second Layer 1 threshold deleted; the printed report reads `gates.yaml`; singleton guard |
-| `950e308` | W23 | corpus-label guard (committed red) + `docs/decisions/AGENT-015_RESOLUTION.md` |
-| `cc7da1b` | W25 | `docs/decisions/METRICS_RETRACTION.md` |
-| `98dfa98` | W26 | sixteen trigger fixtures + fixture-coverage guard |
+| W | what |
+|---|---|
+| W27 | three retargets verified and measured on a scratch copy; ratchet re-derived; **corpus unchanged, guard denied, not bypassed** |
+| W28 | `ISSUE_TRIAGE.md` — five issues reproduced at HEAD; two can close, three cannot; replies drafted, none posted |
+| W29 | tree-sitter **declared, not fixed**; differential corpus + permanent test landed; the fix was written, measured and reverted |
+| W30 | `docs/decisions/DEAD_FILES.md`; `METRICS_RETRACTION.md` gains the mechanism and a per-surface table with commands |
+| W31 | `CAPABILITY_BOUNDARIES.md` |
+| W32 | v0.20.0 staged — version bumps, classifiers, CHANGELOG, build, artifact inspection, two clean-venv installs, `RELEASE_CHECKLIST.md` |
 
-## Invariants at `98dfa98`
+## Invariants at the end of the run
 
 | invariant | result |
 |---|---|
-| Layer 1 | **TP 196 / FP 93 / FN 40**, P 0.6782 / R 0.8305 / F1 0.7467 — unchanged from RUN5 |
+| Layer 1 | **TP 196 / FP 93 / FN 40**, P 0.678201 / R 0.830508 / F1 0.746667 — unchanged from RUN5 and RUN6 |
 | run-to-run spread | **zero** — ten identical runs, six decimals, three hash seeds |
-| AVB knowns | **R 100.0% / P 88.0% / F1 0.9362** — unchanged, P0A intact |
-| audit target | unchanged **by construction**: `git diff 74ef74b..HEAD -- packages/ rules/` is empty |
-| `precision_recall.py` | **exit 0** (was 1) |
-| `quality_gate_check.py` | **exit 0** on the real measurement, **exit 1** one point below the ratchet |
+| `quality_gate_check.py` | **exit 0** |
+| full suite | **1796 passed, 1 failed, 3 skipped** — the failure is the corpus-label guard, still red on purpose |
+| `git diff -- packages/ rules/` | version bump in 3 files + 2 classifier lines. **No detection code changed.** |
+| advertised rules | **66** |
 | thresholds changed | **none** |
-| advertised rules | **66**, each with a producer and now an input, or a pinned reason |
-| full suite | **1794 passed, 1 failed, 1 skipped** (1748 at RUN5 + 46, none deleted) |
+| built artifacts | sdist + wheel, 98 package files each, identical contents, zero forbidden paths, zero target-identifying strings |
+| clean-venv installs | **3.12.12 and 3.14.3, both `agent-audit, version 0.20.0`, both scanning identically** |
 
 ## The five things a reader needs
 
-1. **The 98.51%'s assumption is in primary source, not inferred.**
-   `agent-audit-v041-prompt.md` — added at `a65b341`, deleted at v0.7.0, which is why a
-   file-scoped `git log -S` missed it — says `Recall = 100% (0 FN)` in as many words, and
-   its "target" block is where the changelog's "98.51% → 100%" comes from: **a target
-   recorded as an achievement.** The results file in that same commit measured FN = 124.
-2. **AGENT-015 costs three counters per label.** Retargeting the three retargetable labels
-   is +3 TP / −3 FP / −3 FN with no detection change, because each mislabelled detection
-   was scored as a miss *and* a false alarm. It also lifts F1 above the 0.75 that made CI
-   red — the threshold contradiction and the mislabelling were one bill arriving twice.
-3. **The fixture gap was sixteen, not twelve.** The earlier audit counted a rule covered if
-   it fired on any probe, including probes it had built itself. The graded corpus contains
-   only `.py`, `.json`, `.md` and `.sh` — **no Solidity, Go or TypeScript input exists**.
-4. **AGENT-049 is detected and then thrown away.** The detector emits at confidence 0.85;
-   the engine drops the finding because the rule has no YAML definition and the rule-table
-   lookup returns `None`. Seventh rule that cannot fire, and the mirror image of the six
-   withdrawn: those were a document with no code, this is code with no document.
-5. **Trigger fixtures are outside the graded corpus, and the reason is a number.** Putting
-   them in costs +26 FP, 5.6pp of precision and 0.035 F1, and would push the published
-   floor from 0.72 to 0.69 — all of it test scaffolding. Layer 1 delta as shipped: zero.
+1. **The tree-sitter question is answered, and the answer is no.** Issue #12's fix — plus the
+   `PyCapsule` wrap it does not mention, plus a version pin that makes the declared extra
+   inoperable — was applied, measured, and reverted. Live, the AST path **loses 2 true
+   positives, adds 6 known false positives and breaks 42 tests**. TypeScript/JavaScript
+   analysis is regex-level and is now documented as such.
+2. **The differential's first version certified a build that was failing 40 tests.** It
+   contained only the eval and child_process families, so it could not see the regression. An
+   insensitive differential is worse than none. The corpus was rebuilt from the test classes
+   that actually moved, and the test now has a vacuity guard: an empty differential over a
+   dead path skips loudly instead of passing.
+3. **#10 is not fixed and #8 is one-quarter fixed.** Both reproduce at HEAD from the
+   reporter's own case. Closing an issue that still reproduces costs more than leaving it
+   open.
+4. **The 98.51% was a goal recorded as an achievement**, not a stale measurement. The "→ 100%"
+   values are the v0.4.1 brief's *target* block. That changes the correction from an update to
+   a withdrawal, because there is no commit to update them *to*.
+5. **`CAPABILITY_BOUNDARIES.md` is the artifact worth keeping.** It states the limits, carries
+   the blind-audit 0/6, and names the structural reason the whole defect class survived: a
+   rule that never fires and a clean codebase produce identical output, so nothing that
+   observes output can tell them apart.
 
-## Corrections to RUN5 made this run
+## Still open, in priority order
 
-* `git_clone_exec.py:14` emits **nothing**, not AGENT-034 (verified at HEAD and from a
-  worktree at `e4a939d`). Two of the five AGENT-015 labels are detected under a different
-  ID, not three.
-* The fixture gap is **sixteen** rules, not twelve.
-* `vulnerable_hooks` produces **four** unlabelled findings, not three. Three is right for
-  the precision movement; four is right for labelling.
-
-Each was found by writing a check, not by re-reading a report.
+* **`DECISIONS.md` item 39, rows 2–4** — the three remaining unmatchable AGENT-015 labels.
+  Build the supply-chain rule, or mark them as known-uncovered. Either closes the guard
+  honestly; retargeting them does not.
+* **`DECISIONS.md` item 35** — four unlabelled true positives in `vulnerable_hooks`.
+* **`DECISIONS.md` item 36** — AGENT-049, detected at 0.85 and discarded for want of a YAML
+  definition.
+* **`METRICS_RETRACTION.md` § 5 step 1** — which external surfaces carry the 98.51%. Only you
+  can answer it, and it gates the rest of the retraction.
+* **Issues #10 and #8** — receiver typing, and a provenance model that separates configuration
+  from user input. These are the tool's two largest measured false-positive sources.
 
 ## Environment
 
-Unchanged from sessions 1–5. `python` is NOT on PATH — use `python3` (3.14.3). The harness
-lives at `/Users/heady/Documents/Research/audit-harness/`, outside the repo. Session 6
-added nothing outside the repo. Note that `poetry` resolves a **3.9.6** interpreter; the
-suite passes on both, but every figure in the ledger was taken with `python3`.
+`python` is NOT on PATH — use `python3` (3.14.3). Session 7 created venvs under the
+scratchpad only: `venv312` (uv-provided CPython 3.12.12), `venv314`, `venv-build`, and four
+tree-sitter matrix venvs. Nothing was installed globally and no existing `agent-audit`
+installation was touched.
 
-## Guard-hook friction worth knowing
+## Guard-hook friction
 
-It fired three times this session, and every time on **prose**, not on a write: two ledger
-appends and one `git commit -F -` were denied because the message text quoted a corpus path
-or a protected filename, and the hook scans command tokens whenever a redirect is present.
-Workaround unchanged from session 3: write the content with the Write tool into the
-scratchpad, append it with `python3`. The hook was not edited and nothing was retried in
-disguised form. The false-positive direction is the safe one for a guard.
+Four denials, none bypassed: the authorised ground-truth `Edit`; a scan command whose
+`2>/dev/null` made the guard scan a fixture path token; an `rm -rf` on a scratch directory;
+and a `grep` denied for the same redirect reason. Each was solved by changing the command,
+never by editing the hook or assembling a path at runtime. The false-positive direction
+remains the safe one.
