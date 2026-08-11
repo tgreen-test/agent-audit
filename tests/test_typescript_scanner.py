@@ -708,3 +708,106 @@ class TestExecSpawnReceiver:
             child_process.exec(userInput);
         """)
         assert len(self._shell_findings(scanner, path)) == 1
+
+
+class TestConstantArgumentSuppression:
+    """
+    A child_process call whose every argument is a literal has no injection
+    surface. ``execFileSync('git', ['rev-parse', '--show-toplevel'])`` cannot be
+    influenced by an attacker regardless of what happens to its output.
+
+    The predicate is conservative by construction: it answers "not constant",
+    and therefore reports, whenever it is unsure — an argument list that runs
+    past the end of the line, a template interpolation, a concatenation, a
+    spread, or any bare identifier. Every uncertain case stays a finding.
+
+    Regression source: the audit-target evaluation recorded in
+    NIGHT_RUN_LEDGER.md § W14, pattern 3.
+    """
+
+    def _shell_findings(self, scanner, path):
+        return [
+            f
+            for f in scanner.scan_and_convert(path)
+            if f.rule_id == "AGENT-034" and "shell" in f.description.lower()
+        ]
+
+    # --- Must NOT trigger: nothing an attacker can reach --------------------
+
+    def test_fixed_argv_not_flagged(self, scanner):
+        path = _write_ts_file("""
+            import { execFileSync } from 'child_process';
+            const root = execFileSync('git', ['rev-parse', '--show-toplevel']);
+        """)
+        assert self._shell_findings(scanner, path) == []
+
+    def test_fixed_argv_with_options_object_not_flagged(self, scanner):
+        """An options object's keys are keys, not variable references."""
+        path = _write_ts_file("""
+            import { execFileSync } from 'child_process';
+            const out = execFileSync('git', ['status'], { encoding: 'utf8' });
+        """)
+        assert self._shell_findings(scanner, path) == []
+
+    def test_constant_string_command_not_flagged(self, scanner):
+        path = _write_ts_file("""
+            import { exec } from 'child_process';
+            exec('copy');
+        """)
+        assert self._shell_findings(scanner, path) == []
+
+    # --- TRUE-POSITIVE CONTROLS: anything variable must still fire ----------
+
+    def test_variable_argument_still_flagged(self, scanner):
+        path = _write_ts_file("""
+            import { execFileSync } from 'child_process';
+            execFileSync('git', ['-C', cwd, 'log']);
+        """)
+        assert len(self._shell_findings(scanner, path)) >= 1
+
+    def test_template_interpolation_still_flagged(self, scanner):
+        path = _write_ts_file("""
+            import { execSync } from 'child_process';
+            execSync(`git log ${userRef}`);
+        """)
+        assert len(self._shell_findings(scanner, path)) >= 1
+
+    def test_concatenation_still_flagged(self, scanner):
+        path = _write_ts_file("""
+            import { exec } from 'child_process';
+            exec('git log ' + userRef);
+        """)
+        assert len(self._shell_findings(scanner, path)) >= 1
+
+    def test_spread_still_flagged(self, scanner):
+        path = _write_ts_file("""
+            import { execFileSync } from 'child_process';
+            execFileSync('git', ['-C', cwd, ...args]);
+        """)
+        assert len(self._shell_findings(scanner, path)) >= 1
+
+    def test_bare_identifier_command_still_flagged(self, scanner):
+        path = _write_ts_file("""
+            import { exec } from 'child_process';
+            exec(userCommand);
+        """)
+        assert len(self._shell_findings(scanner, path)) >= 1
+
+    def test_shell_true_with_variable_still_flagged(self, scanner):
+        """`shell: true` plus a variable is the dangerous combination."""
+        path = _write_ts_file("""
+            import { spawn } from 'child_process';
+            spawn(userCommand, { shell: true });
+        """)
+        assert len(self._shell_findings(scanner, path)) >= 1
+
+    def test_multiline_call_still_flagged(self, scanner):
+        """An argument list running past the line end must not be assumed safe."""
+        path = _write_ts_file("""
+            import { execFileSync } from 'child_process';
+            const files = execFileSync(
+                'git',
+                ['ls-files', userPath],
+            );
+        """)
+        assert len(self._shell_findings(scanner, path)) >= 1

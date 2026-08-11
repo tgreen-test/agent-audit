@@ -122,6 +122,82 @@ _CP_RECEIVER_RE = "(?:" + "|".join(
 _CP_EXEC_NAMES = "(?:execSync|execFileSync|execFile|exec)"
 _CP_SPAWN_NAMES = "(?:spawnSync|spawn)"
 
+def _call_args_are_constant(line: str, open_paren: int) -> bool:
+    """Whether the argument list starting at `open_paren` is entirely literal.
+
+    A child_process call whose every argument is a literal has no injection
+    surface: `execFileSync('git', ['rev-parse', '--show-toplevel'])` cannot be
+    influenced by an attacker regardless of what happens to its output. On the
+    audit target this shape — tooling shelling out to `git` with a fixed argv —
+    accounted for the bulk of the surviving AGENT-034 findings.
+
+    Conservative by construction. It answers False whenever it is unsure:
+    an unterminated argument list (the call is wrapped across lines), a
+    template literal containing `${...}`, string concatenation, a spread, or
+    any bare identifier. Only string literals, numbers, booleans, null, plain
+    array literals of those, and a trailing options object of those are
+    accepted. Answering False means "report it", so every uncertain case stays
+    a finding.
+
+    Args:
+        line: the source line
+        open_paren: index of the call's opening parenthesis
+
+    Returns:
+        True only if the whole argument list was parsed and is constant.
+    """
+    if open_paren < 0 or open_paren >= len(line) or line[open_paren] != "(":
+        return False
+
+    # Walk to the matching close paren, tracking string state so that a paren
+    # inside a literal does not end the scan.
+    depth = 0
+    quote = ""
+    i = open_paren
+    end = -1
+    while i < len(line):
+        ch = line[i]
+        if quote:
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == quote:
+                quote = ""
+        elif ch in "\"'`":
+            quote = ch
+        elif ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+            if depth == 0:
+                end = i
+                break
+        i += 1
+
+    if end < 0:
+        return False  # unbalanced on this line — call spans lines, so report
+
+    args = line[open_paren + 1:end]
+    if not args.strip():
+        return False  # no arguments at all is not this predicate's business
+
+    # Any interpolation, concatenation or spread means non-constant.
+    if "${" in args or "+" in args or "..." in args:
+        return False
+
+    # Strip complete string literals, then options-object keys (`encoding:` in
+    # `{ encoding: 'utf8' }` is a key, not a variable reference), then literal
+    # keywords. Anything still looking like an identifier is a variable, and the
+    # call is not constant.
+    residue = re.sub(r"'[^']*'|\"[^\"]*\"|`[^`${]*`", "", args)
+    residue = re.sub(r"[A-Za-z_$][\w$]*\s*:", "", residue)
+    residue = re.sub(r"\b(?:true|false|null|undefined)\b", "", residue)
+    if re.search(r"[A-Za-z_$]", residue):
+        return False
+
+    return True
+
+
 # SQL keywords used to identify SQL template strings
 SQL_KEYWORDS: Set[str] = {
     "SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "ALTER",
@@ -681,7 +757,15 @@ class TypeScriptScanner(BaseScanner):
             for pattern, rule_id, pattern_type, confidence, call_name in patterns:
                 if pattern_type == "ts_eval_exec" and is_ts_decl:
                     continue
-                if pattern.search(line):
+                match = pattern.search(line)
+                if match and pattern_type == "ts_child_process_exec":
+                    # No injection surface when every argument is a literal:
+                    # execFileSync('git', ['rev-parse', '--show-toplevel'])
+                    # cannot be influenced by an attacker no matter what the
+                    # process does with the result.
+                    if _call_args_are_constant(line, match.end() - 1):
+                        continue
+                if match:
                     findings.append(
                         TSFinding(
                             rule_id=rule_id,
