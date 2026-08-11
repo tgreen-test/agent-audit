@@ -142,6 +142,18 @@ def run_scan(
         )
         all_findings.extend(findings)
 
+        # SCRATCH (W21, to be reverted): run the generic YAML rule evaluator so the
+        # 52 `detection.patterns` blocks can be measured. Off unless the env var is
+        # set; this exists to produce a number, not to change behaviour.
+        if os.environ.get("AGENT_AUDIT_WIRE_YAML_RULES") == "1":
+            from agent_audit.rules.engine import MatchContext
+            all_findings.extend(rule_engine.evaluate(MatchContext(
+                file_path=py_result.source_file,
+                source_code=source,
+                dangerous_patterns=py_result.dangerous_patterns,
+                function_calls=py_result.dangerous_patterns,
+            )))
+
         # Note: Credential detection is handled by secret_scanner (with semantic analysis)
         # to avoid duplicate findings. Don't call rule_engine.evaluate_credentials() here.
 
