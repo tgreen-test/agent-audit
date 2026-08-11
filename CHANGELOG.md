@@ -5,6 +5,140 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.0] - 2026-08-11
+
+This is a correction release. The improvements are real, but the first thing an existing
+user needs is the list of things that were wrong, so that is what leads.
+
+### Withdrawn — six rules removed from the advertised set
+
+**The advertised rule count is 66. It was 72, and six of those rules could never fire.**
+
+`AGENT-003`, `AGENT-011`, `AGENT-013`, `AGENT-015`, `AGENT-016`, `AGENT-036` are withdrawn.
+No code path in the package could construct any of them, at any commit. Five had their
+detection written out in full as a `detection.patterns` block in `rules/builtin/*.yaml` —
+the place `CLAUDE.md` tells contributors to put it — and the only code that can execute
+such a block, `RuleEngine.evaluate()`, has never had a caller outside a unit test. The
+sixth, `AGENT-003`, had no detection of any kind.
+
+Two of the six were also duplicates of live rules: `AGENT-015` duplicates `AGENT-030` (same
+severity, same CWE-494, same ASI-04 category, same detection content), and `AGENT-013`
+likewise. Those defects are still detected, under the surviving IDs.
+
+**If you filter, suppress or report on any of the six IDs, that configuration was matching
+nothing and can be deleted.** The gaps the withdrawals leave — notably untrusted package or
+code acquisition in general application code — are recorded in `docs/RULES.md` under
+Withdrawn Rules rather than papered over.
+
+`tests/test_rule_producers.py` now fails the suite if an advertised rule has no producer.
+There is no allow-list, deliberately: pinning the known-bad set is what made "advertised and
+unproducible" a permanently acceptable state for six rules across four minor versions.
+
+### Retracted — benchmark figures that were never measurements
+
+**Any previously published figure of 98.51% precision, 100% recall, 99.25% F1 or 1.49%
+false-positive rate is withdrawn.** So is `CHANGELOG.md`'s "Precision: 98.51% → 100%",
+"Recall maintained at 100%" and "F1 Score: 100%" under `[0.4.1]`.
+
+These are not stale measurements. The recall figure was `FN = 0` **by assertion** — the
+v0.4.1 development brief states `Recall = 100% (0 FN)` in as many words — and the "→ 100%"
+values were copied from that brief's *target* block and published as an achievement. The
+`results/layer1.json` committed in the same commit measured **124 false negatives and 47.46%
+recall**. There is no commit at which the published numbers were produced by any script, so
+there is nothing to update them *to*; they are withdrawn.
+
+The reproducible current value, from `python3 tests/benchmark/precision_recall.py`:
+
+```
+TP 196  FP 93  FN 40
+Precision 67.82%   Recall 83.05%   F1 74.67%   FP Rate 32.18%
+```
+
+Two qualifications travel with that, and both are in
+`docs/decisions/METRICS_RETRACTION.md` § 3: precision fell since v0.19.0 because three
+*discovery bugs were fixed* and the tool began finding correct things the corpus does not
+label, and at least 21 of the 93 false positives are unlabelled true positives — so 67.82%
+is a floor, not a point estimate. It is stated as a bound rather than silently adjusted.
+
+### Added — `CAPABILITY_BOUNDARIES.md`
+
+A new document at the repository root stating what the tool does not do: no cross-file
+analysis, no call graph, no import following, no type resolution, no object-lifecycle
+modelling, no runtime dispatch-order reasoning, no runtime behaviour. It includes the
+blind-audit result — with 0 files skipped and 0 parse failures, recall on 6 real defects
+in a real codebase was **0** — and the structural reason this class of defect survived:
+**a rule that never fires and a clean codebase produce identical output**, so no test suite,
+benchmark or CI gate could have distinguished them.
+
+Read it before treating a clean report as an assurance.
+
+### Fixed
+
+- **MCP configuration discovery did not recurse.** It used a non-recursive `iterdir()` over
+  the scan root where nine other scanners use `rglob`, so **six MCP rules had a
+  directory-scan count of exactly zero** — they fired when a config file was named
+  explicitly and never during a normal project scan. (`f649dcc`)
+- **AI-tool hook discovery did not recurse.** `AGENT-120` resolved `.claude/settings.json`
+  and friends by joining onto the scan root, so it fired only when the scan root *was* the
+  project directory. (`d4d2850`)
+- **AGENT-034 had no tool-boundary constraint on TypeScript.**
+  `analysis/ts_tool_boundary_detector.py` — 325 lines with a full test file — was imported by
+  nothing, so the rule fired outside tool entry points on every TypeScript scan since it
+  shipped. Now wired. (`2ee8345`)
+- **Python 3.12–3.14 support.** `ast.NameConstant` fallbacks removed in 3.14 are gone
+  (`0f321ff`); the suite runs clean on 3.12, 3.13 and 3.14, and classifiers now say so.
+- **Layer 1 had two thresholds.** `precision_recall.py` carried its own
+  `if f1 < 0.75: sys.exit(1)` while `tests/benchmark/gates.yaml` — which calls itself the
+  single source of truth — carried 0.72, so the same build could pass the documented gate and
+  fail the undocumented one. The hard-coded floor is deleted; the script measures and
+  `quality_gate_check.py` decides. **No threshold was lowered.** (`78d8fe5`)
+- **Layer 1 scored non-deterministically** across identical runs. Fixed and pinned; ten
+  consecutive runs now agree to six decimal places, including under three `PYTHONHASHSEED`
+  values. (`cca9265`)
+- Substantial false-positive reduction across the TypeScript scanner: receiver resolution for
+  `.exec`/`.spawn`/`.fetch`, suppression of `child_process` calls with an all-literal argument
+  list, fixed non-shell executables no longer treated as shell execution, declarations and
+  quoted strings no longer treated as calls, `AGENT-041` requiring SQL statement syntax rather
+  than a bare keyword, and weak prompt names requiring corroboration. Measured on a real agent
+  codebase, this took the signal-to-noise ratio from **58:1 to 2.2:1**.
+
+### Known limitations, stated rather than left to be discovered
+
+- **TypeScript and JavaScript analysis is regex-level, not AST-level.** `TreeSitterParser`
+  contains a tree-sitter path; it has never executed in any shipped environment and stays
+  unreached deliberately. Wired up on a scratch build it **lost 2 true positives, added 6
+  known false positives, and broke 42 tests**. The extra remains optional and the declared
+  pin (`tree-sitter = "^0.22.0"` against `^0.23.0` grammars) cannot work in any case.
+  `tests/test_treesitter_differential.py` now blocks anyone enabling it without re-measuring.
+- **Shell scripts are not read.** No scanner opens a `.sh` file.
+- **`AGENT-041` over-triggers on any `.execute()` receiver** — agent invocation, task
+  dispatch and `concurrent.futures.Executor` are all reported as SQL sinks. Open, reproduced,
+  see `ISSUE_TRIAGE.md`.
+- **Configuration-derived values are treated as user input.** There is no provenance model
+  separating configuration and internal computation from untrusted input, which is the root of
+  several reported false positives. Open.
+
+### Testing
+
+The suite is **1796 passed / 1 failed / 3 skipped**. The one failure is deliberate:
+`tests/test_corpus_label_rules.py` fails because three ground-truth labels still cite a rule
+no code path can emit. It is committed red because ground truth is not the scanner author's to
+edit and a guard that passes while the defect is present is what this project keeps
+rediscovering.
+
+New guards, all of which fail the suite rather than warn:
+
+- `tests/test_rule_producers.py` — every advertised rule must have a producer
+- `tests/test_rule_fixture_coverage.py` — every advertised rule must have an input that makes
+  it fire
+- `tests/test_corpus_label_rules.py` — every corpus label must cite a rule that can be emitted
+- `tests/test_rule_reachability.py` — a rule that fires on a file scan must fire on a
+  directory scan
+- `tests/test_layer1_gate_singleton.py` — there is one Layer 1 threshold and it lives in
+  `gates.yaml`
+- `tests/test_treesitter_differential.py` — enabling tree-sitter may add findings, never
+  remove them
+
 ## [0.19.2] - 2026-07-03
 
 ### Fixed
