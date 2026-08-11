@@ -19,27 +19,73 @@ from agent_audit.analysis.rule_context_config import get_context_multiplier
 logger = logging.getLogger(__name__)
 
 
+# v0.19.3: Rule IDs withdrawn from the advertised set because nothing in the
+# package can construct them. A rule that never fires and a clean codebase produce
+# identical output, so no test, benchmark or CI gate could ever have caught this;
+# the runtime producer audit in `tests/test_rule_producers.py` is what did.
+#
+# These IDs are retired, not recycled — they stay listed so a future rule cannot
+# silently reuse an ID that appears in published documents and in the corpus.
+# Reinstating one means writing a producer and deleting its entry here, which the
+# producer test then enforces.
+WITHDRAWN_RULES: Dict[str, str] = {
+    "AGENT-003": (
+        "Potential Data Exfiltration Chain. No detection was ever written — no "
+        "pattern type, no YAML block, no constructor. Survives only as an "
+        "allow-list key in config/ignore.py. Its published definition ('access to "
+        "both sensitive data and network capability') has no operational threshold, "
+        "so implementing it would mean inventing one."
+    ),
+    "AGENT-011": (
+        "Missing Goal Validation. Detection written as a YAML detection.patterns "
+        "block (owasp_agentic_v2.yaml) that only RuleEngine.evaluate() could run, "
+        "and nothing calls it. Absence-of-configuration detection with no agreed "
+        "threshold for what counts as a boundary."
+    ),
+    "AGENT-013": (
+        "Long-Lived Credentials. YAML-only, as above. Subsumed in practice by "
+        "AGENT-004 (Hardcoded Credentials), which has a producer, a semantic "
+        "analyzer and corpus labels."
+    ),
+    "AGENT-015": (
+        "Untrusted MCP Server Source. YAML-only, as above — and a duplicate: "
+        "AGENT-030 'Unverified MCP Server Source' has the same severity, the same "
+        "CWE-494, the same ASI-04 category and the same detection content (npx "
+        "without a pinned version, http:// sources), with a real producer in "
+        "mcp_config_scanner.py. AGENT-030 superseded it at v0.3.0 and it was never "
+        "withdrawn. Note for anyone reading corpus labels: five ground-truth labels "
+        "and the AVB taxonomy use AGENT-015 to mean 'untrusted code fetched at "
+        "runtime' (npm install, curl|bash, git clone), which is not what the "
+        "published rule says. See DECISIONS.md."
+    ),
+    "AGENT-016": (
+        "Unvalidated RAG Data Source. YAML-only, as above. Detection is "
+        "absence-of-validation around loader calls; what counts as validation is "
+        "not defined anywhere, so a producer would be a guess."
+    ),
+    "AGENT-036": (
+        "Tool Output Trusted Without Sanitization. YAML-only, as above. Requires "
+        "data-flow from a tool return value into a prompt construction, which is a "
+        "taint-tracker feature rather than a pattern; not small."
+    ),
+}
+
 # v0.15.0: CWE ID Mapping Table (NIST SSDF PW.7 compliance)
 # Maps all AGENT-XXX rule IDs to corresponding CWE IDs
 RULE_CWE_MAPPING: Dict[str, str] = {
     # Core rules (v0.1.0)
     "AGENT-001": "CWE-78",    # OS Command Injection
     "AGENT-002": "CWE-250",   # Excessive Privileges
-    "AGENT-003": "CWE-918",   # Server-Side Request Forgery
     "AGENT-004": "CWE-798",   # Use of Hard-coded Credentials
     "AGENT-005": "CWE-494",   # Download Without Integrity Check
 
     # ASI-01: Goal Hijack
     "AGENT-010": "CWE-74",    # Improper Neutralization of Special Elements
-    "AGENT-011": "CWE-74",    # Improper Neutralization
 
     # ASI-03: Identity & Privilege Abuse
-    "AGENT-013": "CWE-269",   # Improper Privilege Management
     "AGENT-014": "CWE-285",   # Improper Authorization
 
-    # ASI-04: Supply Chain
-    "AGENT-015": "CWE-829",   # Inclusion from Untrusted Control Sphere
-    "AGENT-016": "CWE-494",   # Download Without Integrity Check
+    # ASI-04: Supply Chain — see WITHDRAWN_RULES for AGENT-015/016
 
     # ASI-05: Code Execution
     "AGENT-017": "CWE-94",    # Improper Control of Code Generation
@@ -75,7 +121,6 @@ RULE_CWE_MAPPING: Dict[str, str] = {
     # Tool Misuse & Trust (v0.3.0)
     "AGENT-034": "CWE-20",    # Improper Input Validation
     "AGENT-035": "CWE-77",    # Command Injection
-    "AGENT-036": "CWE-862",   # Missing Authorization
     "AGENT-037": "CWE-862",   # Missing Authorization (human-in-loop)
     "AGENT-038": "CWE-290",   # Authentication Bypass by Spoofing
     "AGENT-039": "CWE-290",   # Authentication Bypass by Spoofing

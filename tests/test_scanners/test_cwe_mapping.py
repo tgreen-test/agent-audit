@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 import pytest
 
-from agent_audit.rules.engine import RULE_CWE_MAPPING
+from agent_audit.rules.engine import RULE_CWE_MAPPING, WITHDRAWN_RULES
 
 
 class TestCWEMapping:
@@ -27,8 +27,13 @@ class TestCWEMapping:
         assert not invalid, f"Invalid CWE format: {invalid}"
 
     def test_core_rules_have_cwe(self):
-        """Core rules AGENT-001 through AGENT-005 must have CWE mapping."""
-        core_rules = ["AGENT-001", "AGENT-002", "AGENT-003", "AGENT-004", "AGENT-005"]
+        """Core rules AGENT-001 through AGENT-005 must have CWE mapping.
+
+        AGENT-003 is absent: it was withdrawn in v0.19.3 because no code path could
+        construct it. A CWE for a rule that cannot fire is a compliance claim with
+        nothing behind it, so the mapping is not the place to keep it alive.
+        """
+        core_rules = ["AGENT-001", "AGENT-002", "AGENT-004", "AGENT-005"]
 
         missing = [r for r in core_rules if r not in RULE_CWE_MAPPING]
         assert not missing, f"Core rules missing CWE mapping: {missing}"
@@ -36,12 +41,12 @@ class TestCWEMapping:
     def test_owasp_agentic_rules_have_cwe(self):
         """OWASP Agentic Top 10 rules must have CWE mapping."""
         owasp_rules = [
-            # ASI-01: Goal Hijack
-            "AGENT-010", "AGENT-011",
-            # ASI-03: Identity & Privilege
-            "AGENT-013", "AGENT-014",
-            # ASI-04: Supply Chain
-            "AGENT-015", "AGENT-016",
+            # ASI-01: Goal Hijack (AGENT-011 withdrawn, v0.19.3)
+            "AGENT-010",
+            # ASI-03: Identity & Privilege (AGENT-013 withdrawn — see AGENT-004)
+            "AGENT-014",
+            # ASI-04: Supply Chain (AGENT-015 withdrawn — see AGENT-030;
+            #                       AGENT-016 withdrawn)
             # ASI-05: Code Execution
             "AGENT-017",
             # ASI-06: Memory Poisoning
@@ -75,7 +80,8 @@ class TestCWEMapping:
 
     def test_tool_misuse_rules_have_cwe(self):
         """Tool misuse rules must have CWE mapping."""
-        tool_rules = ["AGENT-034", "AGENT-035", "AGENT-036", "AGENT-037", "AGENT-038", "AGENT-039"]
+        # AGENT-036 withdrawn in v0.19.3 — YAML-only detection, no producer
+        tool_rules = ["AGENT-034", "AGENT-035", "AGENT-037", "AGENT-038", "AGENT-039"]
 
         missing = [r for r in tool_rules if r not in RULE_CWE_MAPPING]
         assert not missing, f"Tool misuse rules missing CWE mapping: {missing}"
@@ -93,9 +99,24 @@ class TestCWEMapping:
         assert RULE_CWE_MAPPING.get("AGENT-001") == "CWE-78"
 
     def test_ssrf_maps_to_cwe918(self):
-        """AGENT-003 and AGENT-026 (SSRF) should map to CWE-918."""
-        assert RULE_CWE_MAPPING.get("AGENT-003") == "CWE-918"
+        """AGENT-026 (SSRF) should map to CWE-918."""
         assert RULE_CWE_MAPPING.get("AGENT-026") == "CWE-918"
+
+    def test_withdrawn_rules_carry_no_cwe_mapping(self):
+        """A withdrawn rule must not keep a CWE entry.
+
+        The mapping exists for NIST SSDF PW.7 and SOC 2 evidence. An entry for a
+        rule with no producer asserts a control that cannot run.
+        """
+        still_mapped = sorted(r for r in WITHDRAWN_RULES if r in RULE_CWE_MAPPING)
+        assert not still_mapped, (
+            f"withdrawn rules still in RULE_CWE_MAPPING: {still_mapped}"
+        )
+
+    def test_withdrawn_rules_each_record_a_reason(self):
+        """Withdrawal without a stated reason is indistinguishable from a deletion."""
+        for rule, reason in WITHDRAWN_RULES.items():
+            assert len(reason) > 60, f"{rule} withdrawal reason is too thin: {reason!r}"
 
     def test_deserialization_maps_to_cwe502(self):
         """AGENT-049 (unsafe deserialization) should map to CWE-502."""

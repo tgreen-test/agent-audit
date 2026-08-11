@@ -172,9 +172,11 @@ def test_no_advertised_rule_has_its_detection_only_in_yaml() -> None:
 
 def test_engine_rule_table_and_published_docs_still_agree() -> None:
     """Removing a rule from one list and not the other is the next failure mode."""
-    docs = set(
-        re.findall(r"(AGENT-\d+)", (REPO_ROOT / "docs" / "RULES.md").read_text(encoding="utf-8"))
-    )
+    published = (REPO_ROOT / "docs" / "RULES.md").read_text(encoding="utf-8")
+    marker = published.find("## Withdrawn Rules")
+    if marker != -1:
+        published = published[:marker]  # withdrawn IDs are recorded, not offered
+    docs = set(re.findall(r"(AGENT-\d+)", published))
     engine = advertised_rules()
     assert engine == docs, (
         "engine.py's rule table and docs/RULES.md have drifted:\n"

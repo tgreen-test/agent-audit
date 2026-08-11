@@ -66,7 +66,7 @@ DEFI_RULES = {"AGENT-%03d" % n for n in range(90, 110)}
 # ---------------------------------------------------------------------------
 
 def advertised_rules() -> Set[str]:
-    """The 72 rules a normal directory scan advertises.
+    """The 66 rules a normal directory scan advertises.
 
     `RULE_CWE_MAPPING` carries 92 IDs; removing the 20 DeFi profile rules gives a
     set that is *equal* — not merely equal in size — to the IDs published in
@@ -81,7 +81,17 @@ def advertised_rules() -> Set[str]:
 
 
 def documented_rules() -> Set[str]:
-    return set(re.findall(r"(AGENT-\d+)", (REPO_ROOT / "docs" / "RULES.md").read_text(encoding="utf-8")))
+    """Rule IDs `docs/RULES.md` publishes as available.
+
+    Everything from the "Withdrawn Rules" heading onwards is a record of rules that
+    were removed from the advertised set, so it is excluded — those IDs are named
+    there precisely so they are *not* offered.
+    """
+    text = (REPO_ROOT / "docs" / "RULES.md").read_text(encoding="utf-8")
+    marker = text.find("## Withdrawn Rules")
+    if marker != -1:
+        text = text[:marker]
+    return set(re.findall(r"(AGENT-\d+)", text))
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +235,7 @@ def test_advertised_set_matches_the_published_rule_list() -> None:
         f"  engine only: {sorted(engine_side - docs_side)}\n"
         f"  docs only  : {sorted(docs_side - engine_side)}"
     )
-    assert len(engine_side) == 72
+    assert len(engine_side) == 66
 
 
 def test_no_rule_is_reachable_only_by_file_argument(reachability) -> None:
@@ -299,31 +309,33 @@ def test_every_advertised_rule_has_a_producer() -> None:
     )
 
 
-# Advertised in docs/RULES.md and present in RULE_CWE_MAPPING, but no code path
-# constructs them. Each maps only to a `pattern_type` that no scanner emits,
-# except AGENT-003 which has no mapping at all and survives only as an
-# allow-list key in `config/ignore.py`. Logged under NEEDS-HEADY; not something
-# a scanner change can fix, since the detection was never written.
-KNOWN_ORPHAN_RULES = {
-    "AGENT-003",  # Data Exfiltration — no pattern type, no constructor
-    "AGENT-011",  # <- agent_without_input_guard, emitted by no scanner
-    "AGENT-013",  # <- hardcoded_credential_in_agent, emitted by no scanner
-    "AGENT-015",  # <- npx_unfixed_version / unofficial_mcp_source, neither emitted
-    "AGENT-016",  # <- unvalidated_rag_ingestion, emitted by no scanner
-    "AGENT-036",  # <- tool_output_trusted_blindly, emitted by no scanner
-}
+# RUN4 pinned six advertised-but-unproducible rules here so the set could not grow.
+# RUN5 removed them from the advertised set instead — see `WITHDRAWN_RULES` in
+# `rules/engine.py` and the Withdrawn Rules section of `docs/RULES.md`. The set is
+# now empty and must stay empty: `tests/test_rule_producers.py` enforces that with
+# no allow-list at all, and this assertion is the second lock on the same door.
+KNOWN_ORPHAN_RULES: Set[str] = set()
 
 
 # Mechanisms that exist, have passing unit tests, and are not reached by any
 # directory scan. Listed with the reason so that wiring one up fails this test
 # and forces the list to be updated rather than left to rot.
+#
+# RUN5 correction: AGENT-056 and AGENT-057 were listed here on the grounds that
+# `mcp_config_scanner._detect_tool_poisoning` has no callers. That method does have
+# no callers — but it is not the producer. `_check_tool_poisoning_in_config` is a
+# different method, is called from `mcp_config_scanner.py` on every config scan,
+# and emits both rules; a designed trigger fires them (see NIGHT_RUN_LEDGER § W19.3).
+# The RUN4 trigger missed them because it used the phrase "ignore all previous
+# instructions", and the analyzer's regex requires the noun straight after the first
+# qualifier, so it matches "ignore previous instructions" and not that phrasing.
+# Both rules are removed from this registry; they are unfixtured, not unreachable.
 KNOWN_UNREACHABLE_MECHANISMS = {
-    # `mcp_config_scanner._detect_tool_poisoning` is defined and called by
-    # nothing, so AGENT-056/057 cannot fire from a static config. The live path
-    # is `mcp_inspector`, which is the `inspect` command against a running
-    # server, not a directory scan.
-    "AGENT-056",
-    "AGENT-057",
+    # AGENT-054 (MCP baseline drift) compares a live server against a stored
+    # baseline. `MCPBaselineManager` is constructed only in `cli/commands/inspect.py`,
+    # so no static input can produce it during `scan`. Unreachable by design rather
+    # than by defect — but advertised beside 65 rules a scan does reach.
+    "AGENT-054",
 }
 
 
@@ -357,6 +369,6 @@ def test_probe_corpus_reaches_a_documented_share_of_the_rule_set(reachability) -
     file_counts, _, _ = reachability
     reached = {r for r in file_counts if r in advertised_rules()}
     assert len(reached) >= 52, (
-        f"probe corpus reaches only {len(reached)} of 72 advertised rules "
+        f"probe corpus reaches only {len(reached)} of 66 advertised rules "
         f"(was 52); missing: {sorted(advertised_rules() - reached)}"
     )
