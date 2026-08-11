@@ -1633,7 +1633,7 @@ samples:
   - file: "asi-02-tool-misuse/direct/subprocess_unsandboxed.py"
     vulnerabilities:
       - line: 8
-        rule_id: "AGENT-036"
+        rule_id: "AGENT-001"
         owasp_id: "ASI-02"
         is_true_positive: true
         confidence: 0.95
@@ -1666,7 +1666,7 @@ samples:
   - file: "asi-04-supply-chain/direct/npm_install_runtime.py"
     vulnerabilities:
       - line: 13
-        rule_id: "AGENT-015"
+        rule_id: "AGENT-001"
         owasp_id: "ASI-04"
         is_true_positive: true
         confidence: 0.95
@@ -1706,7 +1706,7 @@ samples:
   - file: "asi-04-supply-chain/indirect/pypi_typosquatting.py"
     vulnerabilities:
       - line: 12
-        rule_id: "AGENT-015"
+        rule_id: "AGENT-034"
         owasp_id: "ASI-04"
         is_true_positive: true
         confidence: 0.90

@@ -1,11 +1,11 @@
 {
-  "true_positives": 196,
-  "false_positives": 93,
-  "false_negatives": 40,
-  "precision": 0.6782006920415224,
-  "recall": 0.8305084745762712,
-  "f1_score": 0.7466666666666667,
-  "false_positive_rate": 0.3217993079584775,
+  "true_positives": 199,
+  "false_positives": 90,
+  "false_negatives": 37,
+  "precision": 0.6885813148788927,
+  "recall": 0.8432203389830508,
+  "f1_score": 0.7580952380952382,
+  "false_positive_rate": 0.31141868512110726,
   "tp_details": [
     "asi-01-goal-hijack/bypass/base64_encoded.py:14 AGENT-010",
     "asi-01-goal-hijack/direct/fstring_system_prompt.py:12 AGENT-010",
@@ -30,6 +30,7 @@
     "asi-02-tool-misuse/direct/subprocess_popen.py:11 AGENT-034",
     "asi-02-tool-misuse/direct/subprocess_popen.py:14 AGENT-001",
     "asi-02-tool-misuse/direct/subprocess_popen.py:14 AGENT-035",
+    "asi-02-tool-misuse/direct/subprocess_unsandboxed.py:9~8 AGENT-001",
     "asi-02-tool-misuse/indirect/path_traversal.py:10 AGENT-022",
     "asi-02-tool-misuse/indirect/path_traversal.py:10 AGENT-026",
     "asi-02-tool-misuse/indirect/path_traversal.py:10 AGENT-034",
@@ -51,6 +52,8 @@
     "asi-03-privilege-abuse/direct/keychain_access.py:10~8 AGENT-046",
     "asi-03-privilege-abuse/direct/sudoers_config.sh:4 AGENT-044",
     "asi-04-supply-chain/direct/mcp_standalone_json.json:1 AGENT-029",
+    "asi-04-supply-chain/direct/npm_install_runtime.py:13 AGENT-001",
+    "asi-04-supply-chain/indirect/pypi_typosquatting.py:14~12 AGENT-034",
     "asi-05-rce/direct/compile_exec.py:10 AGENT-034",
     "asi-05-rce/direct/compile_exec.py:13 AGENT-017",
     "asi-05-rce/direct/compile_exec.py:13 AGENT-035",
@@ -229,7 +232,6 @@
     "asi-02-tool-misuse/direct/eval_bare_no_decorator.py:11 AGENT-001 (not labeled)",
     "asi-02-tool-misuse/direct/exec_dynamic_code.py:11 AGENT-001 (not labeled)",
     "asi-02-tool-misuse/direct/ssrf_bare_requests.py:10 AGENT-026 (not labeled)",
-    "asi-02-tool-misuse/direct/subprocess_unsandboxed.py:9 AGENT-001 (not labeled)",
     "asi-02-tool-misuse/indirect/ssrf_urllib.py:9 AGENT-026 (not labeled)",
     "asi-03-privilege-abuse/direct/daemon_systemctl.sh:5 AGENT-043 (not labeled)",
     "asi-03-privilege-abuse/direct/keychain_access.py:9 AGENT-047 (not labeled)",
@@ -239,13 +241,11 @@
     "asi-04-supply-chain/direct/mcp_excessive_permissions.json:5 AGENT-004 (not labeled)",
     "asi-04-supply-chain/direct/mcp_standalone_json.json:1 AGENT-030 (not labeled)",
     "asi-04-supply-chain/direct/mcp_standalone_json.json:1 AGENT-032 (not labeled)",
-    "asi-04-supply-chain/direct/npm_install_runtime.py:13 AGENT-001 (not labeled)",
     "asi-04-supply-chain/direct/pip_install_runtime.py:12 AGENT-034 (not labeled)",
     "asi-04-supply-chain/direct/pip_install_runtime.py:13 AGENT-034 (not labeled)",
     "asi-04-supply-chain/direct/pip_install_runtime.py:13 AGENT-053 (not labeled)",
     "asi-04-supply-chain/direct/unverified_package.py:11 AGENT-034 (not labeled)",
     "asi-04-supply-chain/direct/unverified_package.py:11 AGENT-053 (not labeled)",
-    "asi-04-supply-chain/indirect/pypi_typosquatting.py:14 AGENT-034 (not labeled)",
     "asi-05-rce/indirect/dynamic_import.py:13 AGENT-034 (not labeled)",
     "asi-05-rce/indirect/dynamic_import.py:13 AGENT-053 (not labeled)",
     "asi-06-memory-poisoning/direct/unbounded_memory.py:17 AGENT-116 (not labeled)",
@@ -305,7 +305,6 @@
     "asi-02-tool-misuse/direct/eval_bare_no_decorator.py:11 AGENT-034",
     "asi-02-tool-misuse/direct/exec_dynamic_code.py:8 AGENT-034",
     "asi-02-tool-misuse/direct/ssrf_bare_requests.py:9 AGENT-037",
-    "asi-02-tool-misuse/direct/subprocess_unsandboxed.py:8 AGENT-036",
     "asi-02-tool-misuse/indirect/ssrf_unvalidated.py:11 AGENT-034",
     "asi-02-tool-misuse/indirect/ssrf_urllib.py:7 AGENT-037",
     "asi-03-privilege-abuse/direct/chmod_world_writable.py:12 AGENT-014",
@@ -316,9 +315,7 @@
     "asi-04-supply-chain/direct/curl_pipe_bash.sh:11 AGENT-015",
     "asi-04-supply-chain/direct/git_clone_exec.py:14 AGENT-015",
     "asi-04-supply-chain/direct/mcp_excessive_permissions.json:1 AGENT-029",
-    "asi-04-supply-chain/direct/npm_install_runtime.py:13 AGENT-015",
     "asi-04-supply-chain/indirect/dynamic_requirements.py:14 AGENT-015",
-    "asi-04-supply-chain/indirect/pypi_typosquatting.py:12 AGENT-015",
     "asi-05-rce/direct/credential_new_formats.py:6 AGENT-004",
     "asi-05-rce/direct/credential_new_formats.py:9 AGENT-004",
     "asi-05-rce/direct/credential_new_formats.py:12 AGENT-004",
@@ -348,9 +345,9 @@
       "tp": 23
     },
     "ASI-02": {
-      "recall": 0.8,
+      "recall": 0.8133,
       "expected": 75,
-      "tp": 60
+      "tp": 61
     },
     "ASI-03": {
       "recall": 0.375,
@@ -358,9 +355,9 @@
       "tp": 3
     },
     "ASI-04": {
-      "recall": 0.1429,
+      "recall": 0.4286,
       "expected": 7,
-      "tp": 1
+      "tp": 3
     },
     "ASI-05": {
       "recall": 0.7857,

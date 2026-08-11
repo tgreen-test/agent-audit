@@ -9,6 +9,18 @@
 > broken-environment artifact; it was the v0.5.2 measurement, six months stale.
 > Everything else below stands as written.
 
+> **SESSION 8 ADDENDUM — 2026-08-11, scope was one file.** This session was given an explicit
+> scope by Heady — read `RELEASE_CHECKLIST.md` and `DECISIONS.md` item 39, write one script
+> doing the three guard-blocked changes and nothing else, do not run it — and it did exactly
+> that and stopped. **No fix was made, so nothing below changes and no number moved.**
+> `scripts/finalize_run7.sh` now exists: it applies the three item-39 `rule_id` edits, raises
+> `f1_min` to 0.73 and `recall_min` to 0.82, and `git rm`s the two dead threshold files, each
+> step printing a before/after diff and verifying itself. It is **unrun** — `bash -n`-clean
+> and its embedded Python compiles, which proves it parses, not that it behaves. Evidence and
+> design notes in `NIGHT_RUN_LEDGER.md` § W33. Nothing was committed, pushed, merged, tagged
+> or published, and no oracle, dataset, ground-truth label, fixture or threshold was edited —
+> the script that would edit two of those is precisely what was left unrun.
+
 ## 1. The headline
 
 **The 0.0% was a broken environment, not a capability gap.** The editable install's `.pth`

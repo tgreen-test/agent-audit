@@ -4284,3 +4284,88 @@ Heady to make.
 a fixture path alongside a `2>/dev/null` redirect, one `rm -rf` on a scratch directory, and
 one `grep` whose `2>/dev/null` made the guard scan its tokens. Each was solved by changing my
 command, never by editing the hook, disguising a path, or assembling one at runtime.
+
+---
+
+## W33 — `scripts/finalize_run7.sh`, written and not run
+
+Scope was set explicitly by Heady: read `RELEASE_CHECKLIST.md` and `DECISIONS.md` item 39,
+write one script that does the three blocked changes and nothing else, **do not run it**.
+
+**No fix is claimed here, so there is no BEFORE/AFTER pair to record.** The three changes the
+script performs are exactly the three the guard denies — the corpus labels (W27.2), the
+ratchet (W27.5) and the two dead files (W30.1). Running it is the thing this run is not
+allowed to do, so the numbers on either side of it remain W27.3's prediction, unmeasured by
+me. Recording a BEFORE/AFTER for an unexecuted script would be the fabrication this ledger
+exists to prevent.
+
+### What was verified, with the real commands
+
+The line numbers the script edits by ordinal were re-checked against the file at HEAD:
+
+```
+$ for n in 1636 1669 1709; do printf '%s: ' "$n"; sed -n "${n}p" tests/ground_truth/labeled_samples.yaml; done
+1636:         rule_id: "AGENT-036"
+1669:         rule_id: "AGENT-015"
+1709:         rule_id: "AGENT-015"
+```
+
+matching `RELEASE_CHECKLIST.md` § 1 exactly. Both deletion targets are still tracked:
+
+```
+$ git ls-files --error-unmatch tests/benchmark/quality_gates.yaml tests/benchmark/quality_gates_v2.yaml
+tests/benchmark/quality_gates.yaml
+tests/benchmark/quality_gates_v2.yaml
+```
+
+The script parses, and its three embedded Python blocks compile:
+
+```
+$ bash -n scripts/finalize_run7.sh
+bash -n: syntax OK (parsed, not executed)
+
+$ python3 - <<'EOF'   # ast.parse over each <<'PY' heredoc
+embedded python blocks: 3
+  block 1: compiles OK (14 lines)
+  block 2: compiles OK (22 lines)
+  block 3: compiles OK (27 lines)
+```
+
+**That is the whole of the verification.** `bash -n` proves the file parses, not that it
+behaves. No step of it has been executed, so its diffs, its assertions and its skip-if-already
+-applied paths are untested against real output. Stated in the handover to Heady in the same
+words.
+
+### Design notes worth keeping
+
+* **Preflight before the first write.** Each of the three yaml lines must read either the
+  documented old value or the already-applied new one; anything else prints the line and
+  aborts with nothing touched. A moved line number stops the script rather than being
+  guessed around — the failure mode a line-ordinal edit invites.
+* **The blast radius is asserted, not assumed.** Step 1 fails if more than three lines
+  changed, which is what keeps `owasp_id` on line 1670 provably untouched — § 1 calls that a
+  separate judgement call and it is not part of the three.
+* **Step 2 verifies what it must not move.** It re-loads `gates.yaml` and asserts
+  `precision_min` is still 0.66, the aspirational `target` block is still 0.90 / 0.85 / 0.87,
+  and `per_asi_recall_min` still has ten categories.
+* **Order is load-bearing and stated in the file.** Step 2 alone puts CI underwater; the
+  raised floor assumes step 1's labels.
+* **It stops short of measuring.** No commit, no `precision_recall.py`, no
+  `quality_gate_check.py`, no `pytest`. Those print at the end as commands for Heady, next to
+  § 1's prediction (F1 0.746667 → 0.758095), so the re-measurement is a number he checks
+  rather than one the script asserts about itself.
+
+### Invariants
+
+```
+git status --porcelain -- tests/ground_truth/ tests/fixtures/ eval/ tests/benchmark/
+    (empty)
+git log --oneline -1
+    48c1a89 docs: RUN7 -- two questions answered "no", and a fix reverted because it worked
+branch                    fix/py314-blocker
+new files this session    scripts/finalize_run7.sh   (untracked, uncommitted)
+```
+
+No push, merge, rebase, tag or publish. No oracle, dataset, ground-truth label, fixture,
+confidence value, tier boundary or threshold modified — the script that would modify two of
+those was written, and left unrun.

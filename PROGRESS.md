@@ -86,6 +86,12 @@ identifier mean three things.
 
 ## Still open, in priority order
 
+* **Run `scripts/finalize_run7.sh`** — one script, written session 8 and deliberately unrun,
+  doing the three changes the guard denies me: the three item-39 `rule_id` edits, the ratchet
+  (`f1_min` 0.73, `recall_min` 0.82), and the two dead-file `git rm`s. Each step diffs and
+  verifies itself; it stops short of measuring, so re-run `precision_recall.py` after it and
+  check § 1's prediction, F1 0.746667 → 0.758095. It has only been parse-checked, never
+  executed. Ledger § W33.
 * **`DECISIONS.md` item 39, rows 2–4** — the three remaining unmatchable AGENT-015 labels.
   Build the supply-chain rule, or mark them as known-uncovered. Either closes the guard
   honestly; retargeting them does not.

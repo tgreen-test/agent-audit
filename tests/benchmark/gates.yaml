@@ -37,8 +37,8 @@ layer1:
   #     figure recorded before it carries about +/-1 TP of unquantified noise.
   thresholds:
     precision_min: 0.66
-    recall_min: 0.81
-    f1_min: 0.72
+    recall_min: 0.82
+    f1_min: 0.73
 
   # RATCHET, per ASI category. Same derivation: measured minus 0.02, truncated.
   # ASI-03/04/07 are low because of the label defects catalogued in DECISIONS.md
