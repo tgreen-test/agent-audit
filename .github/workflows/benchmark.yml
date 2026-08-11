@@ -168,8 +168,17 @@ jobs:
           if_no_artifact_found: ignore
           workflow_conclusion: success
           branch: main
+        # Retained deliberately: there is genuinely no baseline before the first
+        # successful main-branch run, and a missing baseline must not block the PR.
         continue-on-error: true
 
+      # NOTE: run_eval MUST be invoked as a module, not as a script. It uses relative
+      # imports (`from .adapters...`), and the package directory name contains a hyphen,
+      # so `python .../run_eval.py` fails with
+      #   ImportError: attempted relative import with no known parent package
+      # PYTHONPATH makes the hyphenated package importable from the repo root.
+      # This step previously had continue-on-error: true, so it failed on every run
+      # since it was added and nobody saw it. See NIGHT_RUN_LEDGER.md W3.
       - name: Run Agent-Vuln-Bench
         run: |
           mkdir -p results
@@ -178,21 +187,26 @@ jobs:
             echo "Using baseline from previous run"
             BASELINE_ARG="--baseline results/baseline.json"
           fi
-          python tests/benchmark/agent-vuln-bench/harness/run_eval.py \
+          PYTHONPATH=tests/benchmark python -m "agent-vuln-bench.harness.run_eval" \
             --tool agent-audit \
             --dataset all \
             --output results/avb_results.json \
             --report results/avb_report.md \
             $BASELINE_ARG
-        continue-on-error: true
+          test -s results/avb_results.json \
+            || { echo "::error::run_eval produced no results/avb_results.json"; exit 1; }
 
       - name: Generate baseline (main branch only)
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         run: |
+          # results.json (per-sample), NOT avb_results.json (aggregate CI metrics).
+          # The aggregate file has no samples[], so it yields passing_samples: [] and a
+          # baseline that can never detect a regression. See NIGHT_RUN_LEDGER.md W4.
           python tests/benchmark/scripts/save_avb_baseline.py \
-            --eval-results results/avb_results.json \
+            --eval-results results/results.json \
             --output results/baseline.json
-        continue-on-error: true
+          test -s results/baseline.json \
+            || { echo "::error::baseline.json was not generated"; exit 1; }
 
       - name: Upload AVB Results
         uses: actions/upload-artifact@v4
@@ -206,7 +220,6 @@ jobs:
         with:
           name: avb-baseline
           path: results/baseline.json
-        continue-on-error: true
 
   quality-gate:
     name: Quality Gate Check (v2)
@@ -229,12 +242,23 @@ jobs:
       - name: Install dependencies
         run: pip install pyyaml
 
+      # quality_gate_check.py documents its own exit contract: 0 = pass,
+      # 1 = blocking failure, 2 = warning. Honour it here rather than blanket-masking
+      # the step with continue-on-error, which made the "Quality Gate" job incapable
+      # of ever failing. Thresholds live in quality_gates_v2.yaml and are not touched.
       - name: Run Quality Gate (v2)
         run: |
+          set +e
           python tests/benchmark/quality_gate_check.py \
             --config tests/benchmark/quality_gates_v2.yaml \
             --results results/
-        continue-on-error: true
+          rc=$?
+          set -e
+          case "$rc" in
+            0) echo "::notice::Quality gate PASSED" ;;
+            2) echo "::warning::Quality gate returned warnings (exit 2), not blocking" ;;
+            *) echo "::error::Quality gate FAILED (exit $rc)"; exit "$rc" ;;
+          esac
 
   compare-tools:
     name: Multi-Tool Comparison (Optional)
@@ -254,10 +278,13 @@ jobs:
           # Install optional tools for comparison (continue on error)
           pip install bandit semgrep || true
 
+      # Module form, as above. continue-on-error is retained here on purpose: this job
+      # is workflow_dispatch/schedule only and depends on third-party tools (bandit,
+      # semgrep) that are installed best-effort. It gates nothing.
       - name: Run Multi-Tool Evaluation
         run: |
           mkdir -p results
-          python tests/benchmark/agent-vuln-bench/harness/run_eval.py \
+          PYTHONPATH=tests/benchmark python -m "agent-vuln-bench.harness.run_eval" \
             --tool all \
             --dataset all \
             --output results/ \
