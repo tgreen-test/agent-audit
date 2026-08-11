@@ -3,7 +3,7 @@
 import pytest
 from datetime import datetime
 
-from agent_audit.models.finding import Finding, Remediation
+from agent_audit.models.finding import Finding, Remediation, deduplicate_findings
 from agent_audit.models.risk import Severity, Category, Location
 
 
@@ -242,3 +242,78 @@ class TestSeverity:
         assert Severity.CRITICAL > Severity.HIGH
         assert Severity.HIGH > Severity.MEDIUM
         assert Severity.MEDIUM >= Severity.MEDIUM
+
+
+class TestShellExecutionSubsumesNoSandbox:
+    """
+    AGENT-034 and AGENT-047 on one line are the same call seen twice: the
+    execution, and the observation that the execution is unsandboxed. A reviewer
+    reading `spawnSync(command, args, { cwd })` gets two entries at one location
+    and one remediation between them.
+
+    This is the redundancy RULE_SUBSUMPTION_MAP was introduced for in v0.9.0 —
+    AGENT-001 and AGENT-017 already subsume both — and AGENT-034 sits directly
+    between them in specificity.
+
+    Same-line only. An unsandboxed subprocess that AGENT-034 does not report
+    still surfaces under AGENT-047 on its own, which is what the second half of
+    these tests pins.
+
+    Regression source: the audit-target measurement recorded in
+    NIGHT_RUN_LEDGER.md section W17, pattern 6. 17 of its 36 AGENT-047 findings
+    shared a line with AGENT-034.
+    """
+
+    def _finding(self, rule_id, line, path="/tmp/x.ts", confidence=0.85):
+        return Finding(
+            rule_id=rule_id,
+            title=rule_id,
+            description=rule_id,
+            severity=Severity.HIGH,
+            category=Category.TOOL_MISUSE,
+            location=Location(file_path=path, start_line=line, end_line=line),
+            confidence=confidence,
+        )
+
+    def test_same_line_pair_collapses_to_shell_execution(self):
+        out = deduplicate_findings([
+            self._finding("AGENT-034", 12),
+            self._finding("AGENT-047", 12),
+        ])
+        assert [f.rule_id for f in out] == ["AGENT-034"]
+
+    def test_different_lines_both_survive(self):
+        out = deduplicate_findings([
+            self._finding("AGENT-034", 12),
+            self._finding("AGENT-047", 30),
+        ])
+        assert sorted(f.rule_id for f in out) == ["AGENT-034", "AGENT-047"]
+
+    def test_different_files_both_survive(self):
+        out = deduplicate_findings([
+            self._finding("AGENT-034", 12, path="/tmp/a.ts"),
+            self._finding("AGENT-047", 12, path="/tmp/b.ts"),
+        ])
+        assert sorted(f.rule_id for f in out) == ["AGENT-034", "AGENT-047"]
+
+    def test_lone_no_sandbox_finding_survives(self):
+        """A Python subprocess.run AGENT-034 never reports must still surface."""
+        out = deduplicate_findings([self._finding("AGENT-047", 12, path="/tmp/a.py")])
+        assert [f.rule_id for f in out] == ["AGENT-047"]
+
+    def test_command_injection_still_subsumes_both(self):
+        """The pre-existing AGENT-001 subsumption is unchanged."""
+        out = deduplicate_findings([
+            self._finding("AGENT-001", 12),
+            self._finding("AGENT-034", 12),
+            self._finding("AGENT-047", 12),
+        ])
+        assert [f.rule_id for f in out] == ["AGENT-001"]
+
+    def test_unrelated_rule_on_the_same_line_survives(self):
+        out = deduplicate_findings([
+            self._finding("AGENT-034", 12),
+            self._finding("AGENT-047", 12),
+            self._finding("AGENT-026", 12),
+        ])
+        assert sorted(f.rule_id for f in out) == ["AGENT-026", "AGENT-034"]

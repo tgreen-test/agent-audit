@@ -70,6 +70,20 @@ RULE_SUBSUMPTION_MAP: Dict[str, List[str]] = {
     "AGENT-001": ["AGENT-047", "AGENT-034"],
     # Code execution (AGENT-017) also subsumes these
     "AGENT-017": ["AGENT-047", "AGENT-034"],
+    # Shell/code execution (AGENT-034) subsumes no-sandbox subprocess
+    # (AGENT-047) on the same line.
+    #
+    # They are the same call seen twice: AGENT-034 reports the execution,
+    # AGENT-047 reports that the execution is unsandboxed. A reviewer reading
+    # `spawnSync(command, args, { cwd })` gets two entries at one location and
+    # one remediation between them. This is the redundancy the map was
+    # introduced for — AGENT-001 and AGENT-017 already subsume both — and
+    # AGENT-034 sits directly between them in specificity.
+    #
+    # Same-line only, so an unsandboxed subprocess that AGENT-034 does not
+    # report (a Python `subprocess.run`, or a line the TypeScript predicates
+    # exclude) still surfaces under AGENT-047 on its own.
+    "AGENT-034": ["AGENT-047"],
 }
 
 

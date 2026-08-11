@@ -408,6 +408,32 @@ PROMPT_CONTEXT_NAMES: Set[str] = {
     "system", "role",
 }
 
+# Names in PROMPT_CONTEXT_NAMES that are ordinary programming vocabulary rather
+# than evidence of an LLM prompt. `message` is the most common name in
+# TypeScript for an error or log string; on the audit target every AGENT-010
+# finding but one was `let message = \`... error (HTTP ${status})\``.
+#
+# Same shape as the SQL narrowing in 5f00398: a keyword alone is too weak, so
+# the weak names have to be paired with the companion evidence their claim
+# requires. The strong names — prompt, systemPrompt, userPrompt, instructions —
+# are unambiguous and keep firing on their own.
+WEAK_PROMPT_CONTEXT_NAMES: Set[str] = {
+    "message", "messages", "template", "system", "role",
+}
+
+# Evidence that the surrounding code is talking to a model.
+_LLM_CONTEXT_RE = re.compile(
+    r"\bopenai\b|\banthropic\b|\bclaude\b|\bgemini\b|\bollama\b|\bbedrock\b"
+    r"|\bllm\b|\blangchain\b|\bchat\.completions\b|\bcreateChatCompletion\b"
+    r"|\bcompletions?\s*\.\s*create\b|\bsystem(?:_p|P)rompt\b|\bprompt\b"
+    r"|\brole\s*:\s*['\"](?:system|user|assistant)['\"]"
+    r"|\bmessages\s*:\s*\[",
+    re.IGNORECASE,
+)
+
+# How many lines either side of the assignment count as "surrounding".
+_PROMPT_CONTEXT_WINDOW = 3
+
 # Unsafe deserialization patterns for JS/TS
 UNSAFE_DESER_PATTERNS: List[Tuple[re.Pattern, str, float]] = [
     (
@@ -1055,6 +1081,18 @@ class TypeScriptScanner(BaseScanner):
                 continue
 
             match = prompt_template_pattern.search(line)
+            if match and match.group(1).lower() in {
+                n.lower() for n in WEAK_PROMPT_CONTEXT_NAMES
+            }:
+                # A weak name needs the companion evidence its claim requires.
+                window = "\n".join(
+                    lines[
+                        max(0, line_num - 1 - _PROMPT_CONTEXT_WINDOW):
+                        line_num + _PROMPT_CONTEXT_WINDOW
+                    ]
+                )
+                if not _LLM_CONTEXT_RE.search(window):
+                    match = None
             if match:
                 findings.append(
                     TSFinding(

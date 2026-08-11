@@ -1322,3 +1322,103 @@ class TestFixedNonShellProgram:
             const c = spawnSync(resolvedBinary, args, { encoding: 'utf8' });
         """)
         assert len(self._shell(scanner, path)) == 1
+
+
+class TestWeakPromptNames:
+    """
+    AGENT-010 fired on any interpolated template assigned to a name in
+    PROMPT_CONTEXT_NAMES, and that set contains ordinary programming vocabulary:
+    `message`, `messages`, `template`, `system`, `role`. `message` is the most
+    common name in TypeScript for an error or log string, so on the audit target
+    all but one AGENT-010 finding was an HTTP error message.
+
+    Same shape as the SQL narrowing in 5f00398: a keyword alone is too weak, so
+    the weak names are paired with the companion evidence their claim requires —
+    something in the surrounding three lines that shows the code is talking to a
+    model. The strong names (prompt, systemPrompt, userPrompt, instructions)
+    keep firing on their own.
+
+    Regression source: the audit-target measurement recorded in
+    NIGHT_RUN_LEDGER.md section W17, pattern 5.
+    """
+
+    def _prompts(self, scanner, path):
+        return [
+            f for f in scanner.scan_and_convert(path) if f.rule_id == "AGENT-010"
+        ]
+
+    # --- Must NOT trigger: weak name, no model in sight --------------------
+
+    def test_http_error_message_not_flagged(self, scanner):
+        path = _write_ts_file("""
+            function describe(response: Response) {
+                let message = `Upstream API error (HTTP ${response.status})`;
+                return message;
+            }
+        """)
+        assert self._prompts(scanner, path) == []
+
+    def test_timeout_message_not_flagged(self, scanner):
+        path = _write_ts_file("""
+            const message = `tool call timed out after ${timeoutMs}ms`;
+        """)
+        assert self._prompts(scanner, path) == []
+
+    def test_ui_template_not_flagged(self, scanner):
+        path = _write_ts_file("""
+            const template = `<li data-id="${item.id}">${item.label}</li>`;
+        """)
+        assert self._prompts(scanner, path) == []
+
+    # --- Must STILL trigger --------------------------------------------------
+
+    def test_strong_name_flagged_without_context(self, scanner):
+        """`prompt` is unambiguous and needs no corroboration."""
+        path = _write_ts_file("""
+            const prompt = `Summarise the following: ${document}`;
+        """)
+        assert len(self._prompts(scanner, path)) >= 1
+
+    def test_system_prompt_flagged_without_context(self, scanner):
+        path = _write_ts_file("""
+            const systemPrompt = `You are ${persona}. Be brief.`;
+        """)
+        assert len(self._prompts(scanner, path)) >= 1
+
+    def test_weak_name_flagged_with_model_context(self, scanner):
+        """`message` beside a chat call is the case the rule is for."""
+        path = _write_ts_file("""
+            const message = `Answer as ${persona}: ${userText}`;
+            const reply = await openai.chat.completions.create({
+                model: "gpt-4o",
+                messages: [{ role: "user", content: message }],
+            });
+        """)
+        assert len(self._prompts(scanner, path)) >= 1
+
+    def test_weak_name_flagged_with_role_literal_nearby(self, scanner):
+        path = _write_ts_file("""
+            const role = `${persona} assistant`;
+            const payload = { role: "system", content: role };
+        """)
+        assert len(self._prompts(scanner, path)) >= 1
+
+    def test_mixed_file_keeps_only_the_prompt(self, scanner):
+        """The discrimination itself: 1 of 3 interpolated templates is a prompt.
+
+        The weak names are placed outside the three-line window of the strong
+        one on purpose. Proximity IS the corroboration this predicate uses, so a
+        `message` two lines from a `prompt` is deliberately kept — that is the
+        granularity, and pretending otherwise in a test would hide it.
+        """
+        path = _write_ts_file("""
+            const message = `request failed (HTTP ${status})`;
+            const template = `<b>${label}</b>`;
+
+            function unrelated(a, b) {
+                return a + b;
+            }
+
+            const prompt = `Rewrite this: ${userText}`;
+        """)
+        assert len(self._prompts(scanner, path)) == 1
