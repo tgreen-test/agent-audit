@@ -52,3 +52,4 @@ v*.md
 
 # macOS
 .DS_Store
+eval/
