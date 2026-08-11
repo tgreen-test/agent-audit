@@ -1244,9 +1244,11 @@ class PythonASTVisitor(ast.NodeVisitor):
         """Check if a subprocess call has shell=True."""
         for keyword in node.keywords:
             if keyword.arg == 'shell':
+                # `is True` on purpose: shell=1 / shell="yes" are not shell=True.
+                # (A former ast.NameConstant fallback lived here. NameConstant has been
+                # an alias for ast.Constant since 3.8 and was removed in 3.14, where
+                # merely naming it raised AttributeError for any non-literal shell=.)
                 if isinstance(keyword.value, ast.Constant):
-                    return keyword.value.value is True
-                if isinstance(keyword.value, ast.NameConstant):  # Python 3.7 compat
                     return keyword.value.value is True
         return False
 
@@ -4376,13 +4378,13 @@ class PythonASTVisitor(ast.NodeVisitor):
             if not isinstance(child, ast.While):
                 continue
 
-            # Check for while True or while 1
+            # Check for while True or while 1.
+            # (A former ast.NameConstant elif lived here. NameConstant has been an alias
+            # for ast.Constant since 3.8 and was removed in 3.14, where merely naming it
+            # raised AttributeError for any non-literal while test such as `while run:`.)
             is_infinite = False
             if isinstance(child.test, ast.Constant):
                 if child.test.value is True or child.test.value == 1:
-                    is_infinite = True
-            elif isinstance(child.test, ast.NameConstant):
-                if child.test.value is True:
                     is_infinite = True
 
             if not is_infinite:
