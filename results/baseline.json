@@ -1,0 +1,36 @@
+{
+  "version": "v0.5.0",
+  "date": "2026-08-11T00:59:51.710335",
+  "passing_samples": [
+    "KNOWN-001",
+    "KNOWN-002",
+    "KNOWN-003",
+    "KNOWN-004",
+    "KNOWN-005",
+    "KNOWN-006",
+    "KNOWN-007",
+    "KNOWN-008",
+    "KNOWN-009",
+    "KNOWN-010",
+    "KNOWN-011",
+    "KNOWN-012",
+    "WILD-001",
+    "WILD-002",
+    "WILD-003",
+    "WILD-004",
+    "WILD-005",
+    "WILD-006",
+    "WILD-007",
+    "WILD-008",
+    "WILD-009"
+  ],
+  "metrics": {
+    "recall": 0.9524,
+    "precision": 0.8696,
+    "f1": 0.9091,
+    "set_a_recall": 1.0,
+    "set_b_recall": 1.0,
+    "set_c_recall": 0.8571
+  },
+  "sample_count": 21
+}

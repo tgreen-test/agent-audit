@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime
@@ -84,30 +85,42 @@ def run_eval_internal(output_path: Path) -> Dict[str, Any]:
     """Run run_eval.py internally and return results."""
     # Determine paths
     script_dir = Path(__file__).parent
-    run_eval_path = script_dir.parent / "agent-vuln-bench" / "harness" / "run_eval.py"
+    bench_root = script_dir.parent
+    run_eval_path = bench_root / "agent-vuln-bench" / "harness" / "run_eval.py"
 
     if not run_eval_path.exists():
         print(f"Error: run_eval.py not found at {run_eval_path}")
         sys.exit(1)
 
-    temp_output = output_path.parent / "temp_eval_results.json"
+    # run_eval must be invoked as a module: it uses relative imports and its package
+    # directory name contains a hyphen, so running it as a script raises
+    # "ImportError: attempted relative import with no known parent package".
+    # Writing to a directory (not a .json file) yields the per-sample results.json that
+    # extract_passing_samples needs.
+    temp_output = output_path.parent / "temp_eval_results"
 
-    print(f"Running run_eval.py...")
+    print("Running run_eval as a module...")
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(
+        [str(bench_root)] + ([os.environ["PYTHONPATH"]] if os.environ.get("PYTHONPATH") else [])
+    )}
     result = subprocess.run(
         [
             sys.executable,
-            str(run_eval_path),
+            "-m", "agent-vuln-bench.harness.run_eval",
             "--tool", "agent-audit",
             "--dataset", "all",
             "--output", str(temp_output),
         ],
         capture_output=True,
         text=True,
+        env=env,
     )
 
+    temp_output = temp_output / "results.json"
     if not temp_output.exists():
-        print(f"Error: run_eval failed to produce output")
-        print(result.stderr)
+        print("Error: run_eval failed to produce output")
+        print(result.stdout[-2000:])
+        print(result.stderr[-2000:])
         sys.exit(1)
 
     with open(temp_output) as f:
@@ -173,6 +186,24 @@ def main():
 
     # Generate baseline
     baseline = generate_baseline(eval_results, version=args.version)
+
+    # A baseline with no passing samples is silently inert: run_eval's regression check
+    # compares the current run's failures against `passing_samples`, so an empty list can
+    # never report a regression. That is exactly what happens when this script is fed
+    # run_eval's aggregate CI-metrics file (--output <file>.json, keys: overall/set_A/...)
+    # instead of its per-sample directory output (results.json, keys: <tool>.samples[]).
+    # Fail loudly rather than write a baseline that disables the gate it exists to enforce.
+    if not baseline["passing_samples"]:
+        print(
+            "Error: extracted 0 passing samples — refusing to write an inert baseline.\n"
+            f"       Input was: {args.eval_results}\n"
+            "       Expected run_eval's per-sample output (results/results.json), which "
+            "contains <tool>.samples[].fn_count.\n"
+            "       The aggregate CI-metrics file (results/avb_results.json) has no "
+            "per-sample data and cannot produce a baseline.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     # Write baseline
     with open(args.output, "w") as f:
