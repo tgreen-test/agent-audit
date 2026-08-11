@@ -104,6 +104,41 @@ All four published figures to four decimal places, from **TP = the annotation co
 **FP = the three residual false positives the document itself names**, and **FN = 0 by
 assertion**.
 
+### The mechanism, named precisely: a goal was recorded as an achievement
+
+The block above has two halves, and the second half is where `CHANGELOG.md` got its numbers.
+
+```
+当前 benchmark 指标:            <- "current metrics"
+  Precision = 98.51% (3 FP / 201 total)
+  Recall    = 100%   (0 FN)
+  F1        = 99.25%
+
+目标指标:                       <- "TARGET metrics"
+  Precision = 100%   (0 FP)
+  Recall    = 100%   (0 FN)
+```
+
+`CHANGELOG.md:175-177` reads "Precision: 98.51% → 100%", "Recall maintained at 100%", "F1
+Score: 100%". The left-hand side of that arrow is the "current" block. **The right-hand side
+is the target block.** The changelog states, as a completed result of v0.4.1, the numbers the
+v0.4.1 brief had set out to reach.
+
+This matters because it changes what the correction has to be.
+
+* A **stale measurement** is a number that was true and is no longer. It is fixed by
+  re-measuring and updating, and the old figure remains a legitimate historical record.
+* **This is not that.** No run ever produced 100% precision, and no run ever produced 100%
+  recall — the recall figure was `0 FN` by assertion, and the precision figure was the goal
+  written in the plan. There is no commit at which either was measured, so there is nothing to
+  update *to*. The figure has to be withdrawn, and the withdrawal has to say why, or a reader
+  will reasonably assume it was accurate once.
+
+The wording that follows from this, and which the draft retraction in § 4 uses: **not "the
+methodology differed" and not "the figures are out of date", but "the figures were never
+measurements".** The first two are true of the 0.778 family in § 2's second table. They are
+not true of these twelve.
+
 ### What that makes the numbers
 
 Recall was not measured. It was set to 1.0, so:
@@ -277,6 +312,49 @@ incomplete, and precision measured against an incomplete corpus reads low.
 67.82% measured; at least 21 of the 93 false positives are unlabelled true positives, so
 the true precision is higher and the corpus is being repaired" is honest. "P ≈ 75% after
 adjustment" is the 98.51% again, in the other direction.
+
+---
+
+## 3a. Per surface: what it says, what is true, and the command that shows it
+
+One row per surface carrying a metric. **Column 4 is the whole point** — every replacement
+figure is one a reader can regenerate, and where no command can regenerate it, that is stated
+instead of a number.
+
+All commands are run from the repository root.
+
+| surface | what it currently says | the reproducible value | command |
+|---|---|---|---|
+| **`tests/README.md:116-119`** | P 98.51% / R 100.00% / F1 99.25% / FP 1.49% | **P 67.82% / R 83.05% / F1 74.67% / FP 32.18%** | `python3 tests/benchmark/precision_recall.py` |
+| **`tests/README.md:279-282`** | the same four, second copy | the same four | same |
+| `tests/README.md:270` | "v2.1 … 添加 87 个新标注，达到 98.51% Precision" | the causal claim is unsupported: adding annotations raises TP by construction under the FN = 0 method | — no command; the sentence is withdrawn, not restated |
+| `tests/README.md:100-110` | corpus is v2.1 / 42 files / 198 annotations | **v2.2 / 81 files / 238 labels** | `python3 -c "import yaml;d=yaml.safe_load(open('tests/ground_truth/labeled_samples.yaml'));print(d.get('version'), len(d['samples']), sum(len(s.get('vulnerabilities',[])) for s in d['samples']))"` |
+| `tests/README.md:40` | lists `quality_gates.yaml` in the tree | the live gate is `tests/benchmark/gates.yaml`; see `docs/decisions/DEAD_FILES.md` | `python3 tests/benchmark/quality_gate_check.py --config tests/benchmark/gates.yaml` |
+| `tests/README.md:160-164` | "release standard: P ≥90%, R ≥85%, F1 ≥0.87, FP ≤5%" | those are the **aspirational target** in `gates.yaml`, which blocks nothing. The gate is **P ≥0.66 / R ≥0.81 / F1 ≥0.72** | `python3 tests/benchmark/quality_gate_check.py --config tests/benchmark/gates.yaml` |
+| **`CHANGELOG.md:175-177`** | "Precision: 98.51% → 100%", "Recall maintained at 100%", "F1 Score: 100%" | **never measured.** Strike with a dated note; do not replace with a current figure, which would imply the old one was a measurement | — no command exists, and that is the finding |
+| `docs/F1_REPRODUCTION.md:35,38,73` | raw F1 0.778 (P 73.58 / R 82.63) | **F1 0.7467 (P 0.6782 / R 0.8305)** — drifted, not fabricated; the causal note in § 3(a) must travel with it | `python3 tests/benchmark/precision_recall.py` |
+| `docs/F1_REPRODUCTION.md:75` | "the CI gate inside `precision_recall.py` is set at `f1 < 0.75` (line 485) — passes today" | the gate was deleted at `78d8fe5`; the line number was already wrong; it was failing, not passing. The gate is `gates.yaml` via `quality_gate_check.py` | `python3 -m pytest tests/test_layer1_gate_singleton.py -q` |
+| `README.md:97-98`, `README_CN.md:98-99` | F1 0.778 raw, TP 195 / FP 70 / FN 41 | **F1 0.7467, TP 196 / FP 93 / FN 40** | `python3 tests/benchmark/precision_recall.py` |
+| `README.md:233`, `README_CN.md:214` | comparison table row: 82.63 / 73.58 / 0.778 | 83.05 / 67.82 / 0.7467 | same |
+| `docs/index.html:927` | headline tile "0.778" | 0.7467 | same |
+| `docs/index.html:1076` | comparison table cell 0.778 | 0.7467 | same |
+| `CLAUDE.md` metrics line | P 73.58 / R 82.63 / F1 0.778, TP 195 / FP 70 / FN 41, "1542 collected" | P 67.82 / R 83.05 / F1 0.7467, TP 196 / FP 93 / FN 40; suite **1796 passed / 1 failed / 3 skipped** | `python3 tests/benchmark/precision_recall.py` and `python3 -m pytest tests/ -q` |
+| `packages/audit/pyproject.toml:4` | "53 rules" | **66** | `python3 -c "import sys;sys.path.insert(0,'tests');from test_rule_producers import advertised_rules;print(len(advertised_rules()))"` |
+| AVB figures | R 100.0 / P 88.0 / F1 0.9362 | unchanged and unaffected — measured against an explicit oracle | — |
+
+### `tests/README.md` is the priority, and the reason is not traffic
+
+It carries the largest single error — **30 points of precision and 17 of recall above the
+measured values, twice over** — and it carries **no retraction note at all**, while
+`docs/F1_REPRODUCTION.md`, whose figure is merely stale, opens with one.
+
+It also sits in the repository, next to the corpus and the script, in a file called
+`README.md` inside a directory called `tests/`. Everything about its location tells a reader
+that its numbers were produced by the code beside it. They were not. Of all the surfaces
+listed, it is the one where the reader has the strongest reason to believe and the least
+opportunity to check.
+
+**No public-facing claim was edited by this run.** Every row above is a draft.
 
 ---
 
