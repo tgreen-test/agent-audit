@@ -1380,3 +1380,170 @@ points at it. The consequence: **the contradiction is resolved, because exactly
 one gate is live.** `quality_gates_v2.yaml` is now referenced by nothing and is
 inert. It should still be deleted; that is one `git rm` I cannot perform, logged
 as NEEDS-HEADY item 12.
+
+### W14 — P0A denoise: four patterns landed, 1156 noise to 375. Target not reached.
+
+BEFORE:  `./run_eval.sh --commit <sha>`
+
+```
+{"recall_hit":0,"recall_total":6,"noise":1156,"total":1176,"commit":"1c297d8","python":"3.11.14"}
+```
+
+AFTER:
+
+```
+{"recall_hit":0,"recall_total":6,"noise":375,"total":395,"commit":"5f00398","python":"3.11.14"}
+```
+
+**−781 noise, a 67.6% reduction. The bar is noise < 118 and it is NOT met.**
+Stated plainly rather than framed as a near-miss: 375 is more than three times
+the target. What was achieved, what it cost, and exactly what stands between
+here and the bar are all below.
+
+#### Per-pattern, each measured on its own commit
+
+| # | pattern | commit | noise before | after | delta |
+|---|---|---|---|---|---|
+| 1 | 40-hex read as an AWS secret key | `6a5db05` | 1156 | 684 | **−472** |
+| 2 | `.exec`/`.spawn` receiver resolution | `a37bfba` | 684 | 441 | **−243** |
+| 3 | constant-argument suppression | `26ee49f` | 441 | 409 | −32 |
+| 4 | SQL statement syntax required | `5f00398` | 409 | 375 | −34 |
+
+Patterns 1 and 2 each collapsed hundreds at once, which is the shape the brief
+asked for. Patterns 3 and 4 came in under the ~50 line — not because they patch
+symptoms, but because pattern 2 had already removed the receiver cases that
+would otherwise have fallen to pattern 3, and because AGENT-041 only ever had 39
+findings in total. Pattern 4 removed 34 of those 39 and is the highest-precision
+fix of the four: 87% of that rule's output was noise.
+
+#### Per-rule, start to finish
+
+| rule | before | after |
+|---|---|---|
+| AGENT-004 Hardcoded Credentials | 474 | **2** |
+| AGENT-034 Shell Command Execution | 455 | 180 |
+| AGENT-026 SSRF | 84 | 84 |
+| AGENT-041 SQL Injection | 39 (3 high) | **5 (3 high)** |
+| AGENT-047 Subprocess Without Sandbox | 36 | 36 |
+| everything else | 68 | 68 |
+
+CAUSE, per pattern:
+
+1. `secret_scanner.py` AWS secret pattern is a bare 40-char run over the base64
+   alphabet, `[A-Za-z0-9/+=]{40}`, which every SHA-1 satisfies. 462 of the 474
+   were git object ids in checksum manifests across 319 files. Fixed as a shape
+   predicate in `value_analyzer.detect_hex_digest_format`, checked in
+   `semantic_analyzer` stage 2 beside the UUID check that already suppresses
+   32-hex.
+2. `typescript_scanner.py` regex fallback used
+   `r"\b(?:child_process\.)?(?:exec|execSync)\s*\("`. The optional group did
+   nothing, because `\b` also matches immediately after a dot — so every member
+   call matched. Fixed by resolving the receiver, generalising commit `3d58235`
+   from `eval` to `exec`/`spawn`.
+3. No requirement that any argument be attacker-influenced, so fixed-argv
+   tooling calls counted. Fixed with `_call_args_are_constant`.
+4. `any(kw in value_upper for kw in SQL_KEYWORDS)`, a substring test, so
+   ordinary English `create`/`insert`/`delete` matched. Fixed with
+   `looks_like_sql_statement`, applied at **all four** sites that can emit
+   AGENT-041.
+
+INVARIANTS — all four hold at the final commit:
+
+```
+$ ./run_eval.sh --commit 5f00398
+  recall_hit 0 / recall_total 6                          UNCHANGED, both directions
+
+$ cd tests/benchmark && python3 -m "agent-vuln-bench.harness.run_eval" \
+    --tool agent-audit --dataset knowns
+  Recall: 100.0%   Precision: 88.0%   F1: 0.9362         UNCHANGED
+
+$ python3 tests/benchmark/quality_gate_check.py --config tests/benchmark/gates.yaml --results results/
+  Summary: 0 failures, 0 warnings, 0 skipped, 3 below target (non-blocking)
+  EXIT=0                                                  Layer 1 P 0.6829 / R 0.8305, unchanged
+
+$ cd packages/audit && python3 -m pytest ../../tests/ tests/ -q
+  1671 passed, 1 skipped                                  1606 baseline + 65 new, none deleted or skipped
+```
+
+**All 20 high-value findings survived every pattern.** Verified at each of the
+four commits from the per-rule high-value column, not only at the end. The one
+that could have been lost is AGENT-041's 3, since it is the only rule on the
+target carrying both true positives and noise; it went 39 findings (3 high) to
+5 findings (3 high).
+
+**No threshold, tier boundary, or confidence value was changed in any of the
+four commits.** Every fix is a predicate. `git diff 1c297d8..5f00398` touches
+four source files and two test files, and no confidence table appears in it.
+
+GUARD: 65 new regression tests, every set split into FP cases and true-positive
+controls, following `3d58235`'s structure and naming the originating scan.
+
+- `TestHexDigestShape` + `TestSemanticAnalyzerIntegration` (16) — includes an
+  explicit control that 64-hex stays detectable as a private key, documenting a
+  shape deliberately *not* suppressed.
+- `TestExecSpawnReceiver` (13) — 6 FP, 7 TP. The brief's named pair is direct:
+  `child_process.exec(userInput)` fires, `re.exec(s)` does not.
+- `TestConstantArgumentSuppression` (10) — 3 FP, 7 TP, including a multi-line
+  call that must not be assumed safe.
+- `TestSqlStatementRequirement` (13) — 5 FP, 8 TP.
+
+Worth recording: the first draft of the AWS true-positive control used AWS's
+published example key and failed, because the scanner suppresses vendor examples
+correctly. Had I not checked why, that control would have passed for the wrong
+reason and asserted nothing.
+
+#### Why 375 and not 118 — the accounting, with no rounding in my favour
+
+The brief's premise was wrong in a way that mattered, and W13 recorded it before
+this work started (`DECISIONS.md` item 17): it bucketed the two `.exec`/`.spawn`
+patterns at 155 findings when the rule actually emitted 466. My own W13 estimate
+was that the four named patterns totalled 1012 of 1156 and would land near 144.
+The real landing point is 375. The gap is my estimate's, not the measurement's,
+and it decomposes cleanly:
+
+- **AGENT-034 went to 180, not to 0 (+180 vs estimate).** The survivors are
+  bare `spawn(...)`, `spawnSync(...)`, `execa(...)` and `execFileSync(...)` on
+  genuine child_process imports. By AGENT-034's own definition these *are*
+  shell execution; the rule simply has no requirement that the input be
+  attacker-influenced. Removing them needs a taint or context predicate, not a
+  receiver one, and I was wrong in W13 to assume receiver resolution would clear
+  the family.
+- **AGENT-047 was never in scope (+36).** I listed it in the W13 budget as if
+  pattern 3 would cover it. It is a separate Python-side rule and pattern 3 is
+  TypeScript-only.
+- **AGENT-026 was correctly identified in W13 as a required fifth pattern (+84)
+  and was not reached.**
+
+`375 = 180 + 84 + 36 + 68 + 5 + 2`.
+
+#### What would close the remaining 257 — measured, not guessed
+
+Two predicates, both of which the repository already has machinery for:
+
+1. **Test-path context: 174 of the 375.** 114 of the 180 AGENT-034 and 60 of the
+   84 AGENT-026 findings are in `test/`, `__tests__/`, `spec/`, `e2e/` or
+   `fixtures/` paths. The package already ships
+   `agent_audit/analysis/context_classifier.py` for exactly this
+   (test/example/infra file detection) and the Python path uses it — **the
+   TypeScript scanner never calls it.** That asymmetry is the same shape as the
+   W10 MCP bug: a mechanism that exists and is simply not wired into one path.
+   This is the single highest-value remaining item and it is not a threshold
+   change; it is applying an existing classifier consistently.
+2. **TS type declarations: some of the AGENT-026 84.** Several are
+   `signature: 'async fetch(request: WebFetchRequest ...)'` and
+   `declaration: 'export interface WebFetchProvider ...'` — interface and type
+   declarations, not calls. `ts_decl_signature_re` already handles precisely
+   this for `eval`; it is scoped to `eval|Function` and needs extending to
+   `fetch`/`exec`/`spawn`.
+
+174 + the declaration cases brings 375 to roughly 180, which is still above 118.
+Closing the rest means confronting the honest question underneath AGENT-034: an
+agent runtime legitimately spawns processes, and a rule that fires on every
+`spawn()` regardless of input provenance will always be mostly noise on this
+class of target. That is a rule-design question, not a predicate, and it is
+`NEEDS-HEADY` rather than something to settle unilaterally at the end of a run.
+
+I did not attempt either remaining predicate. Both are real and both are
+specified above; I stopped because the test-context change is the one place left
+where a careless predicate silently deletes true positives, and it deserves a
+fresh context rather than the end of a long one.

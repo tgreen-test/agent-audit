@@ -458,3 +458,90 @@ carries both true positives and noise** (3 high-value, 36 noise). Every other
 high-value finding is in AGENT-110 or AGENT-115, which the plan does not touch.
 So the SQL-sink predicate is the single place where a careless fix can destroy
 recall, and it deserves the most conservative treatment of the five.
+
+### 18. The TypeScript scanner never calls the context classifier that the Python path uses
+
+**The highest-value remaining denoise item, and the same shape of bug as W10.**
+
+`agent_audit/analysis/context_classifier.py` exists to detect test, example and
+infrastructure files. The Python path uses it. The TypeScript scanner does not
+call it at all. Consequence on the audit target, after the four W14 patterns:
+
+- 114 of the 180 surviving AGENT-034 findings are in `test/`, `__tests__/`,
+  `spec/`, `e2e/` or `fixtures/` paths.
+- 60 of the 84 AGENT-026 findings are.
+
+That is 174 of the remaining 375 noise findings — a `spawn()` inside a test
+harness, reported with the same weight as one in request-handling code.
+
+Like W10, this is a mechanism that already exists and is simply not wired into
+one path, so it is a wiring fix rather than a new capability.
+**Recommendation:** wire it, as the first item of the next session. It is not a
+threshold change and does not touch the confidence floor, so it stays inside
+P0A's red line. It does need care in one direction: a test file can contain a
+genuine finding, so the classifier should downweight rather than delete, and the
+regression tests must include a true positive that survives being in a test path.
+
+### 19. `ts_decl_signature_re` covers only eval/Function
+
+Several AGENT-026 findings are TypeScript interface and type declarations —
+`signature: 'async fetch(request: WebFetchRequest, signal?: AbortSignal)'`,
+`declaration: 'export interface WebFetchProvider {...}'` — not calls.
+
+`typescript_scanner.py` already has `ts_decl_signature_re` for exactly this
+problem, added alongside the `eval` fix in `3d58235`, but it is scoped to
+`\b(?:eval|Function)\s*\([^)]*\)\s*:`. **Recommendation:** widen it to the other
+detected call names (`fetch`, `exec`, `spawn`, `query`). Small, additive, and
+precedented by the existing code.
+
+### 20. AGENT-034 has no input-provenance requirement, and on an agent runtime that is fatal to its precision
+
+A rule-design question, not a predicate, so it is yours.
+
+After receiver resolution and constant-argument suppression, 180 AGENT-034
+findings remain and they are, by the rule's own definition, correct: genuine
+`spawn()` / `execFileSync()` / `execa()` calls on real child_process imports.
+The rule fires on every process spawn regardless of whether any input is
+attacker-influenced.
+
+For the class of target this tool is aimed at — an agent runtime whose entire
+job is to spawn processes — that guarantees the rule is mostly noise no matter
+how good the surrounding predicates get. Roughly 66 of the 180 are outside test
+paths, i.e. would survive even the context fix in item 18.
+
+**Options, with my recommendation last:**
+
+1. Leave it. Accept that AGENT-034 is a "here is every process spawn" inventory
+   rule and that reviewers filter it. Honest but makes the noise target
+   unreachable on this target class.
+2. Require taint: only fire when an argument traces to a parameter, a request,
+   an environment read, or a file read. Correct, and the machinery exists on the
+   Python side (`analysis/taint_tracker.py`); the TypeScript path has no
+   dataflow, so this is significant work.
+3. Split the rule: keep the inventory behaviour at INFO, and reserve
+   WARN/BLOCK for calls with a non-constant argument. This is close to free
+   given `_call_args_are_constant` from W14 pattern 3, and it preserves the
+   inventory for anyone who wants it while making the default output readable.
+
+I recommend 3, then 2 when the TypeScript dataflow work lands in P1. I did not
+implement it because changing a rule's tier assignment is a public behaviour
+change, and because doing it by moving findings between tiers is uncomfortably
+close to the red line P0A draws around threshold tuning — it deserves your
+explicit call rather than my inference.
+
+### 21. P0A did not reach its bar: 375 against a target of 118
+
+Recorded here as well as in the ledger so it is not buried. The four named
+patterns landed and removed 781 of 1156 noise findings (67.6%) with every
+invariant intact and all 20 high-value findings preserved. The target was
+`noise < 118`. It was not met, and 375 is not a near miss.
+
+The gap is fully accounted for in `NIGHT_RUN_LEDGER.md` § W14: AGENT-034 does
+not go to zero from receiver resolution alone (+180 against my own W13
+estimate), AGENT-047 was never in this phase's scope (+36), and AGENT-026 was
+identified in W13 as a necessary fifth pattern and was not reached (+84).
+
+Items 18 and 19 are worth roughly 174 plus the declaration cases. Item 20 is
+what stands between that and the bar. **Recommendation:** treat items 18–20 as
+P0A part two rather than reopening the four patterns, all of which are done and
+guarded.
