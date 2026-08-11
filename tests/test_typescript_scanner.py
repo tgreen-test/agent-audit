@@ -758,12 +758,25 @@ class TestConstantArgumentSuppression:
 
     # --- TRUE-POSITIVE CONTROLS: anything variable must still fire ----------
 
-    def test_variable_argument_still_flagged(self, scanner):
+    def test_variable_argument_to_fixed_program_superseded(self, scanner):
+        """SUPERSEDED by TestFixedNonShellProgram — behaviour change, recorded.
+
+        W14 pattern 3 asserted that a variable *argument* keeps the finding even
+        when the program is fixed: `execFileSync('git', ['-C', cwd, 'log'])`.
+        W17 pattern 3 narrows AGENT-034 to what its title claims — shell
+        execution — and execFile with a literal program is neither a shell nor
+        an attacker-chosen executable. What this gives up is argument injection
+        against a known binary (`git --upload-pack=...` is the real one), which
+        AGENT-034 never described and does not remediate.
+
+        Kept as a test rather than deleted so the change of contract is visible
+        rather than silent. See DECISIONS.md item 24.
+        """
         path = _write_ts_file("""
             import { execFileSync } from 'child_process';
             execFileSync('git', ['-C', cwd, 'log']);
         """)
-        assert len(self._shell_findings(scanner, path)) >= 1
+        assert self._shell_findings(scanner, path) == []
 
     def test_template_interpolation_still_flagged(self, scanner):
         path = _write_ts_file("""
@@ -779,10 +792,23 @@ class TestConstantArgumentSuppression:
         """)
         assert len(self._shell_findings(scanner, path)) >= 1
 
-    def test_spread_still_flagged(self, scanner):
+    def test_spread_into_fixed_program_superseded(self, scanner):
+        """SUPERSEDED by TestFixedNonShellProgram, same reason as above.
+
+        The spread is the strongest form of the argument-injection case and it
+        is the one this change gives up. Recorded here, not deleted.
+        """
         path = _write_ts_file("""
             import { execFileSync } from 'child_process';
             execFileSync('git', ['-C', cwd, ...args]);
+        """)
+        assert self._shell_findings(scanner, path) == []
+
+    def test_spread_into_variable_program_still_flagged(self, scanner):
+        """The spread still fires when the program itself is not fixed."""
+        path = _write_ts_file("""
+            import { execFileSync } from 'child_process';
+            execFileSync(binary, ['-C', cwd, ...args]);
         """)
         assert len(self._shell_findings(scanner, path)) >= 1
 
@@ -1192,3 +1218,107 @@ class TestDeclarationsAndQuotedSource:
         """)
         assert [f for f in scanner.scan_and_convert(call)
                 if f.rule_id == "AGENT-049"] != []
+
+
+class TestFixedNonShellProgram:
+    """
+    AGENT-034 is "Shell Command Execution". The execFile/spawn family does not
+    go through a shell, and a literal first argument fixes the executable, so
+    neither half of the rule's own definition is present.
+
+    `_call_args_are_constant` (W14 pattern 3) already covered the case where
+    *every* argument is a literal. That is much stricter than the rule needs: a
+    spread, a `cwd` variable or a computed argv defeats it, which is why 84
+    findings of this shape survived it on the audit target.
+
+    The three guards that keep this from over-reaching are each tested below:
+    `exec`/`execSync` still fire because they do use a shell; `shell: true`
+    still fires; and a program literal naming a shell still fires, so
+    `spawn('sh', ['-c', userCommand])` is untouched.
+
+    Regression source: the audit-target measurement recorded in
+    NIGHT_RUN_LEDGER.md section W17, pattern 3.
+    """
+
+    def _shell(self, scanner, path):
+        return [
+            f for f in scanner.scan_and_convert(path)
+            if f.rule_id == "AGENT-034" and "shell" in f.description.lower()
+        ]
+
+    # --- Must NOT trigger: fixed program, no shell -------------------------
+
+    def test_execfilesync_literal_program_not_flagged(self, scanner):
+        path = _write_ts_file("""
+            const out = execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
+        """)
+        assert self._shell(scanner, path) == []
+
+    def test_spawnsync_literal_program_not_flagged(self, scanner):
+        path = _write_ts_file("""
+            const probe = spawnSync('bwrap', [...profileArgs(mode), '--'], { timeout });
+        """)
+        assert self._shell(scanner, path) == []
+
+    def test_execa_literal_program_not_flagged(self, scanner):
+        path = _write_ts_file("""
+            const result = await execa('pnpm', ['pack', '--pack-destination', dest]);
+        """)
+        assert self._shell(scanner, path) == []
+
+    def test_process_execpath_not_flagged(self, scanner):
+        """process.execPath is the running Node binary, not an attacker choice."""
+        path = _write_ts_file("""
+            const child = spawn(process.execPath, ['--import', loader, entry], { env });
+        """)
+        assert self._shell(scanner, path) == []
+
+    # --- Must STILL trigger: the three guards ------------------------------
+
+    def test_variable_program_still_flagged(self, scanner):
+        """The executable is chosen at runtime — the whole point of the rule."""
+        path = _write_ts_file("""
+            const child = spawn(command, args, { cwd, env });
+        """)
+        assert len(self._shell(scanner, path)) >= 1
+
+    def test_shell_true_still_flagged(self, scanner):
+        path = _write_ts_file("""
+            const result = spawnSync('lefthook', args, { cwd: root, shell: true });
+        """)
+        assert len(self._shell(scanner, path)) >= 1
+
+    def test_literal_shell_program_still_flagged(self, scanner):
+        """spawn('sh', ['-c', cmd]) has a constant program and is still a shell."""
+        path = _write_ts_file("""
+            const child = spawn('sh', ['-c', userCommand], { stdio: 'inherit' });
+        """)
+        assert len(self._shell(scanner, path)) >= 1
+
+    def test_literal_bash_program_still_flagged(self, scanner):
+        path = _write_ts_file("""
+            const child = spawnSync('/bin/bash', ['-c', script]);
+        """)
+        assert len(self._shell(scanner, path)) >= 1
+
+    def test_exec_with_literal_first_arg_still_flagged(self, scanner):
+        """exec/execSync pass their argument to a shell whatever it looks like."""
+        path = _write_ts_file("""
+            const out = execSync('git status --porcelain ' + userPath);
+        """)
+        assert len(self._shell(scanner, path)) >= 1
+
+    def test_template_program_with_interpolation_still_flagged(self, scanner):
+        path = _write_ts_file("""
+            const child = spawnSync(`${binaryDir}/tool`, args, { encoding: 'utf8' });
+        """)
+        assert len(self._shell(scanner, path)) >= 1
+
+    def test_mixed_file_keeps_only_the_variable_program(self, scanner):
+        """The discrimination itself: 1 of 3 spawns has a runtime executable."""
+        path = _write_ts_file("""
+            const a = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd });
+            const b = spawnSync(process.execPath, ['-e', code], { env });
+            const c = spawnSync(resolvedBinary, args, { encoding: 'utf8' });
+        """)
+        assert len(self._shell(scanner, path)) == 1

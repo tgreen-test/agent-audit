@@ -212,6 +212,72 @@ def _index_inside_string_literal(line: str, index: int) -> bool:
     return False
 
 
+# The child_process entry points that do NOT go through a shell. `exec` and
+# `execSync` are deliberately absent: they pass their argument to /bin/sh (or
+# cmd.exe), which is the thing AGENT-034 is named after.
+_NO_SHELL_CALL_RE = re.compile(
+    r"(?<![\w.$])(?:execFileSync|execFile|spawnSync|spawn|execaSync|execa)\s*\("
+)
+
+# A first argument that fixes the executable: a string literal with no
+# interpolation, or `process.execPath`, which is the path of the running Node
+# binary and is not attacker-selectable.
+_CONST_PROGRAM_RE = re.compile(
+    r"""\(\s*(?:'([^']*)'|"([^"]*)"|`([^`${]*)`|process\.execPath)\s*,"""
+)
+
+# ...unless the fixed executable is itself a shell. `spawn('sh', ['-c', cmd])`
+# has a constant program and is still shell command execution.
+_SHELL_PROGRAMS = {
+    "sh", "bash", "zsh", "ksh", "dash", "fish", "csh", "tcsh",
+    "cmd", "cmd.exe", "powershell", "powershell.exe", "pwsh", "pwsh.exe",
+    "/bin/sh", "/bin/bash", "/bin/zsh", "/usr/bin/sh", "/usr/bin/bash",
+    "/usr/bin/env",
+}
+
+_SHELL_OPTION_RE = re.compile(r"\bshell\s*:\s*(?:true|1)\b")
+
+
+def _fixed_non_shell_program(line: str, open_paren: int) -> bool:
+    """Whether this call runs a fixed, non-shell executable.
+
+    AGENT-034 is "Shell Command Execution". The execFile/spawn family does not
+    involve a shell at all, and when the program argument is a literal the
+    executable cannot be chosen by an attacker either. What remains is argument
+    injection against a known binary — a real but materially weaker class that
+    this rule does not claim to detect and does not describe in its output.
+
+    `_call_args_are_constant` already suppressed the case where *every*
+    argument is a literal. That is far stricter than it needs to be: a spread,
+    a `cwd` variable or a computed argv defeats it, so on the audit target it
+    caught almost none of this shape. This predicate asks only about the
+    program.
+
+    Three things keep it from over-reaching:
+      * `exec`/`execSync` are excluded — they do go through a shell
+      * `shell: true` anywhere on the line keeps the finding
+      * a program literal that names a shell keeps the finding, so
+        `spawn('sh', ['-c', userCommand])` is untouched
+    """
+    if not _NO_SHELL_CALL_RE.match(line, 0) and not _NO_SHELL_CALL_RE.search(
+        line, max(0, open_paren - 24), open_paren + 1
+    ):
+        return False
+    if _SHELL_OPTION_RE.search(line):
+        return False
+
+    match = _CONST_PROGRAM_RE.match(line, open_paren)
+    if match is None:
+        return False
+
+    program = next((g for g in match.groups() if g is not None), None)
+    if program is None:
+        return True  # process.execPath
+    if program.strip().lower() in _SHELL_PROGRAMS:
+        return False
+    return bool(program.strip())
+
+
 def _call_args_are_constant(line: str, open_paren: int) -> bool:
     """Whether the argument list starting at `open_paren` is entirely literal.
 
@@ -891,6 +957,9 @@ class TypeScriptScanner(BaseScanner):
                     # cannot be influenced by an attacker no matter what the
                     # process does with the result.
                     if _call_args_are_constant(line, match.end() - 1):
+                        continue
+                    # A fixed, non-shell executable is not shell execution.
+                    if _fixed_non_shell_program(line, match.end() - 1):
                         continue
                 if match:
                     findings.append(
