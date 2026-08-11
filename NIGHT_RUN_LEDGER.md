@@ -3047,3 +3047,159 @@ $ python3 -m pytest tests/ -q
 ```
 
 1748 at RUN5 + 11 added, none deleted.
+
+## W23 — AGENT-015: the three-way conflict, collapsed
+
+Full document: `docs/decisions/AGENT-015_RESOLUTION.md`. **No ground-truth label was
+touched.** What follows is the measurement trail behind it.
+
+### The corpus, read
+
+```
+$ python3 <scratch>/inspect_labels.py
+samples: 81  labels: 238  distinct rule ids: 28
+
+=== labelled rule ids with NO producer anywhere in the package ===
+  AGENT-015  labels=5  advertised=False
+  AGENT-036  labels=1  advertised=False
+  total labels affected: 6
+```
+
+**Six, not five.** AGENT-036 was withdrawn in the same commit as AGENT-015 and carries one
+label — `asi-02-tool-misuse/direct/subprocess_unsandboxed.py:8`, note
+`"subprocess shell=True AGENT-047/036"`. It has the identical defect and is carried through
+the whole analysis, because fixing AGENT-015 alone would leave the guard failing.
+
+Both sets are also the complete set of labels citing an unadvertised rule: no third category.
+
+### What fires at each labelled line
+
+Two independent scans, agreeing. The directory scan is what Layer 1 does (289 findings over
+`tests/fixtures`); the file-argument scan is the cross-check that RUN4's file-vs-directory
+discrepancy has not resurfaced on these files.
+
+```
+                                                    directory scan     file-arg scan
+npm_install_runtime.py     label :13 AGENT-015  ->  AGENT-001 @13      AGENT-001 @13
+curl_pipe_bash.sh          label :11 AGENT-015  ->  NONE               NONE
+git_clone_exec.py          label :14 AGENT-015  ->  NONE               NONE
+dynamic_requirements.py    label :14 AGENT-015  ->  NONE               NONE
+pypi_typosquatting.py      label :12 AGENT-015  ->  AGENT-034 @14      AGENT-034 @14
+subprocess_unsandboxed.py  label  :8 AGENT-036  ->  AGENT-001 @9       AGENT-001 @9
+```
+
+### Correction to RUN5, and it changes the count
+
+RUN5 § 1 and § W19.5 record `git_clone_exec.py line 14 -> AGENT-034 (exact line)` and
+conclude that **three** of the five AGENT-015 labels are detected under a different ID.
+That is wrong. The file emits nothing, in either scan mode, at HEAD — and it emitted nothing
+at `e4a939d` as well, checked from a throwaway worktree at that commit so the possibility of
+a behaviour change since RUN5 is excluded:
+
+```
+$ git worktree add -q <scratch>/wt_e4a939d e4a939d
+$ python3 -c "...run_scan on each fixture, agent_audit imported from the worktree..."
+agent_audit loaded from: <scratch>/wt_e4a939d/packages/audit/agent_audit/__init__.py
+  @e4a939d asi-04-supply-chain/direct/git_clone_exec.py: NONE
+  @e4a939d asi-04-supply-chain/indirect/dynamic_requirements.py: NONE
+  @e4a939d asi-04-supply-chain/indirect/pypi_typosquatting.py: [(14, 'AGENT-034')]
+$ git worktree remove --force <scratch>/wt_e4a939d
+```
+
+A transcription error in RUN5 — the row duplicated the `pypi_typosquatting.py` result. The
+corrected statement is **two** detected under a different ID, **three** genuine misses.
+
+And the three misses are silent for three reasons, none of them a regression:
+
+* `curl_pipe_bash.sh` is a **shell script, and no scanner in the package reads `.sh`.** The
+  file is never opened. No rule could fire on it, so no rule change can ever earn that
+  label — it needs a language, not a rule.
+* `git_clone_exec.py:14` is `subprocess.run(["git", "clone", repo_url, "/tmp/repo"])` and
+  `dynamic_requirements.py:14` is `subprocess.run(["pip", "install", "-r", url])`. Argument
+  list, no `shell=True`, fixed non-shell program — suppressed by RUN4's
+  fixed-non-shell-program predicate, **correctly**. Neither is command injection. The
+  supply-chain risk is real and no live rule is looking for it.
+
+The two that *are* detected are detected because they contain a second, different defect:
+`shell=True` on one, `input()` into a subprocess on the other. Not because anything
+understands package provenance.
+
+### The retargeting arithmetic, simulated rather than calculated
+
+The corpus was copied into the scratch directory, retargeted **in the copy**, and
+`precision_recall.evaluate` run against the copy with the same 289 findings.
+
+```
+BASELINE (as labelled) TP= 196 FP=  93 FN=  40 P=0.678201 R=0.830508 F1=0.746667
+ALL THREE retargeted   TP= 199 FP=  90 FN=  37 P=0.688581 R=0.843220 F1=0.758095
+
+per-label, one at a time (delta against baseline):
+  npm_install_runtime.py:13    AGENT-015 -> AGENT-001   dTP=+1 dFP=-1 dFN=-1  F1=0.750476
+  pypi_typosquatting.py:12     AGENT-015 -> AGENT-034   dTP=+1 dFP=-1 dFN=-1  F1=0.750476
+  subprocess_unsandboxed.py:8  AGENT-036 -> AGENT-001   dTP=+1 dFP=-1 dFN=-1  F1=0.750476
+
+total delta:  dTP=+3 dFP=-3 dFN=-3
+              P 0.6782 -> 0.6886   R 0.8305 -> 0.8432   F1 0.7467 -> 0.7581
+
+the three labels with no finding at any line, under any rule id:
+  curl_pipe_bash.sh: 0 findings
+  git_clone_exec.py: 0 findings
+  dynamic_requirements.py: 0 findings
+```
+
+Each retargetable label moves **three** counters, which is the signature of the defect:
+one detection scored as a miss and as a false alarm at once, because only the identifier
+disagreed. Three labels, nine counter corrections, zero lines of detection code.
+
+**0.7581 is above 0.75.** Had the labels been right, W24's hard-coded floor would never have
+fired. The threshold contradiction and the mislabelling were the same bill arriving twice.
+
+### The gap, stated rather than papered over
+
+Of the 66 advertised rules, **none covers untrusted package or code acquisition in general
+application code.** The three CWE-494 rules are each narrow — AGENT-005 and AGENT-030 are MCP
+server sources, AGENT-062 is fake dependencies in OpenClaw skill metadata — and AGENT-083
+(CWE-829) is Solidity `delegatecall`. Rows 2–4 name ASI-04 defects this tool does not detect,
+which `docs/RULES.md` already records as a known gap from the withdrawal.
+
+That is why the two options are not equivalent, and the document says so at length:
+retargeting rows 1, 5 and 6 is an accounting correction with a measured effect and no design
+commitment; earning rows 2–4 is a capability change that needs a producer, an operational
+threshold, a fixture and a published definition — and row 2 additionally needs a shell-script
+scanner that does not exist. **Recommendation: Option A now, Option B as scoped product work,
+and A must not wait on B.**
+
+### GUARD — `tests/test_corpus_label_rules.py`, committed failing
+
+No allow-list. A label citing a rule ID no code path can construct fails the suite, and the
+message names the fixture line and the `labeled_samples.yaml` line to edit.
+
+```
+$ python3 tests/test_corpus_label_rules.py
+corpus labels: 238
+labels citing a rule with NO producer: 6
+    AGENT-036  asi-02-tool-misuse/direct/subprocess_unsandboxed.py:8  (labeled_samples.yaml:1636)
+    AGENT-015  asi-04-supply-chain/direct/npm_install_runtime.py:13   (labeled_samples.yaml:1669)
+    AGENT-015  asi-04-supply-chain/direct/curl_pipe_bash.sh:11        (labeled_samples.yaml:1679)
+    AGENT-015  asi-04-supply-chain/direct/git_clone_exec.py:14        (labeled_samples.yaml:1689)
+    AGENT-015  asi-04-supply-chain/indirect/dynamic_requirements.py:14 (labeled_samples.yaml:1699)
+    AGENT-015  asi-04-supply-chain/indirect/pypi_typosquatting.py:12  (labeled_samples.yaml:1709)
+labels citing a rule not in the advertised set: 6
+    ... the same six
+script exit = 1
+
+$ python3 -m pytest tests/test_corpus_label_rules.py -q --tb=no
+F.                                                            [100%]
+FAILED tests/test_corpus_label_rules.py::test_no_corpus_label_cites_a_rule_that_cannot_be_emitted
+1 failed, 1 passed in 0.35s
+```
+
+**It is committed red, deliberately.** The labels are not mine to edit and a guard that
+passes while the defect is present is the thing this project keeps rediscovering.
+`tests/test_rule_producers.py` was committed the same way in v0.19.3 — failing on HEAD,
+naming six rules — and the rules came out of the published list as a result. This is the
+corpus half of that check: the one that would have caught AGENT-015 before the identifier
+reached a published rule list, a published coverage figure and 238 labels simultaneously.
+
+The suite is therefore **1759 passed, 1 failed, 1 skipped** from this point on, and the one
+failure is a work order with a document attached.
