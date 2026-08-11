@@ -283,3 +283,71 @@ argument is what made W9's BEFORE falsifiable at all, given the hook had already
 repaired by hand before the session opened — the archived pre-fix guard could be put
 through the identical 11 cases. It costs one line and buys the same capability for the
 next regression.
+
+## NEEDS-HEADY (session 3)
+
+### 9. Nine ground-truth labels cite a rule ID that contradicts their own description
+
+**You alone can settle these — I did not touch a label.** Evidence and full
+reasoning in `NIGHT_RUN_LEDGER.md` § W11. Each is currently counted twice
+against the tool, once as a false positive and once as a false negative.
+Correcting all nine moves Layer 1 from P 0.6829 / R 0.8305 / F1 0.7495 to
+P 0.7143 / R 0.8686 / F1 0.7839 with no change to the scanner whatsoever.
+
+The test each one fails: the rule's published title and its pattern types in
+`engine.py` describe a different vulnerability from the label's own `notes`.
+
+| # | label | cites | rule actually means | tool emits | recommendation |
+|---|---|---|---|---|---|
+| 9.1 | `asi-02/direct/eval_bare_no_decorator.py:11` | AGENT-034 | "Tool Function Without Input Validation", gated on `is_tool_entry_point()` | AGENT-001 | **Relabel.** The fixture is named for having no `@tool` decorator; the label demands a rule that by design cannot fire there. Which ID replaces it is a second question — see AMBIGUOUS below. |
+| 9.2 | `asi-02/direct/exec_dynamic_code.py:8` | AGENT-034 | as above | AGENT-001 at :11 | **Relabel.** Same reasoning. Also: the label's line 8 is the `def`; the `exec()` is on line 11, matching only because it sits exactly at the tolerance boundary. Worth correcting the line too. |
+| 9.3 | `asi-02/direct/ssrf_bare_requests.py:9` | AGENT-037 | "Missing Human-in-the-Loop for Side Effect Operations" | AGENT-026 | **Relabel.** The label's own note says SSRF. AGENT-037 is a human-approval rule. |
+| 9.4 | `asi-02/direct/subprocess_unsandboxed.py:8` | AGENT-036 | "Tool Output Trusted Without Sanitization" | AGENT-001 | **Relabel to AGENT-001.** Strongest of the nine: the fixture's own docstring says `Expected: AGENT-047`, the label says AGENT-036, and the code is `subprocess.run(command, shell=True)` — textbook AGENT-001, which is what the tool emits. |
+| 9.5 | `asi-02/indirect/ssrf_urllib.py:7` | AGENT-037 | as 9.3 | AGENT-026 | **Relabel.** Same as 9.3. |
+| 9.6 | `asi-03/direct/root_shell_spawn.py:12` | AGENT-014 | "Overly Permissive Agent Role / Tool Access" (CWE-285) | AGENT-047 | **Relabel to AGENT-047** (CWE-250, subprocess without sandbox). The fixture spawns `sudo su -`; that is privilege escalation, not role permissiveness. |
+| 9.7 | `asi-04/direct/mcp_excessive_permissions.json:1` | AGENT-029 | "Overly Broad MCP **Filesystem** Access" | AGENT-030, AGENT-032 | **Relabel.** The config declares one postgres server and no filesystem server, so a filesystem rule cannot apply. The genuine issue — `alwaysAllow: [query, execute, drop_table]` — has no rule covering it. Two options: relabel to AGENT-030, or keep the fixture's intent and open a new rule for destructive `alwaysAllow` grants. I lean to the second, with the label parked until the rule exists. |
+| 9.8 | `asi-04/direct/npm_install_runtime.py:13` | AGENT-015 | "Untrusted MCP Server Source" | AGENT-001 | **Relabel.** Nothing about this fixture is MCP. |
+| 9.9 | `asi-04/indirect/pypi_typosquatting.py:12` | AGENT-015 | as 9.8 | AGENT-034, AGENT-047 | **Relabel.** Same. |
+
+**The systemic version of 9.8/9.9, which matters more than either.** All five
+labels citing AGENT-015 are non-MCP supply-chain issues — `curl | bash`,
+`git clone`, npm install, pip install, remote requirements. AGENT-015 is
+"Untrusted MCP Server Source" and only `npx_unfixed_version` /
+`unofficial_mcp_source` can produce it. The ASI-04 row is using AGENT-015 as a
+generic supply-chain catch-all that no rule implements. That single
+misconception, not a detection gap, is the largest contributor to ASI-04
+reading 0.0%. **Recommendation:** decide whether agent-audit should have a
+generic "untrusted code fetched and executed at runtime" rule. If yes, mint it
+and relabel these five to it; if no, relabel them to what the tool emits and
+accept that two of the five are genuine gaps (see below).
+
+**AMBIGUOUS — left alone in both directions.** For 9.1, 9.2, 9.3 and 9.5 the
+tool's own ID is also questionable: AGENT-001 is "Command Injection ... shell
+execution" but `eval()`/`exec()` are code execution, not shell; AGENT-026 is
+"LangChain Tool Input Not Sanitized" and neither SSRF fixture imports LangChain.
+Changing which rule a detection emits is a public behaviour change, so I made no
+code change. If you relabel these four to match the current emission you will be
+freezing an attribution that may itself be wrong — worth deciding the rule
+question first.
+
+### 10. AGENT-030 fires on a fixture whose purpose is to be clean
+
+Making the MCP rules reachable (W10) surfaced `AGENT-030` on
+`tests/fixtures/benign/validated/mcp_restricted.json`, which the evaluator
+classifies as a "safe file" false positive. This is not a regression from W10 —
+the rule always behaved this way, and the discovery bug was hiding it. It is a
+latent precision defect in AGENT-030, and it is now visible in the Layer 1
+number. **Recommendation:** treat as a P0A-adjacent precision fix, but not
+inside P0A, whose scope is the four noise patterns on the audit target. Left
+unfixed; changing a rule's behaviour is yours to approve.
+
+### 11. Layer 1 scored differently on identical inputs — fixed, flagged because it invalidates prior numbers
+
+Not a request, a notification with a consequence. `evaluate()` matched findings
+to labels while iterating over sets, so the score depended on `PYTHONHASHSEED`:
+TP 196 or TP 197 for the same commit and the same corpus. Fixed in `cca9265`
+(sorted iteration; fuzzy matches credited to the nearest unmatched label). The
+consequence worth your attention: **any Layer 1 figure recorded before that
+commit carries roughly ±1 TP of unquantified noise**, including the
+P 0.734 / R 0.827 / F1 0.778 headline in `CLAUDE.md`. The W12 ratchet is set on
+post-fix numbers for exactly this reason.

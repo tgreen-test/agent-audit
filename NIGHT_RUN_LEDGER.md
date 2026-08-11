@@ -1007,3 +1007,235 @@ my first attempt at the BEFORE reproduction put the payloads on the command line
 live hook blocked my own command because the string contained a redirect onto the gate
 file. The self-test now holds those paths inside the script for that reason, and this
 ledger entry had to be appended through a Python write for the same reason.
+
+### W10 — MCP config discovery never recursed, so six rules were dead in normal use
+
+BEFORE:  `python3 -m pytest tests/test_scanners/test_mcp_routing.py -q -k RecursiveDiscovery`
+
+```
+FAILED ...::TestMCPConfigRecursiveDiscovery::test_finds_config_below_scan_root[1]
+FAILED ...::TestMCPConfigRecursiveDiscovery::test_finds_config_below_scan_root[2]
+FAILED ...::TestMCPConfigRecursiveDiscovery::test_finds_config_below_scan_root[3]
+FAILED ...::TestMCPConfigRecursiveDiscovery::test_nonstandard_filename_below_scan_root
+FAILED ...::TestMCPConfigRecursiveDiscovery::test_directory_scan_matches_file_scan
+FAILED ...::TestMCPConfigRecursiveDiscovery::test_skips_dependency_and_vcs_directories
+FAILED ...::TestMCPConfigRecursiveDiscovery::test_each_config_reported_once
+7 failed, 13 deselected in 0.06s
+```
+
+Product-level reproduction, same fixture reached from three different scan roots:
+
+```
+$ agent-audit scan <root> --format json     # rules landing on the asi-04 fixtures
+ROOT tests/fixtures/asi-04-supply-chain/direct   total=12
+     /direct/mcp_excessive_permissions.json ['AGENT-004', 'AGENT-030', 'AGENT-032']
+     /direct/mcp_standalone_json.json       ['AGENT-029', 'AGENT-030', 'AGENT-032']
+ROOT tests/fixtures/asi-04-supply-chain          total=9
+     /direct/mcp_excessive_permissions.json ['AGENT-004']
+     (mcp_standalone_json.json absent from findings entirely)
+ROOT tests/fixtures                              total=267
+     /direct/mcp_excessive_permissions.json ['AGENT-004']
+     (mcp_standalone_json.json absent from findings entirely)
+```
+
+The MCP rules survive only when the config sits at the immediate top level of the
+scanned directory. One level down they vanish. Layer 1 scans the whole fixture tree,
+so they could never fire there.
+
+CAUSE: `packages/audit/agent_audit/scanners/mcp_config_scanner.py:250` —
+`for file_path in path.iterdir()`. `iterdir()` does not recurse. The two adjacent
+`.claude` / `.cursor` branches use `glob`, also non-recursive, and only at the scan
+root. Every other scanner in the package recurses:
+
+```
+$ grep -n "rglob|iterdir()|os.walk|\.glob(" *.py
+python_scanner.py:135:        for py_file in path.rglob('*.py')
+secret_scanner.py:295:        for file_path in path.rglob('*')
+privilege_scanner.py:342:            for file_path in path.rglob(f'*{ext}')
+config_scanner.py:192,196,200:       path.rglob('*.yaml' / '*.yml' / '*.json')
+skill_meta_scanner.py:91:            for p in path.rglob(name)
+skill_body_scanner.py:236:           for p in path.rglob(name)
+typescript_scanner.py:280:           for file_path in path.rglob(f"*{ext}")
+go_scanner.py:221:                   for candidate in path.rglob("*.go")
+solidity_scanner.py:139:             for f in path.rglob('*.sol')
+mcp_config_scanner.py:232,241,250:   glob / glob / iterdir      <-- the outlier
+```
+
+**The bug is MCP-specific, not a general dispatch defect.** Ten scanners, one
+outlier, and it is the one whose rules disappeared.
+
+FIX: `_find_config_files` now walks via a new `_walk_candidate_files` helper
+(`os.walk` + a `SKIP_DIRS` set of `node_modules/.git/__pycache__/.venv/venv`,
+mirroring the convention already in `cli/commands/scan.py::_count_files_by_extension`).
+Known filenames are trusted by name at any depth; everything else must still pass
+`_looks_like_mcp_config`. De-duplication by resolved path is preserved.
+Commit `f649dcc`.
+
+AFTER:   `python3 -m pytest tests/test_scanners/test_mcp_routing.py -q`
+
+```
+....................                                                     [100%]
+20 passed in 0.05s
+```
+
+Same three scan roots, after:
+
+```
+ROOT tests/fixtures/asi-04-supply-chain/direct   total=12
+ROOT tests/fixtures/asi-04-supply-chain          total=14
+ROOT tests/fixtures                              total=287
+     /direct/mcp_excessive_permissions.json ['AGENT-004', 'AGENT-030', 'AGENT-032']
+     /direct/mcp_standalone_json.json       ['AGENT-029', 'AGENT-030', 'AGENT-032']
+```
+
+Identical rule sets at every depth.
+
+**Scope: six rules, not the three reported.** Per-rule delta on `tests/fixtures`
+(267 -> 287 findings), before vs after:
+
+| rule | before | after | delta |
+|---|---|---|---|
+| AGENT-004 | 9 | 11 | +2 |
+| AGENT-005 | 0 | 2 | +2 |
+| AGENT-029 | 0 | 3 | +3 |
+| AGENT-030 | 0 | 5 | +5 |
+| AGENT-031 | 0 | 2 | +2 |
+| AGENT-032 | 0 | 5 | +5 |
+| AGENT-033 | 0 | 1 | +1 |
+
+Six rules had a directory-scan count of exactly zero: AGENT-005 and the **entire**
+AGENT-029..033 MCP configuration family. Every one of the 18 newly-emitted findings
+originates in an MCP config file, which is the positive control for the diagnosis
+being MCP-specific. Directory scanning is how the tool is normally invoked, so those
+six rules were dead in ordinary use and their silence was indistinguishable from a
+clean result.
+
+INVARIANTS:
+
+```
+$ cd packages/audit && python3 -m pytest ../../tests/ tests/ -q
+1613 passed, 1 skipped, 2303 warnings in 13.81s      # 1606 baseline + the 7 new
+
+$ cd tests/benchmark && python3 -m "agent-vuln-bench.harness.run_eval" \
+    --tool agent-audit --dataset knowns
+    Recall: 100.0%   Precision: 88.0%   F1: 0.9362    # unchanged
+```
+
+GUARD: `TestMCPConfigRecursiveDiscovery` in `tests/test_scanners/test_mcp_routing.py`
+— 7 cases built on `tmp_path`, no fixture files touched. Depth 1/2/3, sniffed
+filenames, file-vs-directory parity, skip-dir containment, and single-reporting.
+
+NOTE (new, not a regression, worth Heady's eye): making these rules reachable also
+surfaces `AGENT-030` firing on `tests/fixtures/benign/validated/mcp_restricted.json`
+— a fixture whose whole purpose is to be clean. That is a latent precision defect in
+AGENT-030 that the dispatch bug had been masking. Logged in DECISIONS.md; not fixed
+here, since it is a rule-behaviour change and out of W10's scope.
+
+### W11 — nine rule-ID mismatches, not three, and all nine are label-side
+
+BEFORE:  `python3 tests/benchmark/precision_recall.py`
+
+```
+  True Positives:  196
+  False Positives: 91
+  False Negatives: 40
+  Precision: 68.29%   Recall: 83.05%   F1-Score: 74.95%
+```
+
+Session 2 found 3 mismatches inside the ASI-04 row. Enumerating every false
+negative that has a false positive within the evaluator's own `line_tolerance`
+of 3, across the whole label set, gives **nine**:
+
+| # | fixture | label expects | tool emits |
+|---|---|---|---|
+| 1 | asi-02/direct/eval_bare_no_decorator.py | :11 AGENT-034 | :11 AGENT-001 |
+| 2 | asi-02/direct/exec_dynamic_code.py | :8 AGENT-034 | :11 AGENT-001 |
+| 3 | asi-02/direct/ssrf_bare_requests.py | :9 AGENT-037 | :10 AGENT-026 |
+| 4 | asi-02/direct/subprocess_unsandboxed.py | :8 AGENT-036 | :9 AGENT-001 |
+| 5 | asi-02/indirect/ssrf_urllib.py | :7 AGENT-037 | :9 AGENT-026 |
+| 6 | asi-03/direct/root_shell_spawn.py | :12 AGENT-014 | :13 AGENT-047 |
+| 7 | asi-04/direct/mcp_excessive_permissions.json | :1 AGENT-029 | :1 AGENT-030, AGENT-032 |
+| 8 | asi-04/direct/npm_install_runtime.py | :13 AGENT-015 | :13 AGENT-001 |
+| 9 | asi-04/indirect/pypi_typosquatting.py | :12 AGENT-015 | :14 AGENT-034, AGENT-047 |
+
+CAUSE: the labels cite rule IDs whose published definitions describe a different
+vulnerability from the one in the label's own `notes` field. This is decidable
+from the rule definitions alone, without an opinion about what the tool ought to
+do — `rules/builtin/*.yaml` for the title and
+`packages/audit/agent_audit/rules/engine.py` for the pattern types that can
+actually produce the rule:
+
+| rule | title | pattern types that emit it | what the labels use it for |
+|---|---|---|---|
+| AGENT-015 | "Untrusted MCP Server Source" | `npx_unfixed_version`, `unofficial_mcp_source` | npm/pip installs, `curl \| bash`, `git clone` — no MCP anywhere |
+| AGENT-036 | "Tool Output Trusted Without Sanitization" | `tool_output_trusted_blindly` | `subprocess.run(cmd, shell=True)` |
+| AGENT-037 | "Missing Human-in-the-Loop for Side Effect Operations" | `missing_human_in_loop` | SSRF via `requests.get` / `urlopen` |
+| AGENT-014 | "Overly Permissive Agent Role / Tool Access" (CWE-285) | `excessive_tools`, `auto_approval` | spawning a root shell via `sudo su -` |
+| AGENT-029 | "Overly Broad MCP Filesystem Access" | filesystem-server patterns | a postgres server whose `alwaysAllow` includes `drop_table` — the config declares no filesystem server at all |
+| AGENT-034 | "Tool Function Without Input Validation" | gated behind `is_tool_entry_point()` | two fixtures whose filename and docstring say explicitly there is no `@tool` decorator |
+
+Three of these are corroborated by the fixtures contradicting their own labels:
+
+- `subprocess_unsandboxed.py` docstring says `Expected: AGENT-047`; the label
+  says `AGENT-036`. The fixture and the label disagree with each other, and the
+  tool agrees with neither — it emits AGENT-001, "Command Injection via
+  Unsanitized Input", which is what `subprocess.run(command, shell=True)` on a
+  parameter actually is.
+- `eval_bare_no_decorator.py` is *named* for having no decorator and its
+  docstring repeats it, while the label demands AGENT-034 — a rule the codebase
+  documents as firing only inside `@tool` entry points. The label asks for a
+  rule that by design cannot apply to that fixture.
+- All five AGENT-015 labels are non-MCP supply-chain issues. AGENT-015 is being
+  used across the whole ASI-04 row as a generic supply-chain catch-all that its
+  definition does not support. That, not a detection gap, is the largest single
+  contributor to the ASI-04 row reading 0.0%.
+
+ADJUDICATION: **all nine are label-side.** Per the run's decision policy a
+ground-truth correction is not mine to make, so all nine are logged in
+DECISIONS.md under `NEEDS-HEADY`, one entry per label, and **no label was
+touched**. Cases 1, 2, 3 and 5 additionally have a questionable tool-side ID
+(AGENT-001 for `eval()`/`exec()`, which is code execution rather than shell;
+AGENT-026 "LangChain Tool Input Not Sanitized" on two files that do not import
+LangChain). Changing which rule a detection emits is a public behaviour change,
+so those four are marked `AMBIGUOUS` on the tool side and also left alone.
+Nothing here was resolved by picking the side that improves the number.
+
+COST: re-attributing all nine in memory — the ground-truth file opened read-only
+and never written — shows what the mislabels are worth. Each one is counted
+twice, once as an FP and once as an FN:
+
+```
+as labelled today            TP 196  FP  91  FN  40   P 0.6829  R 0.8305  F1 0.7495
+if the 9 labels were fixed   TP 205  FP  82  FN  31   P 0.7143  R 0.8686  F1 0.7839
+delta                                                 P +0.0314  R +0.0381  F1 +0.0344
+```
+
+AFTER: **no code change and no label change, so BEFORE and AFTER are identical
+by construction.** W11 is an adjudication, not a fix. Marked `UNVERIFIED` in the
+sense the policy intends: the claim "these nine are label errors" is supported
+by the rule definitions quoted above, and cannot be closed by a passing command
+until Heady rules on the labels.
+
+THE TWO GENUINE ASI-04 GAPS — characterised, not fixed, as P1 input:
+
+1. `asi-04-supply-chain/direct/curl_pipe_bash.sh:11` — `curl -fsSL "$url" | bash`.
+   The scanner never reads the file: no scanner in the package claims `.sh`
+   (`privilege_scanner` is the only shell-aware one and it is extension-gated
+   elsewhere). Zero findings anywhere in the file. This is a **coverage** gap —
+   a whole file type — not a rule gap, which makes it cheap to close and
+   valuable out of proportion to its single label.
+2. `asi-04-supply-chain/direct/git_clone_exec.py:14` and
+   `asi-04-supply-chain/indirect/dynamic_requirements.py:14` — both are
+   `subprocess.run([...], check=True)` with a **list** argument, no `shell=True`,
+   and a URL-or-repo parameter flowing into a package/code-fetching command.
+   The tool emits nothing at all in either file. The existing shell-injection
+   rules correctly decline (a list argv is not a shell injection), and no rule
+   covers "fetch and execute remote code through an argv-safe subprocess". This
+   is a real detection gap and needs a new predicate rather than a loosened one.
+   Note both are also mislabelled AGENT-015, so closing the gap will not move
+   Layer 1 until the labels are settled.
+
+GUARD: the determinism guard committed in `cca9265` includes
+`test_rule_id_mismatch_still_counts_twice`, which pins the double-counting
+behaviour so a future change cannot quietly hide these nine instead of fixing
+them.
