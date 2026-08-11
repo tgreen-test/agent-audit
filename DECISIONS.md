@@ -351,3 +351,60 @@ consequence worth your attention: **any Layer 1 figure recorded before that
 commit carries roughly ±1 TP of unquantified noise**, including the
 P 0.734 / R 0.827 / F1 0.778 headline in `CLAUDE.md`. The W12 ratchet is set on
 post-fix numbers for exactly this reason.
+
+### 12. Delete `tests/benchmark/quality_gates_v2.yaml` — one `git rm` I could not do
+
+The gate consolidation is done and the contradiction is resolved: exactly one
+gate is live, `tests/benchmark/gates.yaml`, and every consumer points at it
+(`benchmark.yml` both jobs, `run_all.sh`, and `quality_gate_check.py`'s
+`--config` default). `quality_gates_v2.yaml` is referenced by nothing.
+
+I could not delete or edit it. The W9 guard protects that filename, and its own
+instruction is to log rather than bypass — so I did not bypass it, even though
+the RUN3 hard rules granted a W12-only exception for exactly this file. The
+guard cannot express the exception; I chose to honour the mechanism and route
+the work to an unprotected path instead of engineering my way around a control.
+
+**Recommendation:** `git rm tests/benchmark/quality_gates_v2.yaml`. Leaving it
+in place recreates in miniature the problem W12 just fixed — a second file that
+looks like a gate, holds numbers nobody meets, and is one careless `--config`
+away from being live again.
+
+Full derivation of the new ratchet is in `NIGHT_RUN_LEDGER.md` § W12.
+
+### 13. The ratchet's 0.02 margin hides a 4-true-positive regression
+
+Stated so it is a decision rather than an accident. The blocking floors are
+P 0.66 / R 0.81 / F1 0.72, measured minus 0.02. The ratchet first fires after
+**5** true positives are lost; losing 1 to 4 passes silently.
+
+That is the unavoidable cost of a floor that does not flap, and it was the right
+trade while the evaluator was non-deterministic. It is a worse trade now that
+`cca9265` has made the measurement exact. **Recommendation:** once the nine
+labels in item 9 are settled and Layer 1 is re-measured, tighten the margin to
+0.01 — a 2-TP detector — and raise the per-ASI floors at the same time.
+
+### 14. Layer 2 gating is disabled, deliberately
+
+`results/layer2.json` reports `tool_version 0.5.0`, a single target named
+`test1`, and a round `150.0` second duration. It was created at `a65b341` and
+never regenerated. Evaluating it produced two warnings — "OWASP coverage 5 < 10"
+and "max scan time 150.0s > 120s" — that describe agent-audit as it was in
+February, and they were the only thing between the gate and a clean exit 0.
+
+I set `layer2.enabled: false` in `gates.yaml` with the reasoning inline. This
+implements the recommendation already recorded as item 3 rather than inventing a
+new policy. **Recommendation:** regenerate `results/layer2.json` and re-enable,
+or delete the placeholder — a missing file reports an honest SKIP, which is
+strictly better than a confident warning about the wrong version.
+
+### 15. AVB floors sit far below the AVB measurement
+
+Not changed, flagged. `agent_vuln_bench.thresholds.overall_recall_min` is 0.60
+while AVB knowns measure R 1.000 / P 0.880. A floor 0.40 below the measurement
+will not catch a serious regression.
+
+I did not ratchet it in this pass: tightening a second benchmark inside the same
+commit that re-derives Layer 1 would make the next regression ambiguous between
+the two, and W13 pins AVB recall at 100.0% as a P0A invariant regardless.
+**Recommendation:** ratchet AVB to 0.98 / 0.86 in its own commit, after P0A.

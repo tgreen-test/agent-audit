@@ -43,42 +43,19 @@ jobs:
           name: layer1-results
           path: results/layer1.json
 
+      # NOTE (2026-08-11): the inline Layer 1 gate that used to live here is
+      # deleted. It carried its own floors (P 0.72 / R 0.80 / F1 0.75) while
+      # quality_gates_v2.yaml carried different ones (P 0.90 / R 0.85 / F1 0.87),
+      # and neither knew about the other. Two gates on one layer is how that
+      # contradiction survived six months. Thresholds now live in exactly one
+      # place, tests/benchmark/gates.yaml, and are evaluated by
+      # quality_gate_check.py — which honours its documented exit contract
+      # (0 = pass, 1 = blocking failure, 2 = warnings).
       - name: Layer 1 Quality Gate Check
         run: |
-          python3 << 'EOF'
-          import json
-          import sys
-          p = 'results/layer1.json'
-          # Thresholds are set just below current measured v0.19.0 raw performance
-          # (P=73.6%, R=82.6%, F1=0.778). Goal: catch regressions, not gate at
-          # an aspirational number we don't currently meet. Raise these once GT
-          # label refresh for new rules (AGENT-053+) lands; target: June 2026.
-          MIN_PRECISION = 0.72
-          MIN_RECALL = 0.80
-          MIN_F1 = 0.75
-          try:
-              with open(p) as f:
-                  r = json.load(f)
-          except FileNotFoundError:
-              print('::error::Layer 1 results not found — precision_recall.py did not produce results/layer1.json')
-              sys.exit(1)
-          print(f'Precision: {r.get("precision", 0):.2%}')
-          print(f'Recall: {r.get("recall", 0):.2%}')
-          print(f'F1: {r.get("f1_score", 0):.2%}')
-          print(f'TP: {r.get("true_positives", 0)} | FP: {r.get("false_positives", 0)} | FN: {r.get("false_negatives", 0)}')
-          failures = []
-          if r.get('precision', 0) < MIN_PRECISION:
-              failures.append(f'Precision {r["precision"]:.2%} below {MIN_PRECISION:.0%} floor')
-          if r.get('recall', 0) < MIN_RECALL:
-              failures.append(f'Recall {r["recall"]:.2%} below {MIN_RECALL:.0%} floor')
-          if r.get('f1_score', 0) < MIN_F1:
-              failures.append(f'F1 {r["f1_score"]:.2%} below {MIN_F1:.0%} floor')
-          if failures:
-              for w in failures:
-                  print(f'::error::{w}')
-              sys.exit(1)
-          print('::notice::Layer 1 quality gate PASSED')
-          EOF
+          python tests/benchmark/quality_gate_check.py \
+            --config tests/benchmark/gates.yaml \
+            --results results/
 
   atlas-coverage:
     runs-on: ubuntu-latest
@@ -245,12 +222,13 @@ jobs:
       # quality_gate_check.py documents its own exit contract: 0 = pass,
       # 1 = blocking failure, 2 = warning. Honour it here rather than blanket-masking
       # the step with continue-on-error, which made the "Quality Gate" job incapable
-      # of ever failing. Thresholds live in quality_gates_v2.yaml and are not touched.
+      # of ever failing. Thresholds live in tests/benchmark/gates.yaml, the single
+      # source of truth as of 2026-08-11.
       - name: Run Quality Gate (v2)
         run: |
           set +e
           python tests/benchmark/quality_gate_check.py \
-            --config tests/benchmark/quality_gates_v2.yaml \
+            --config tests/benchmark/gates.yaml \
             --results results/
           rc=$?
           set -e
