@@ -1,5 +1,15 @@
 # Tests 目录结构说明
 
+> **撤回声明 / RETRACTION (2026-08-11).** 本文件此前两处引用 Precision 98.51% /
+> Recall 100.00% / F1 99.25% / FP Rate 1.49%。**这四个数字从未由评估脚本产出。**
+> 它们把 ground truth 标注数当作 true positive 计数，并把 false negative 设为 0 而非
+> 实测 —— 因此 recall 按构造必为 100%，F1 是在常数上做算术。同一次提交里的评估输出
+> 实测 124 个 false negative、47.46% recall。**四个数字全部撤回，而非更新**：没有任何
+> 重跑能复现它们，因为它们从来不是它们所命名的那件事的测量值。
+> 完整机制、时间线与逐个页面的对照见 `docs/decisions/METRICS_RETRACTION.md`。
+>
+> 下文所有指标均可用其后所附命令复现。
+
 本文档介绍 `tests/` 文件夹的组织结构和各模块功能。
 
 ## 📁 目录概览
@@ -37,7 +47,7 @@ tests/
 │   ├── atlas_report.py            # ATLAS 映射报告生成
 │   ├── run_benchmark.py           # 基准测试运行器
 │   ├── benchmark_config.yaml      # 基准测试配置（11 个目标项目）
-│   ├── quality_gates.yaml         # 质量门限配置
+│   ├── gates.yaml                 # 质量门限配置（唯一真源）
 │   └── fixtures/                  # 基准测试专用 fixtures
 │
 ├── test_scanners/                 # 扫描器单元测试
@@ -97,27 +107,36 @@ tests/
 - `sandboxed/`: 使用沙箱隔离的代码
 - `hardened/`: 加固的安全实现
 
-**当前状态**: 42 个样本文件（33 个漏洞 + 9 个良性）
+**当前状态**: 81 个样本文件、238 条标注（语料 v2.2）
 
 ### 2. `ground_truth/` - 基准数据集
 
 用于评估扫描器精确率和召回率的标注数据集。
 
 #### `labeled_samples.yaml`
-- **版本**: v2.1
-- **样本数**: 42 个文件
-- **标注数**: 198 个漏洞标注
+- **版本**: v2.2
+- **样本数**: 81 个文件
+- **标注数**: 238 个漏洞标注
+- 复现：`python3 -c "import yaml;d=yaml.safe_load(open('tests/ground_truth/labeled_samples.yaml'));print(d.get('version'), len(d['samples']), sum(len(s.get('vulnerabilities',[])) for s in d['samples']))"`
 - **格式**: YAML，每个样本包含文件路径和漏洞列表（行号、规则ID、OWASP ID等）
 
 #### `schema.yaml`
 定义 ground truth 数据格式规范，确保数据一致性。
 
-**当前性能指标** (更新后):
-- Precision: **98.51%** ✅ (目标: ≥90%)
-- Recall: **100.00%** ✅ (目标: ≥85%)
-- F1-Score: **99.25%** ✅ (目标: ≥0.87)
-- FP Rate: **1.49%** ✅ (目标: ≤5%)
-- 剩余误报: 3 个（规则精度问题，非标注错误）
+**当前性能指标** — 复现命令 `python3 tests/benchmark/precision_recall.py`（v0.20.0，2026-08-11）:
+- Precision: **68.86%**
+- Recall: **84.32%**
+- F1-Score: **0.7581**
+- FP Rate: **31.14%**
+- TP 199 / FP 90 / FN 37，共 238 条标注、81 个文件
+
+括号里的「目标」曾写在这里，像是已达成的标准。它们是 `tests/benchmark/gates.yaml`
+的 `layer1.target`，**从不阻塞任何构建**，且自 2026-02-04 写下之日起从未被满足过。
+真正阻塞 CI 的是同一文件的 `layer1.thresholds`（棘轮）：P ≥0.66 / R ≥0.82 / F1 ≥0.73。
+
+FP 90 应读作悲观值：其中至少 21 条按规则自身定义是正确的检测，只是语料尚未标注。
+详见 `docs/decisions/METRICS_RETRACTION.md` § 3(b) —— 那里也说明了为什么不应该
+「调整后」再报一个更好看的数字。
 
 ### 3. `benchmark/` - 基准测试套件
 
@@ -157,11 +176,14 @@ tests/
 - **T10**: 本地 MCP 配置测试
 - **T11**: Streamlit 应用示例
 
-**`quality_gates.yaml`**
-定义质量门限：
-- 发布标准：Precision ≥90%, Recall ≥85%, F1 ≥0.87, FP Rate ≤5%
-- 回归检测阈值
-- 每个 ASI 类别的最小要求
+**`gates.yaml`** —— 质量门限的唯一真源（`quality_gates.yaml` 与
+`quality_gates_v2.yaml` 已于 v0.20.0 删除，见 `docs/decisions/DEAD_FILES.md`）：
+- **棘轮 `layer1.thresholds`（阻塞 CI）**：Precision ≥0.66, Recall ≥0.82, F1 ≥0.73
+- **目标 `layer1.target`（只报告，从不阻塞）**：Precision ≥0.90, Recall ≥0.85, F1 ≥0.87,
+  FP Rate ≤0.05 —— 这组数字自写下之日起从未被满足，把它当作「发布标准」是本文件此前
+  最大的一处误导
+- 每个 ASI 类别的最小召回率
+- 评估：`python3 tests/benchmark/quality_gate_check.py --config tests/benchmark/gates.yaml`
 
 ### 4. `test_scanners/` - 扫描器测试
 
@@ -267,7 +289,10 @@ pytest tests/test_owasp_agentic.py -v
 
 ## 🔄 更新历史
 
-- **v2.1** (2026-02-04): Ground Truth 更新，添加 87 个新标注，达到 98.51% Precision
+- **v2.2** (2026-08-11): 81 个文件 / 238 条标注；三处 `rule_id` 标注纠正（DECISIONS.md item 39）
+- **v2.1** (2026-02-04): Ground Truth 更新，添加 87 个新标注。~~达到 98.51% Precision~~
+  —— 该因果说法已撤回：在「FN 设为 0」的算法下，增加标注按构造就会抬高 TP，这句话
+  描述的不是一次测量
 - **v2.0**: 初始 Ground Truth 数据集（39 样本，111 标注）
 - **v1.0**: 基准测试基础设施建立
 
@@ -275,11 +300,14 @@ pytest tests/test_owasp_agentic.py -v
 
 ## 🎯 质量目标
 
-当前状态（v2.1）:
-- ✅ Precision: 98.51% (目标: ≥90%)
-- ✅ Recall: 100.00% (目标: ≥85%)
-- ✅ F1-Score: 99.25% (目标: ≥0.87)
-- ✅ FP Rate: 1.49% (目标: ≤5%)
+当前状态（语料 v2.2，工具 v0.20.0，2026-08-11 实测）:
+- Precision: 68.86%
+- Recall: 84.32%
+- F1-Score: 0.7581
+- FP Rate: 31.14%
+
+复现：`python3 tests/benchmark/precision_recall.py`。棘轮（阻塞 CI）是
+P ≥0.66 / R ≥0.82 / F1 ≥0.73，写在 `tests/benchmark/gates.yaml`。
 
 剩余改进空间:
 - 3 个误报需要规则逻辑优化（AGENT-026, AGENT-034）

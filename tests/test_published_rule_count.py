@@ -1,0 +1,154 @@
+"""Regression guard: one rule count, and every published surface must agree with it.
+
+History. On 2026-08-11 this repository published **four different rule counts for one set
+of rules** — 40, 49, 53 and 72 — across twenty locations, while the set contained 66. The
+PyPI description said 53 and was the only rule count on a distribution surface. None of
+the four was checked against anything, because nothing checked them.
+
+That is the same defect as the duplicate Layer 1 thresholds (`test_layer1_gate_singleton`)
+and the stale gate results (`test_gate_provenance`): one fact, several copies, no
+mechanism relating the copies to the fact. Documents drift silently because a wrong
+sentence and a right one look identical to every test in the suite.
+
+This test relates them. `tests/test_rule_producers.advertised_rules()` is the fact — the
+rules the tool can actually emit — and any number written next to the word "rules" on a
+surface a user reads must equal it.
+
+**Scope, and why it is drawn here.** Only surfaces a *user of the tool* reads: the two
+READMEs, the docs site, the architecture and roadmap pages, and the packaging metadata.
+Deliberately excluded, each for a stated reason:
+
+  * `CHANGELOG.md` and the `docs/blog/` posts are **records**. "72 rules" in a v0.18 entry
+    was true when written; rewriting history to make a test pass is the opposite of what
+    this guard is for. The blog posts carry a dated correction note instead.
+  * `NIGHT_RUN_LEDGER.md`, `DECISIONS.md`, `RUN*_REPORT.md`, `CLAIMS_RECONCILIATION.md`
+    and `docs/decisions/` are working notes that *quote* wrong numbers in order to discuss
+    them. A guard that forbade quoting the defect would make the defect harder to write
+    down.
+"""
+
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+import pytest
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "tests"))
+
+from test_rule_producers import advertised_rules  # noqa: E402
+
+# Surfaces a user of the tool reads. Adding a new one is a one-line change here.
+PUBLISHED_SURFACES = (
+    "README.md",
+    "README_CN.md",
+    "docs/index.html",
+    "docs/ARCHITECTURE.md",
+    "docs/README.md",
+    "docs/ROADMAP.md",
+    "docs/RULES.md",
+    "packages/audit/pyproject.toml",
+)
+
+# "66 rules", "66 detection rules", "66 Rules x OWASP", "66 条规则".
+# The `\+?` matters: "40+ rules" is how three of the four wrong numbers were written, and
+# a vague count that happens to be satisfied by the truth is still a count nobody checked.
+COUNT_NEAR_RULES = re.compile(
+    r"(?<![\d.])(\d{1,4})\s*\+?\s*(?:detection\s+|Detection\s+)?(?:rules|Rules|条规则)",
+)
+
+# A count is only checked when its line also claims to describe the *whole* set. Without
+# this, `docs/index.html` alone yields nine per-category counts ("4 rules · prompt
+# injection via f-string") that are correct and are not the total.
+#
+# The cost of the approach is that a count phrased in none of these ways goes unguarded —
+# `docs/ARCHITECTURE.md:134` is a bare `(66 rules)` inside an ASCII diagram, and this
+# guard does not see it. `test_every_published_surface_states_the_count` limits the
+# damage: if a surface stops matching entirely, the suite fails rather than going quiet.
+TOTALITY_MARKERS = (
+    "mapped to", "映射到",
+    "covering all", "覆盖",
+    "coverage",
+    "rule reference", "rules x owasp",
+    "complete list",
+    "dedup",
+    "total",
+    "asi categories",
+    "as of v",
+)
+
+
+def _published_counts():
+    """Every whole-set rule count on a user-facing surface.
+
+    Yields (surface, line number, number, line text).
+    """
+    for rel in PUBLISHED_SURFACES:
+        path = REPO_ROOT / rel
+        if not path.exists():
+            continue
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            lowered = line.lower()
+            if not any(marker in lowered for marker in TOTALITY_MARKERS):
+                continue
+            for match in COUNT_NEAR_RULES.finditer(line):
+                yield rel, lineno, int(match.group(1)), line.strip()
+
+
+def test_the_rule_set_is_not_empty():
+    """A vacuous guard is worse than none — see the differential of RUN7."""
+    assert len(advertised_rules()) > 0
+
+
+def test_every_published_rule_count_equals_the_rule_set():
+    actual = len(advertised_rules())
+    wrong = [
+        (rel, lineno, found, text)
+        for rel, lineno, found, text in _published_counts()
+        if found != actual
+    ]
+    assert not wrong, (
+        f"{len(wrong)} published rule count(s) disagree with the {actual} rules the tool "
+        "can actually emit.\n\n"
+        + "\n".join(f"  {rel}:{lineno}  says {found}\n      {text[:110]}" for rel, lineno, found, text in wrong)
+        + "\n\nThe count is checkable:\n"
+        "  python3 -c \"import sys;sys.path.insert(0,'tests');"
+        "from test_rule_producers import advertised_rules;print(len(advertised_rules()))\""
+    )
+
+
+def test_every_published_surface_states_the_count():
+    """Otherwise the test above passes by finding nothing, which is the vacuity trap.
+
+    Per surface, not merely "at least one somewhere": a phrasing change on one page would
+    otherwise take that page out of the guard while the suite stayed green — which is
+    precisely how `docs/index.html` came to publish 49 while the README published 72.
+    """
+    seen = {rel for rel, _, _, _ in _published_counts()}
+    missing = [rel for rel in PUBLISHED_SURFACES if (REPO_ROOT / rel).exists() and rel not in seen]
+    assert not missing, (
+        "no whole-set rule count was found on these published surfaces:\n  "
+        + "\n  ".join(missing)
+        + "\n\nEither the count was removed from them, or the phrasing changed and "
+        "TOTALITY_MARKERS no longer matches — in which case this guard has gone inert "
+        "for those files and is now the thing that needs fixing."
+    )
+
+
+@pytest.mark.parametrize("stale", [40, 49, 53, 72])
+def test_the_four_historical_counts_are_gone(stale):
+    """Named individually so a regression says which one came back."""
+    actual = len(advertised_rules())
+    if stale == actual:
+        pytest.skip(f"{stale} is the current count")
+    offenders = [
+        f"{rel}:{lineno}  {text[:110]}"
+        for rel, lineno, found, text in _published_counts()
+        if found == stale
+    ]
+    assert not offenders, (
+        f"the published count {stale} is back on a user-facing surface:\n"
+        + "\n".join(offenders)
+    )

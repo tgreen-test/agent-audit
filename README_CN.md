@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://github.com/HeadyZhang/agent-audit/actions/workflows/ci.yml/badge.svg)](https://github.com/HeadyZhang/agent-audit/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/HeadyZhang/agent-audit/graph/badge.svg?branch=master)](https://codecov.io/gh/HeadyZhang/agent-audit?branch=master)
-[![Tests](https://img.shields.io/badge/tests-1541%20passed-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-1883%20passed%2C%201%20red%20by%20design-brightgreen)]()
 
 ---
 
@@ -26,7 +26,7 @@ AI Agent 不只是聊天机器人。它会执行代码、调用工具、接触�
 
 **Agent Audit** 在部署前拦截这些问题，当前分析核心专门面向 Agent 工作流：工具边界污点跟踪、MCP 配置审计、语义化密钥检测，并预留向学习辅助检测扩展的空间。
 
-可以把它理解成 **AI Agent 的安全 lint**，当前已有 72 条规则，映射到 [OWASP Agentic Top 10 (2026)](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/)。
+可以把它理解成 **AI Agent 的安全 lint**，当前已有 66 条规则，映射到 [OWASP Agentic Top 10 (2026)](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/)。
 
 ---
 
@@ -93,9 +93,10 @@ Summary:
 
 ---
 
-验证快照（截至 **2026-05-30**，**v0.19.0**，标注数据集 v2.2，**81 个样本 / 236 条阳性标签 + 2 条阴性标签**）：
+验证快照（截至 **2026-08-11**，**v0.20.0**，标注数据集 v2.2，**81 个样本 / 238 条标注**）：
 
-- Precision **73.58%**、Recall **82.63%**、**F1 0.778（原始，可复现）** — TP 195 / FP 70 / FN 41
+- Precision **68.86%**、Recall **84.32%**、**F1 0.7581（原始，可复现）** — TP 199 / FP 90 / FN 37
+- 相比 v0.19.0，precision 下降、recall 上升，原因不是检测能力退步：两处文件发现缺陷被修复后，此前无法产生的检测变得可达，而语料尚未标注其中大多数。FP 90 应读作悲观值 —— 至少 21 条按规则自身定义是正确的。详见 [`docs/decisions/METRICS_RETRACTION.md`](docs/decisions/METRICS_RETRACTION.md) § 3。
 - 脚注：剔除 v0.16 之后新增、GT 中尚未标注的规则所产生的 FP，可后处理得到调整后 F1 ≈ 0.84，但该数字无法由 `precision_recall.py` 直接复现，因此不作为头条指标。详见 [`docs/F1_REPRODUCTION.md`](docs/F1_REPRODUCTION.md)。GT v2.3 计划于 2026 年 6 月刷新。
 - **OWASP Agentic Top 10** 覆盖：10/10
 
@@ -211,7 +212,7 @@ jobs:
 
 | 工具 | Recall | Precision | F1 |
 |------|-------:|----------:|---:|
-| **agent-audit** (v0.19.0, 原始，可复现) | **82.63%** | **73.58%** | **0.778** |
+| **agent-audit** (v0.20.0, 原始，可复现) | **84.32%** | **68.86%** | **0.7581** |
 | Bandit 1.8 | 29.7% | 100% | 0.46 |
 | Semgrep 1.x | 27.0% | 100% | 0.43 |
 
@@ -250,7 +251,7 @@ Source Files (.py, .json, .yaml, .env, ...)
         +-- PrivilegeScanner -- Daemon / Sudoers / Sandbox / Credential Store
                  |
                  v
-            RuleEngine -- 40+ Rules x OWASP Agentic Top 10 -- Findings
+            RuleEngine -- 66 Rules x OWASP Agentic Top 10 -- Findings
 ```
 
 **关键技术点：**
@@ -263,7 +264,7 @@ Source Files (.py, .json, .yaml, .env, ...)
 
 ## 威胁覆盖
 
-72 条规则覆盖 [OWASP Agentic Top 10 (2026)](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/) 全部 10 类：
+66 条规则覆盖 [OWASP Agentic Top 10 (2026)](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/) 全部 10 类：
 
 | OWASP 类别 | 规则数 | 示例检测 |
 |------------|------:|----------|

@@ -4,7 +4,7 @@
 
 ## TL;DR
 
-The current **headline F1 = 0.778** (raw, reproducible) used in `README.md`, `README_CN.md`, `COMPETITIVE-COMPARISON.md`, `BENCHMARK-RESULTS.md`, `CLAUDE.md`, and `docs/index.html` is produced directly by **`tests/benchmark/precision_recall.py`** against the ground-truth file **`tests/ground_truth/labeled_samples.yaml`** (v2.2, 2026-02-04). The historical adjusted F1 of 0.842 — derived post-hoc by excluding FPs from rules added after v0.16 — is documented below for full transparency but is no longer cited as a headline figure.
+The current **headline F1 = 0.7581** (raw, reproducible, v0.20.0) used in `README.md`, `README_CN.md`, `COMPETITIVE-COMPARISON.md`, `BENCHMARK-RESULTS.md`, `CLAUDE.md`, and `docs/index.html` is produced directly by **`tests/benchmark/precision_recall.py`** against the ground-truth file **`tests/ground_truth/labeled_samples.yaml`** (v2.2, 2026-02-04). The historical adjusted F1 of 0.842 — derived post-hoc by excluding FPs from rules added after v0.16 — is documented below for full transparency but is no longer cited as a headline figure.
 
 ## Test set
 
@@ -29,13 +29,22 @@ The script runs `agent-audit scan tests/fixtures --format json`, parses findings
 ### Raw output reproduced on 2026-05-31 (agent-audit 0.19.0)
 
 ```
-True Positives:  195
-False Positives: 70
-False Negatives: 41
-Precision: 73.58%   Recall: 82.63%   F1: 77.84%   FP Rate: 26.42%
+True Positives:  199
+False Positives: 90
+False Negatives: 37
+Precision: 68.86%   Recall: 84.32%   F1: 75.81%   FP Rate: 31.14%
 ```
 
-Raw F1 **0.7784** matches the documented **0.778** exactly.
+Raw F1 **0.7581**, measured at v0.20.0 on 2026-08-11.
+
+> **Superseding the 0.778 this section used to print.** Precision fell from 73.58% and
+> recall rose from 82.63% between v0.19.0 and v0.20.0, and the cause is not a detection
+> regression. Two file-discovery bugs were fixed (`f649dcc`, MCP configuration discovery;
+> and `package_scanner._scan_ai_tool_hooks`), which made previously unreachable findings
+> possible. Most of them are correct by their rules' own definitions and the corpus does
+> not label them, so they count against precision. Quoting the F1 movement without this
+> paragraph asserts a quality regression that did not happen. See
+> `docs/decisions/METRICS_RETRACTION.md` § 3(a).
 
 ## How "0.842" is derived (adjustment)
 
@@ -70,6 +79,12 @@ The documented **P 85.9% / R 82.6% / F1 0.842** falls between these two — matc
 
 ## Bottom line
 
-- **Raw F1 0.778**: fully reproducible, run the script.
+- **Raw F1 0.7581**: fully reproducible, run the script.
 - **Adjusted F1 0.842**: reproducible within ±0.004 by subtracting the 37–40 FPs from rules added after v0.16. Will converge with raw once GT v2.3 refreshes labels for AGENT-053+ (planned June 2026; see comment at `precision_recall.py:483`).
-- The CI gate inside `precision_recall.py` is set at `f1 < 0.75` (line 485) — passes today, raises to 0.84 once GT refresh lands.
+- **There is no CI gate inside `precision_recall.py`.** This document previously said
+  one was "set at `f1 < 0.75` (line 485) — passes today". Three things were wrong with
+  that sentence: the line number was already stale, the gate was *failing* rather than
+  passing at the time it was written, and the gate itself was deleted at `78d8fe5` because
+  it was a second Layer 1 floor competing with `tests/benchmark/gates.yaml`. The floor now
+  lives in exactly one place and is evaluated by `quality_gate_check.py`. Verify with
+  `python3 -m pytest tests/test_layer1_gate_singleton.py -q`.

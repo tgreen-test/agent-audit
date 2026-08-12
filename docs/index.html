@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Agent Audit — Static Security Analysis for AI Agents</title>
-<meta name="description" content="Find security vulnerabilities in your AI agent code before they reach production. 49 rules mapped to OWASP Agentic Top 10.">
+<meta name="description" content="Find security vulnerabilities in your AI agent code before they reach production. 66 rules mapped to OWASP Agentic Top 10.">
 <meta name="keywords" content="AI agent security, LLM security scanner, prompt injection detection, MCP security, OWASP agentic top 10, LangChain security, static analysis AI agents">
 <meta property="og:title" content="Agent Audit — Security Scanner for AI Agents">
-<meta property="og:description" content="Find vulnerabilities in AI agent code. 49 rules, OWASP Agentic Top 10 coverage, taint analysis, MCP config auditing.">
+<meta property="og:description" content="Find vulnerabilities in AI agent code. 66 rules, OWASP Agentic Top 10 coverage, taint analysis, MCP config auditing.">
 <meta property="og:url" content="https://headyzhang.github.io/agent-audit/">
 <meta property="og:type" content="website">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -893,7 +893,7 @@ footer {
     <div class="animate-in">
       <div class="hero-badge">
         <span class="dot"></span>
-        v0.16.0 — 49 rules · 10/10 OWASP coverage · 1,142 tests passing
+        v0.20.0 — 66 rules · 10/10 OWASP coverage · 1,887 tests
       </div>
     </div>
 
@@ -920,11 +920,11 @@ footer {
         <div class="label">Detection Rules</div>
       </div>
       <div class="hero-stat">
-        <div class="val">82.63%</div>
+        <div class="val">84.32%</div>
         <div class="label">Recall (v0.19.0, GT v2.2, 81 samples)</div>
       </div>
       <div class="hero-stat">
-        <div class="val">0.778</div>
+        <div class="val">0.7581</div>
         <div class="label">F1 (raw, reproducible — see README)</div>
       </div>
       <div class="hero-stat">
@@ -1071,9 +1071,9 @@ footer {
           <tbody>
             <tr class="winner">
               <td class="highlight">agent-audit (v0.19.0, raw, reproducible)</td>
-              <td class="highlight">82.63%</td>
-              <td class="highlight">73.58%</td>
-              <td class="highlight">0.778</td>
+              <td class="highlight">84.32%</td>
+              <td class="highlight">68.86%</td>
+              <td class="highlight">0.7581</td>
             </tr>
             <tr>
               <td>Bandit 1.8</td>
@@ -1187,7 +1187,7 @@ footer {
 
       <div class="pipe-label">Rule Engine → Output</div>
       <div class="pipeline-row">
-        <div class="pipe-node engine">RuleEngine<br><span style="color:var(--text-muted);font-size:11px">49 rules · dedup · confidence tiers</span></div>
+        <div class="pipe-node engine">RuleEngine<br><span style="color:var(--text-muted);font-size:11px">66 rules · dedup · confidence tiers</span></div>
         <span class="pipe-arrow">→</span>
         <div class="pipe-node output">SARIF</div>
         <div class="pipe-node output">JSON</div>
@@ -1204,7 +1204,7 @@ footer {
   <div class="container">
     <div class="section-tag">Threat Model</div>
     <h2 class="section-title">Full OWASP Agentic Top 10 coverage</h2>
-    <p class="section-desc">49 detection rules mapped to every category of the <a href="https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/" target="_blank">OWASP Agentic Top 10 (2026)</a>.</p>
+    <p class="section-desc">66 detection rules mapped to every category of the <a href="https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/" target="_blank">OWASP Agentic Top 10 (2026)</a>.</p>
 
     <div class="owasp-grid">
       <div class="owasp-item">

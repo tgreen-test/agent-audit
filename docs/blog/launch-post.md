@@ -1,5 +1,16 @@
 # Introducing Agent Audit: The First Open-Source Security Scanner for AI Agents
 
+> **Correction note, 2026-08-11.** This post is kept as published. Two things in it are no
+> longer accurate and are deliberately not edited in place, because the record of what was
+> posted is worth more than a silently-updated page:
+>
+> * the rule count is **66**, not "40+" — six advertised rules were withdrawn in v0.19.3
+>   because no code path could emit them;
+> * any precision, recall or F1 figure it cites is superseded by
+>   `docs/decisions/METRICS_RETRACTION.md`. The current measured values, reproducible with
+>   `python3 tests/benchmark/precision_recall.py`, are P 68.86% / R 84.32% / F1 0.7581.
+
+
 **TL;DR:** AI agents can execute code, access files, and make API calls — but most security tools weren't built to understand them. Agent Audit is a free, open-source static analyzer that catches vulnerabilities specific to AI agents, mapped to the OWASP Agentic Top 10.
 
 ---

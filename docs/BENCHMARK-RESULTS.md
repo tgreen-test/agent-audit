@@ -4,7 +4,7 @@
 >
 > This report covers the **Agent-Vuln-Bench v1.0** evaluation (19 AVB samples) run on **2026-02-19** against v0.15.1+v0.16.0 code. The headline numbers below (94.6% / 87.5% / 0.909 F1) reflect that point-in-time AVB-19 evaluation.
 >
-> For the **current**, reproducible benchmark on the larger labeled fixture set (81 samples / 218 labels, GT v2.2), see [`results/layer1_v0.19.0.json`](../results/layer1_v0.19.0.json) and the snapshot section in the [README](../README.md). On that benchmark, **v0.19.0** scores **F1 0.778 (raw, reproducible)** — P 73.58% / R 82.63%, TP 195 / FP 70 / FN 41. (The 0.91 number further down was on a different/smaller benchmark and is not reproducible from this codebase via `precision_recall.py`.)
+> For the **current**, reproducible benchmark on the larger labeled fixture set (81 samples / 218 labels, GT v2.2), see [`results/layer1_v0.19.0.json`](../results/layer1_v0.19.0.json) and the snapshot section in the [README](../README.md). On that benchmark, **v0.20.0** scores **F1 0.7581 (raw, reproducible)** — P 68.86% / R 84.32%, TP 199 / FP 90 / FN 37. (The 0.91 number further down was on a different/smaller benchmark and is not reproducible from this codebase via `precision_recall.py`.)
 >
 > Reproduce the current number with: `pip install -e packages/audit/ && python tests/benchmark/precision_recall.py --output-json results/layer1.json`
 
@@ -225,4 +225,4 @@ Two bugs in expanded detection methods caused massive false positives:
 - (AVB-19, historical) ~3.5× recall advantage over Semgrep (94.6% vs 27.0%)
 - **100% Set B coverage** — only tool that scans MCP configurations
 - **10/10 OWASP Agentic Top 10** categories covered
-- **Current (v0.19.0, labeled_samples.yaml 81-sample)**: F1 0.778 (raw, reproducible), P 73.58%, R 82.63% (TP 195 / FP 70 / FN 41)
+- **Current (v0.20.0, labeled_samples.yaml 81-sample)**: F1 0.7581 (raw, reproducible), P 68.86%, R 84.32% (TP 199 / FP 90 / FN 37)

@@ -71,7 +71,7 @@ agent-security-suite/
 │
 ├── docs/                              # Documentation
 │   ├── STABILITY.md                 # API stability policy
-│   ├── RULES.md                     # Rule reference (40 rules)
+│   ├── RULES.md                     # Rule reference (66 rules)
 │   ├── CI-INTEGRATION.md            # CI/CD integration guide
 │   └── ARCHITECTURE.md              # This file
 │
@@ -131,7 +131,7 @@ agent-security-suite/
 │             Rules Engine                  │          │
 │  ┌────────────┐  ┌─────────────────────┐ │          │
 │  │ engine.py  │──│ rules/builtin/*.yaml│ │          │
-│  │ (evaluate) │  │   (40 rules)        │ │          │
+│  │ (evaluate) │  │   (66 rules)        │ │          │
 │  └─────┬──────┘  └─────────────────────┘ │          │
 └────────┼─────────────────────────────────┘          │
          │                                            │
@@ -231,7 +231,7 @@ agent-audit scan <path> --format sarif --fail-on high
 | ASI-09 | Trust Exploitation | AGENT-023, 033, 037-039, 052 | ✅ |
 | ASI-10 | Rogue Agents | AGENT-024, 025, 053 | ✅ |
 
-**Coverage: 10/10 ASI categories, 40 rules total**
+**Coverage: 10/10 ASI categories, 66 rules total**
 
 ---
 

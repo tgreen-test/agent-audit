@@ -306,9 +306,16 @@ New guards, all of which fail the suite rather than warn:
 ### Quality Metrics
 
 - All 393 tests passing
-- 3 false positives eliminated (Precision: 98.51% → 100%)
-- Recall maintained at 100%
-- F1 Score: 100%
+- ~~3 false positives eliminated (Precision: 98.51% → 100%)~~ **WITHDRAWN 2026-08-11**
+- ~~Recall maintained at 100%~~ **WITHDRAWN 2026-08-11**
+- ~~F1 Score: 100%~~ **WITHDRAWN 2026-08-11**
+
+  > These three lines were never measurements. They are the *target* block of the v0.4.1
+  > development brief, published as an achievement — the brief states `Recall = 100%
+  > (0 FN)` in as many words, and the evaluation output committed alongside this entry
+  > measured 124 false negatives and 47.46% recall. They are struck rather than updated
+  > because no re-run can reproduce them and there is no commit to update them *to*.
+  > See `docs/decisions/METRICS_RETRACTION.md`.
 
 ## [0.4.0] - 2026-02-04
 

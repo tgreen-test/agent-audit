@@ -9,7 +9,7 @@
 
 | Document | Description |
 |----------|-------------|
-| [Rule Reference](RULES.md) | Complete list of 40+ detection rules with OWASP mapping |
+| [Rule Reference](RULES.md) | Complete list of 66 detection rules with OWASP mapping |
 | [CI/CD Integration](CI-INTEGRATION.md) | GitHub Actions, GitLab CI, Jenkins, Azure DevOps setup |
 | [API Stability](STABILITY.md) | Public interface stability guarantees |
 
@@ -196,4 +196,4 @@ Agent Audit covers all 10 categories of the [OWASP Agentic Top 10 (2026)](https:
 | ASI-09 | Trust Exploitation | AGENT-023, 033, 037-039, 052 |
 | ASI-10 | Rogue Agents | AGENT-024, 025, 053 |
 
-**Coverage: 10/10 ASI categories, 40+ rules**
+**Coverage: 10/10 ASI categories, 66 rules**

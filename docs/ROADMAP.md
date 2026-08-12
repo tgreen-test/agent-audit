@@ -15,7 +15,7 @@ Core capabilities shipped and stable:
 - [x] **Credential Detection** — 3-stage semantic analysis (regex + value analysis + context adjustment)
 - [x] **Privilege Scanner** — Escalation patterns, unsandboxed execution, credential store access
 - [x] **Taint Analysis** — Intra-procedural data flow tracking (Source → Sink)
-- [x] **OWASP Coverage** — 10/10 ASI categories, 40+ detection rules
+- [x] **OWASP Coverage** — 10/10 ASI categories, 66 detection rules
 - [x] **Output Formats** — SARIF, JSON, Markdown, Terminal
 - [x] **CI/CD Integration** — GitHub Action, GitLab CI, Jenkins, Azure DevOps
 - [x] **Baseline Scanning** — Incremental mode, suppression management
