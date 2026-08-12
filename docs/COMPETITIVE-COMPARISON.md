@@ -1,16 +1,25 @@
 # Competitive Comparison: agent-audit vs Bandit vs Semgrep
 
-> **⚠️ The original table below was measured on Agent-Vuln-Bench v1.0 (19 samples) on 2026-02-19 against v0.15.1/v0.16.0.** Those numbers are kept for the audit trail and remain the per-sample comparison record. For the **current** v0.19.0 benchmark on the broader 81-sample labeled GT v2.2, see the **Current Snapshot** block below and the [README](../README.md). Reproduce with: `python tests/benchmark/precision_recall.py`.
+> **⚠️ The original table below was measured on Agent-Vuln-Bench v1.0 (19 samples) on 2026-02-19 against v0.15.1/v0.16.0.** Those numbers are kept for the audit trail and remain the per-sample comparison record. For the **current** benchmark on the broader 81-sample labeled GT v2.2, see the **Current Snapshot** block below and the [README](../README.md). Reproduce with: `cd packages/audit && python3 ../../tests/benchmark/precision_recall.py`.
 
-## Current Snapshot (v0.19.0, 2026-05-30, GT v2.2, 81 samples / 218 labels)
+## Current Snapshot (v0.20.0, 2026-08-11, GT v2.2, 81 samples / 238 labels)
 
-| Tool | Recall | Precision | F1 |
-|------|-------:|----------:|---:|
-| **agent-audit** (v0.19.0, raw, reproducible) | **82.63%** | **73.58%** | **0.778** |
-| Bandit 1.8 (injection/RCE subset) | 29.7% | 100% | 0.458 |
-| Semgrep 1.x (injection/RCE subset) | 27.0% | 100% | 0.426 |
+| Tool | Recall | Precision | F1 | measured on |
+|------|-------:|----------:|---:|---|
+| **agent-audit** (v0.20.0, raw, reproducible) | **84.32%** | **68.86%** | **0.7581** | GT v2.2, 81 samples |
+| Bandit 1.8 (injection/RCE subset) | 29.7% | 100% | 0.458 | **AVB-19, 19 samples** |
+| Semgrep 1.x (injection/RCE subset) | 27.0% | 100% | 0.426 | **AVB-19, 19 samples** |
 
-The agent-audit row reports the raw F1 directly produced by `precision_recall.py` (TP 195 / FP 70 / FN 41). A post-hoc adjusted F1 of 0.84 — computed by excluding FPs from rules added after v0.16 that are not yet labeled in GT — is documented as a footnote in [`docs/F1_REPRODUCTION.md`](F1_REPRODUCTION.md) but is not used as a headline figure because it is not directly reproducible by the included script. The Bandit/Semgrep numbers are reproduced from the AVB-19 measurement below since those tools' rule sets have not materially changed since 2026-02; a re-measurement against the 81-sample GT is on the docket alongside the GT label refresh (target: June 2026).
+**Read the fourth column before the first three.** The agent-audit row and the two baseline rows were measured on **different sample sets**, so this is not a like-for-like comparison and the ratios between rows are not meaningful. The baselines have not been re-run against the 81-sample GT; until they are, the honest reading of this table is three separate measurements printed adjacently, not a ranking.
+
+The agent-audit row is the raw F1 directly produced by `precision_recall.py` (TP 199 / FP 90 / FN 37). Two things travel with it:
+
+* **68.86% precision is a floor, not a point estimate.** At least 21 of the 90 false positives are correct by their own rule's definition and simply unlabelled in the ground truth. See `docs/decisions/METRICS_RETRACTION.md` § 3(b).
+* **Precision fell from the 73.58% this table used to print, and that is not a detection regression.** It fell in three steps, each of which was a file-discovery bug being *fixed*: the scanner began finding things the corpus never labelled. Recall rose over the same period, 82.63% → 84.32%. § 3(a) of the same document has the per-step table.
+
+A post-hoc adjusted F1 of 0.84 — computed by excluding FPs from rules added after v0.16 that are not yet labelled in GT — is documented as a footnote in [`docs/F1_REPRODUCTION.md`](F1_REPRODUCTION.md) and is **not** used as a headline figure, because it is not directly reproducible by the included script.
+
+> **Correction, 2026-08-11 (v0.20.0).** This section published F1 0.778 / P 73.58% / R 82.63% (TP 195 / FP 70 / FN 41) at "v0.19.0, 2026-05-30", and a label count of 218 where the corpus has 238. It was missed by the v0.20.0 claims sweep: it appears in neither the location table of `CLAIMS_RECONCILIATION.md` § 2 nor that of `METRICS_RETRACTION.md` § 2, while `docs/F1_REPRODUCTION.md` listed this file among those already carrying the corrected headline. It was found by `scripts/scan_external_claims.sh`, which is the point of having the script.
 
 ---
 

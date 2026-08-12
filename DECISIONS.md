@@ -1254,3 +1254,104 @@ The count is checkable, and the check is one line:
 ```bash
 python3 -c "import sys;sys.path.insert(0,'tests');from test_rule_producers import advertised_rules;print(len(advertised_rules()))"
 ```
+
+**Resolved in RUN9 (W44).** All three drafts corrected — `chinese_summary.md` was the
+third, untracked beside the other two and carrying the same figures in the one language
+nobody would grep. The count is 66, the AST claim is replaced by the per-language table,
+and every unsubstantiated figure is removed rather than hedged. See item 45 for the guard,
+and `OUTREACH_CLAIMS.md` for what was removed and what restores it.
+
+---
+
+### 45. Untracked drafts can be guarded — the condition is tracking, not existence
+
+Item 44 declined to guard the outreach drafts, on a sound objection: *a test that failed on
+a draft in someone's working tree is a test that gets switched off, and a switched-off
+guard is worse than none.*
+
+That objection is about **private working-tree files**, and it is answered by a condition
+rather than by an exemption. `tests/test_published_rule_count.py` now consults
+`git ls-files` and guards `blog_post.md`, `twitter_thread.md` and `chinese_summary.md`
+**only when git has them in the index**:
+
+* untracked — the drafts are private, the guard is silent, and
+  `test_tracked_outreach_drafts_are_guarded` **skips with the reason printed**, so an inert
+  guard and a satisfied one are distinguishable in `-v` output. That distinction is the
+  whole subject of this file.
+* tracked — they are the repository, and every count on them must equal `advertised_rules()`.
+
+Measured both ways this run, the tracked run performed against a temporary `GIT_INDEX_FILE`
+so the real index was never written:
+
+```
+untracked:  8 passed, 1 skipped
+tracked:    9 passed
+tracked, with 56 restored to twitter_thread.md:
+    AssertionError: 1 published rule count(s) disagree with the 66 rules the tool can
+    actually emit.
+      twitter_thread.md:22  says 56
+```
+
+`56` also joins the historical-count parametrize, so a regression names the number that
+came back. It is the only one of the five that was never on a tracked surface — which is
+exactly why nothing caught it for as long as it sat there.
+
+**What this does not cover.** A draft that is published without ever being committed. The
+guard is a check on the repository, not on Heady's clipboard; the HTML-comment hold at the
+top of each draft is the only thing standing between the working tree and a paste into a
+CMS, and it is a convention, not a mechanism.
+
+---
+
+### 46. Four published test counts are stale, and nothing guards them
+
+The rule count now has a guard. The **test count** does not, and it has already drifted on
+four surfaces — the same defect one release later, in a different field.
+
+Measured this run, before any edit:
+
+```
+$ python3 -m pytest tests/ packages/audit/tests/ -q
+1 failed, 1890 passed, 3 skipped
+
+$ python3 -m pytest tests/ -q
+1 failed, 1858 passed, 3 skipped
+```
+
+| surface | said | now says | the command it names |
+|---|---|---|---|
+| `CLAUDE.md:11` | 1,883 passed | **1,891 passed, 1 failed, 4 skipped** | `pytest tests/ packages/audit/tests/` |
+| `CLAUDE.md:92` | 1,887 tests (1,883 pass) | **1,896 collected (1,891 pass)** | same |
+| `README.md:10` badge | tests-1883 | **tests-1891** | — badge names no command |
+| `README_CN.md:12` badge | tests-1883 | **tests-1891** | — |
+| `README.md:388` | 1,808 passed | **1,859 passed, 4 skipped** | `pytest ../../tests/` |
+
+**The final figures are 1,891 / 1,859, not the 1,890 / 1,858 measured at the top of this
+item, and the one-test difference is the point of the whole entry.** The two tests this run
+added to `test_published_rule_count.py` — item 45's guard, and the `56` parametrize —
+changed the suite's size while the correction was being written. The first pass wrote 1,890
+to all five surfaces and every one of them was stale before the session ended. It is the
+same mechanism as the 7-test gap below, reproduced live, in the commit that was fixing it.
+
+The 7-test gap on the first four is not random: it is `tests/test_published_rule_count.py`,
+7 tests, added by RUN8 in the same session that wrote 1,883. **The commit that fixed the
+rule count made the test count wrong**, and nothing noticed, because the guard RUN8 built
+guards rule counts.
+
+`README.md:388` is a different and more interesting case: it is stale by 50 *and* it names
+a genuinely different invocation, so 1,858 and 1,890 are both correct for their own
+commands. Two right answers for "how many tests are there" is the same shape as four right
+answers for "how many rules", and the fix is the same — say which command produced it.
+
+**Corrected this run** on all five lines. **Not guarded**, deliberately: a test asserting
+the suite's own size increments that size, so every future test addition would fail the
+suite until someone edited a number — an over-eager guard, and the RUN8 note on why those
+get weakened applies verbatim. The defence used instead is the one that worked for the
+metrics: every count now names the command that produces it, so a reader can check in four
+seconds rather than trusting.
+
+If a mechanism is wanted later, the shape that avoids the ratchet is a test that asserts
+**consistency between surfaces** rather than a literal value — all four say the same thing,
+whatever that thing is — plus one place where the number is written down. That is a real
+option and it is not free; it is written here so the next person does not have to rediscover
+why the obvious version is a trap.

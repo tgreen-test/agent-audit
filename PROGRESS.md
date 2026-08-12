@@ -1,51 +1,53 @@
 # PROGRESS
 
-**Session 9 state: COMPLETE. W38–W43 all done.** Read `RUN8_REPORT.md` first (one page),
-then `NEXT_ROUND.md`, which is the only file that asks anything of the *next* round, and
-`RELEASE_CHECKLIST.md`, which is what is left of this one.
+**Session 10 state: COMPLETE. W44–W47 all done.** Read `RUN9_REPORT.md` first (one page),
+then § 6 of it — **six decisions, all yours, ordered, with the first gating three others.**
 
-**v0.20.0 is staged, not released.** Nothing pushed, merged, tagged or published. Unlike
-the last session, the public claims **are** now corrected: the rule count and every in-repo
-metric match what the tool does.
+**Every mechanical gap before v0.20.0 is now closed.** Nothing pushed, merged, tagged or
+published.
 
 ## Start here
 
-`RELEASE_CHECKLIST.md`. Steps 1–4 are **done**. What remains is steps 5–7: rebuild, merge
-and tag, and post the issue replies. All three are yours; the guard blocks every one of
-them for an unattended session and that is correct.
+`RUN9_REPORT.md` § 6. Then, in this order:
+
+1. **`EXTERNAL_CLAIMS_CHECKLIST.md`** + `scripts/scan_external_claims.sh` — the release
+   blocker, and the kit that turns it from an afternoon into minutes.
+2. **`ISSUE_REPLIES.md`** — five complete comment bodies, paste-ready. Nothing posted.
+3. **`OUTREACH_CLAIMS.md`** — the three outreach drafts: every number with its command, and
+   everything removed with the one condition that restores it.
 
 ## What this session did
 
 | W | what |
 |---|---|
-| — | committed `finalize_run7.sh`'s result as the first act: F1 **0.746667 → 0.758095**, exactly the RUN7 prediction |
-| W38 | **the quality gate could exit 0 without measuring anything** — stale results file, and no results file. Both fixed, both guarded |
-| W39 | found: the repository's own `.agent-audit.yaml` has been renamed to `.bak` and committed since February |
-| W40 | **issue #10 fixed** — AGENT-041 receiver gate. Both true positives kept |
-| W41 | **issue #8: two of four claims fixed**, one downgraded, one improved. Stays open |
-| W42 | **one rule count, 66, on eighteen surfaces**, plus every in-repo metric, plus a guard |
-| W43 | **slopsquatting assessed and declined**, with the measurement. `docs/decisions/SLOPSQUATTING.md` |
+| W44 | **the fifth rule count, in three drafts rather than two.** 56 → 66; every unsubstantiated figure removed rather than hedged; the guard now covers the drafts once they are tracked |
+| W45 | **the external-claims search kit** — 35 patterns, PDF and Office support, a destination checklist. It found a 22nd location of the drifted F1 nobody had catalogued |
+| W46 | **five issue replies, final text.** #10 closes as fixed, #12 as won't-fix. One recommendation reversed: #11 stays open |
+| W47 | **the full verification sweep**, recorded as release evidence. Four more mechanical corrections found and applied |
 
 ## The three things a reader needs
 
-1. **The gate was the last instrument still trusted rather than checked.** It would pass on
-   a `results/layer1.json` from another commit — including, specifically, on the
-   pre-correction file that clears the ratchet raised in the same commit — and it would pass
-   on no results file at all, because a `SKIP` is not counted as a failure. Neither is
-   detectable by any assertion about the numbers, so the fix is a provenance stamp over the
-   corpus, the scanner source and the interpreter's `agent_audit`. It caught two real
-   stalenesses during this session's own work.
+1. **The catalogue of wrong numbers was itself incomplete.** Two sessions catalogued the
+   0.778 family by hand under a heading reading *"Every location the affected figures
+   appear"*. A script written for a different purpose found a twenty-second location in under
+   a second — `docs/COMPETITIVE-COMPARISON.md`, a head-to-head table against Bandit and
+   Semgrep by name — and `docs/F1_REPRODUCTION.md` listed that very file among the ones
+   already corrected. **A claim about which claims are correct is still a claim, and it
+   drifts the same way.** Fixed.
 
-2. **Four scanner fixes moved Layer 1 by exactly zero.** TP 199 / FP 90 / FN 37 either side.
-   The graded corpus contains none of the shapes the two bug reporters found, so it could
-   not have caught the defects and cannot show the fixes. Every one is validated against the
-   reporter's code and pinned by a test. This is `CAPABILITY_BOUNDARIES.md` § 6 from the
-   inside.
+2. **The drafts' problem is not the rule count.** Their whole evidentiary base is one
+   18,899-skill scan whose data is not committed, produced by a scanner advertising a count
+   that matches no set the project has ever had — and v0.20.0 has since withdrawn six rules
+   and gated AGENT-034, so a re-run would not return those numbers. Everything unreproducible
+   is removed from the prose and preserved verbatim with its restore condition. What replaced
+   it is a 30-second reproduction a reader can run.
 
-3. **One line, three producers.** Issue #8 claim 4: gating the taint sink relocated the
-   finding to `eval_exec_expanded`; gating that relocated it to `dangerous_function_call`.
-   Suppressing per-producer cannot answer a per-line complaint, and nothing in the tool can
-   currently say which producers claim a line. `DECISIONS.md` item 43.
+3. **The test count drifted, and then drifted again inside the fix for it.** Four surfaces
+   said 1,883 where the command produces 1,890 — a gap of exactly seven, being the seven-test
+   guard RUN8 added in the same session. Correcting them to 1,890 went stale before this
+   session ended, because this session added two more tests. Final: **1,891**. Deliberately
+   not guarded; `DECISIONS.md` item 46 says why the obvious guard is a trap and what shape
+   would work.
 
 ## Current commit
 
@@ -55,39 +57,37 @@ them for an unattended session and that is correct.
 
 | invariant | result |
 |---|---|
-| Layer 1 | **TP 199 / FP 90 / FN 37**, P 0.688581 / R 0.843220 / F1 0.758095 |
-| `results/layer1.json` | provenance-stamped, verified against this tree by the suite |
-| `quality_gate_check.py` | **exit 0**, and now able to exit 1 for staleness and for silence |
-| full suite | **1,890 passed, 1 failed, 3 skipped** (`pytest tests/ packages/audit/tests/`) |
+| Layer 1 | **TP 199 / FP 90 / FN 37**, P 0.688581 / R 0.843220 / F1 0.758095 — unchanged; no detection code touched |
+| `quality_gate_check.py` | **exit 0** — 0 failures, 0 warnings, **0 skipped** |
+| gate provenance | current for this tree: `bea9901`, 0.20.0, `is_this_checkout: true` |
+| full suite | **1,891 passed, 1 failed, 4 skipped** (`pytest tests/ packages/audit/tests/`) |
 | the one failure | `tests/test_corpus_label_rules.py`, committed red on purpose |
-| advertised rules | **66**, agreed by 18 published surfaces, enforced by a test |
-| thresholds changed | **none by me** — the ratchet was raised by `finalize_run7.sh` before this run |
+| AVB `knowns` | **R 100.0% / P 88.0% / F1 0.9362** |
+| AVB `all` | **R 95.24% / P 86.96% / F1 0.9091** — re-run and **byte-identical on every metric** to the file the gate reads |
+| advertised rules | **66**, and the guard now extends to the outreach drafts once tracked |
+| built wheel | carries the corrected 66-rule PyPI description; 0 of 103 entries match the leakage exclusion list |
+| guard self-test | 11/11 |
+| thresholds changed | **none** |
+| detection code changed | **none** — the only code edit is `tests/test_published_rule_count.py` |
 
-## Still open, in priority order
+## Still open
 
-**Yours, and blocking:**
+**Yours, and blocking — the full table is `RUN9_REPORT.md` § 6:**
 
-* **`RELEASE_CHECKLIST.md` steps 5–7** — rebuild, merge/tag, post the issue replies.
-  `ISSUE_TRIAGE.md` now has an addendum: **#10 can close as fixed**, #12 closes as won't-fix,
-  #8 / #11 / #5 stay open.
-* **`METRICS_RETRACTION.md` § 5 step 1** — which *external* surfaces carry the 98.51%. Every
-  in-repo surface is corrected; the public half is blocked on a list only you can produce.
-  Unchanged from RUN7, and now the only thing between this release and a complete retraction.
-* **`DECISIONS.md` items 35, 36, 38, 39 rows 2–4** — ground-truth and rule-set decisions.
-* **`DECISIONS.md` item 41** — `git mv .agent-audit.yaml.bak .agent-audit.yaml`. One command,
-  but it changes what a scan of this repository reports, so it is a decision.
+1. **Which external surfaces carry the 98.51%** — `EXTERNAL_CLAIMS_CHECKLIST.md`. Gates 2, 3
+   and 6.
+2. **`README.md:147`** — "18,899 ClawHub skills at 80% precision". The only metric on an
+   in-repo surface with no reproducing command. Commit the data or cut the clause.
+3. **The ClawHub scan figures** — re-run at v0.20.0, or republish as a dated v0.1x result
+   with the raw output committed. `OUTREACH_CLAIMS.md` § 3.
+4. **The malware-campaign section** — a disclosure decision, not a metrics one.
+5. **`RELEASE_CHECKLIST.md` steps 6–7** — merge, tag, publish; post the five replies.
+6. **Whether the drafts go out at all before 1 closes.**
 
-**Actionable without a decision:**
-
-* **`NEXT_ROUND.md`** — v0.21.0 scoped to one capability: untrusted code acquisition at
-  runtime. It closes the red corpus-label guard, has fixtures before it has an
-  implementation, and is the half of slopsquatting a static analyser can honestly see. Its
-  largest piece is that no scanner opens a `.sh` file.
-* **`DECISIONS.md` item 40** — AVB results carry no provenance stamp; the design is settled.
-* **`DECISIONS.md` item 43** — a `--explain <file>:<line>` view of the producer set.
-* **Issue #8's remaining half** — a provenance model separating configuration and internal
-  computation from untrusted input. The tool's largest measured false-positive source, and
-  its own release rather than a rider.
+**Carried, not blocking:** `DECISIONS.md` items 35, 36, 38, 39 rows 2–4, 40 (AVB provenance
+stamp — verified current by re-run, still unstamped), 41 (`git mv .agent-audit.yaml.bak`),
+43 (a per-line producer view), 46 (test-count guard shape, if ever wanted).
+`NEXT_ROUND.md` is v0.21.0 and needs no decision to start.
 
 ## Environment
 
@@ -98,20 +98,22 @@ cd packages/audit && python3 ../../tests/benchmark/precision_recall.py --output-
 python3 tests/benchmark/quality_gate_check.py --config tests/benchmark/gates.yaml --results results/ --layers layer1
 ```
 
-The `--output-json` matters now: without it the results file is not rewritten, and the gate
-will refuse the stale one rather than quietly scoring it.
+The `--output-json` matters: without it the results file is not rewritten, and the gate will
+refuse the stale one rather than quietly scoring it.
+
+`pdftotext` is **not** installed. `scripts/scan_external_claims.sh` will list PDFs as unread
+rather than searching them — `brew install poppler` before running it over a papers
+directory, or the most likely carrier of a retracted figure is the one thing it skips.
 
 ## Guard-hook friction
 
-Five denials, none bypassed. Four were the same mechanism — a command containing `>` (from
-`2>/dev/null`, or from a `->` inside a commit message) makes the guard tokenise the whole
-command and match a protected path that was only being *read* or *described*. Each was
-solved by changing the command: writing the commit message to a file and using `git commit
--F`, dropping the redirect, or moving a multi-line edit script into the scratchpad. The
-fifth was `git add` naming the ground-truth path directly, for a change Heady had already
-made; `git commit -a` stages the same content without naming it.
+Three denials, none bypassed, all the same mechanism as last session: a command is refused
+whole when it contains a protected path or a destructive verb, even when the path is only
+being read (`grep ... eval/`) or the target is a scratchpad directory (`rm -rf $SCRATCH/x`).
+Each was solved by rewriting the command — a fresh scratch directory instead of removing one,
+and dropping the protected path from a `grep` path list.
 
-The hook was not edited and no path was assembled at runtime. The false-positive direction
-remains the safe one, and it is worth noting that all five denials were on *reads and
-descriptions*, not writes — the guard is doing more than it needs to and still costing less
-than it saves.
+One further denial came from the environment rather than the hook: decoding the base64 payload
+quoted in the outreach drafts was refused, correctly, because the string points at a live C2
+host. The consequence is recorded rather than worked around — the corrected drafts do not
+assert what it decodes to, and `OUTREACH_CLAIMS.md` § 1 says so.

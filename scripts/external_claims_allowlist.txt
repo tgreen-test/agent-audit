@@ -1,0 +1,97 @@
+# Paths whose job is to quote the retracted figures.
+#
+# Substring match against the full path. Used by scripts/scan_external_claims.sh
+# --allowlist so that a scan of this repository reports only surfaces that should be
+# corrected, not the documents doing the correcting.
+#
+# The rule for adding a line: this file is for documents that quote a wrong number *in
+# order to discuss it*. It is not for documents that are merely inconvenient to fix. If
+# you find yourself adding a README, stop — that is the surface, not the record.
+
+# The retraction and its evidence
+docs/decisions/METRICS_RETRACTION.md
+docs/decisions/AGENT-015_RESOLUTION.md
+docs/decisions/DEAD_FILES.md
+docs/decisions/SLOPSQUATTING.md
+CLAIMS_RECONCILIATION.md
+CAPABILITY_BOUNDARIES.md
+
+# Working notes and run logs. These quote every wrong number this project has published.
+NIGHT_RUN_LEDGER.md
+NIGHT_RUN_REPORT.md
+DECISIONS.md
+PROGRESS.md
+SESSION2_REPORT.md
+RUN3_REPORT.md
+RUN4_REPORT.md
+RUN5_REPORT.md
+RUN6_REPORT.md
+RUN7_REPORT.md
+RUN8_REPORT.md
+RUN9_REPORT.md
+RELEASE_CHECKLIST.md
+ISSUE_TRIAGE.md
+ISSUE_REPLIES.md
+NEXT_ROUND.md
+OUTREACH_CLAIMS.md
+EXTERNAL_CLAIMS_CHECKLIST.md
+
+# The tool itself
+scripts/scan_external_claims.sh
+scripts/external_claims_allowlist.txt
+scripts/finalize_run7.sh
+
+# CHANGELOG is a record. "72 rules" in a v0.18 entry was true when written; the three
+# 100% lines are struck in place with a dated note rather than deleted, because silently
+# deleting a published claim is its own problem.
+CHANGELOG.md
+
+# Historical development briefs and execution summaries, kept as artifacts of what was
+# believed at the time. Superseded by the release they describe.
+PROMPT-v0.
+CLAUDE-PROMPT-v0.
+EXECUTE-v0.16.0
+agent-audit-v0
+agent-audit-benchmark-optimization
+v0.14.0-TAINT-ACCURACY-EXECUTION-PLAN.md
+PR7_COMMENT.md
+
+# Benchmark results files, which record point-in-time measurements.
+results/
+tests/benchmark/v0.14
+
+# NOT allowlisted, and the omission is deliberate: docs/BENCHMARK-RESULTS.md,
+# docs/COMPETITIVE-COMPARISON.md and docs/F1_REPRODUCTION.md are published surfaces a
+# user reads, not records. F1_REPRODUCTION.md in particular exists to prove the headline
+# is reproducible, so a stale figure there is a stronger negative signal than anywhere
+# else. They must keep matching until they are corrected.
+
+# Source comments and test docstrings that record the defect they guard against. These
+# quote a superseded measurement in order to explain why the guard exists; rewriting them
+# would erase the reason.
+tests/benchmark/precision_recall.py
+tests/test_gate_provenance.py
+tests/test_layer1_gate_singleton.py
+tests/README.md
+
+# A separate research line (SkillScanner). Its Wilson CIs are its own, not agent-audit's.
+docs/skillscanner/
+
+# Test fixtures and corpora deliberately contain numbers that look like findings.
+tests/fixtures/
+tests/ground_truth/
+tests/differential_corpus/
+tests/benchmark/agent-vuln-bench/
+packages/audit/tests/
+eval/
+examples/
+cybergym-
+
+# Generated / vendored
+.git/
+poetry.lock
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+node_modules/
+dist/

@@ -5,10 +5,10 @@
 Agent Audit is a security scanner for AI agent code, MCP configurations, and DeFi contracts. It detects agent-specific vulnerabilities that traditional SAST tools miss, mapped to the OWASP Agentic Top 10 (2026) with 10/10 coverage.
 
 - **Version**: 0.20.0
-- **Python**: 3.9-3.12
+- **Python**: 3.9–3.14 (`packages/audit/pyproject.toml` declares `^3.9` and classifiers through 3.14; this branch is `fix/py314-blocker` and the suite runs on CPython 3.14.3)
 - **License**: MIT
 - **Entry point**: `agent-audit = "agent_audit.cli.main:cli"`
-- **Metrics** (v0.20.0, 2026-08-11, GT v2.2 / 81 samples / 238 labels): P 68.86% / R 84.32% / **F1 0.7581 (raw, reproducible)** — TP 199 / FP 90 / FN 37. Reproduce: `cd packages/audit && python3 ../../tests/benchmark/precision_recall.py`. Suite: `pytest tests/ packages/audit/tests/` → **1,883 passed, 1 failed, 3 skipped**; the failure is `tests/test_corpus_label_rules.py`, committed red on purpose (three ground-truth labels cite AGENT-015, which no code path can emit — see `docs/decisions/AGENT-015_RESOLUTION.md` § 4). Read FP 90 as pessimistic: at least 21 are correct by their rules' own definitions and merely unlabelled. **No adjusted figure is published.** A post-hoc 0.84 was previously derived by excluding FPs from post-v0.16 rules; `docs/decisions/METRICS_RETRACTION.md` § 3(b) explains why a bound is stated instead.
+- **Metrics** (v0.20.0, 2026-08-11, GT v2.2 / 81 samples / 238 labels): P 68.86% / R 84.32% / **F1 0.7581 (raw, reproducible)** — TP 199 / FP 90 / FN 37. Reproduce: `cd packages/audit && python3 ../../tests/benchmark/precision_recall.py`. Suite: `pytest tests/ packages/audit/tests/` → **1,891 passed, 1 failed, 4 skipped**; the failure is `tests/test_corpus_label_rules.py`, committed red on purpose (three ground-truth labels cite AGENT-015, which no code path can emit — see `docs/decisions/AGENT-015_RESOLUTION.md` § 4). Read FP 90 as pessimistic: at least 21 are correct by their rules' own definitions and merely unlabelled. **No adjusted figure is published.** A post-hoc 0.84 was previously derived by excluding FPs from post-v0.16 rules; `docs/decisions/METRICS_RETRACTION.md` § 3(b) explains why a bound is stated instead.
 
 ## Repository Structure
 
@@ -89,7 +89,7 @@ agent-security-suite/
 │   │   │   └── compat.py
 │   │   └── parsers/
 │   │       └── treesitter_parser.py
-│   ├── tests/                        # 1,887 tests (1,883 pass, 1 red by design, 3 skipped)
+│   ├── tests/                        # 1,896 collected (1,891 pass, 1 red by design, 4 skipped)
 │   │   ├── test_agent004_semantic.py
 │   │   ├── test_expanded_rules.py
 │   │   ├── test_privilege_rules.py
