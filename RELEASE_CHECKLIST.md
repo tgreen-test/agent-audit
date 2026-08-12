@@ -1,10 +1,23 @@
 # v0.20.0 release checklist
 
-**Everything below is a command for you to run. This run executed none of them.**
+> **Status, 2026-08-11 (session 9). Steps 1–4 are DONE. Steps 5–7 remain and are yours.**
+>
+> | step | state |
+> |---|---|
+> | 1. the three corpus-label edits | **done** — applied by Heady via `scripts/finalize_run7.sh`, committed at `fda9f06`. Measured F1 0.746667 → 0.758095, exactly as predicted below |
+> | 2. the ratchet | **done** — `recall_min` 0.82, `f1_min` 0.73, in the same commit |
+> | 3. the two dead threshold files | **done** — removed in the same commit |
+> | 4a. the rule count | **done** — 18 in-repo surfaces now say 66, guarded by `tests/test_published_rule_count.py`. The two published blog posts carry correction notes rather than edits |
+> | 4b. the metrics | **done in-repo** — every surface carries the measured value and the command that produces it; `tests/README.md` opens with the retraction. **Blocked externally**: § 5 step 1 of `METRICS_RETRACTION.md` asks which *external* surfaces carry the 98.51%, and only you can answer it |
+> | 5. rebuild | **done** — artifacts rebuilt after the `pyproject.toml` correction; see below |
+> | 6. merge, tag, publish | **not done** — the guard blocks all of it, correctly |
+> | 7. the issue replies | **not done, and one verdict changed** — #10 is now **fixed** and can close. See the addendum in `ISSUE_TRIAGE.md` |
+>
+> The numbers quoted in steps 1 and 2 below are the *predictions* this checklist was written
+> with. They are left as written because they were checked and held. Current measured values:
+> **TP 199 / FP 90 / FN 37, P 0.688581 / R 0.843220 / F1 0.758095**.
 
-The branch is `fix/py314-blocker`. Nothing has been pushed, merged, tagged or published, and
-no public-facing claim has been edited. The artifacts exist and are verified; the release is
-staged, not made.
+The branch is `fix/py314-blocker`. Nothing has been pushed, merged, tagged or published.
 
 Work top to bottom. Steps 1–3 change measured numbers and must precede the rest.
 
@@ -238,6 +251,13 @@ $ agent-audit scan tests/differential_corpus
 ---
 
 ## 6. Merge, tag, publish
+
+> Six commits are on the branch since `48c1a89`. Review them as a unit with
+> `git log --oneline 48c1a89..HEAD` — one applies `finalize_run7.sh`, one fixes the quality
+> gate, one fixes two issues, one corrects the published claims, and the last two are
+> documentation. `git diff 48c1a89..HEAD -- packages/` is version bumps, the PyPI
+> description, and four scanner fixes with their tests.
+
 
 ```bash
 git checkout master

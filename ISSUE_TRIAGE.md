@@ -13,6 +13,125 @@ the right setting for an unattended run.
 
 ---
 
+## Addendum, 2026-08-11 (session 9) — two verdicts changed
+
+The table below was written at `ec0a29b`, before anything was fixed. Two rows have moved
+since, and the drafted replies for those two are superseded by the ones here. Everything
+else stands.
+
+| # | verdict at `ec0a29b` | verdict now | can it close? |
+|---|---|---|---|
+| 10 | NOT FIXED | **FIXED** — the reported case no longer fires, both true positives kept | **yes** |
+| 8 | PARTIALLY FIXED (1 of 4) | **PARTIALLY FIXED (2 of 4, +1 downgraded, +1 improved)** | no |
+
+### #10 — fixed
+
+`_check_sql_tainted_param` now requires the receiver to look like a database handle, on
+two kinds of single-file evidence: named like one (per underscore-separated token, so
+`db_conn` and `self.session` qualify and `target_agent` does not), or given one by an
+assignment in the same file (`handle = connection.cursor()`, `with sqlite3.connect(...) as
+handle`, `create_engine(url)`). The evidence is positive, so an unrecognised receiver is
+silence rather than a BLOCK-tier accusation.
+
+```
+BEFORE   AGENT-041  tp_control.py:7   BLOCK 1.00
+         AGENT-041  tp_control.py:13  BLOCK 1.00
+         AGENT-041  fp_case.py:7      BLOCK 1.00     <- return target_agent.execute(task)
+AFTER    AGENT-041  tp_control.py:7   BLOCK 1.00
+         AGENT-041  tp_control.py:13  BLOCK 1.00
+```
+
+Both true positives survive, including the KNOWN-008 upstream case (`cursor.execute(query)`
+with the SQL built elsewhere) that a blunter fix would have taken with it. Layer 1 does not
+move: the graded corpus contains no `.execute()` on a non-database receiver, so it could
+not have caught this defect and cannot show the fix. Pinned by
+`tests/test_agent041_receiver.py`, 25 tests, both directions. Ledger section W40.
+
+**Draft reply**
+
+> Fixed in v0.20.0. Your two files at HEAD now give two AGENT-041 findings instead of
+> three — `target_agent.execute(task)` is gone, `cursor.execute(f"...")` and the
+> upstream-SQL case both still fire.
+>
+> The fix is the receiver heuristic, option (a) from my last reply, but built so it fails
+> the safe way: the receiver has to *look like* a database handle for the finding to fire,
+> either by name (matched per underscore-separated token, so `db_conn` and `self.session`
+> qualify) or by an assignment in the same file that gives it one (`cur = conn.cursor()`,
+> `with sqlite3.connect(...) as h`, `create_engine(url)`). Positive evidence rather than an
+> exclusion list, so a receiver we do not recognise produces silence rather than a
+> BLOCK-tier accusation — an incomplete vocabulary costs us a detection instead of giving
+> you a confident wrong one, and there is no list of agent framework names to keep current.
+>
+> Worth saying plainly: our benchmark did not move at all. It contains no `.execute()` on a
+> non-database receiver, so it could not have caught this and cannot show the fix. Your
+> report is the measurement. That is now written down in `CAPABILITY_BOUNDARIES.md` section 6.
+
+### #8 — two of four claims fixed, one downgraded, one improved
+
+| claim | at `ec0a29b` | now |
+|---|---|---|
+| 1. test files at CRITICAL | fixed | fixed |
+| 2a. credentials in an f-string | live, AGENT-004 WARN 0.70 | **fixed** — no finding |
+| 2b. config-derived SQL | live, AGENT-041 BLOCK 1.00 | **live, unchanged** |
+| 3. internal template variables | live, AGENT-010 BLOCK 1.00 | **downgraded** to INFO 0.50 |
+| 4. fixed container argv | live, AGENT-034 WARN | **improved** — AGENT-047 WARN 0.80 |
+
+**2a** — a hardcoded credential is by definition a literal in the source. The value the
+regex captured from `f"password={password}"` was `{password}\n`, which is entirely
+interpolation. Narrower than "the line contains an f-string": `f"sk-{suffix}"` keeps a real
+prefix and is still analysed.
+
+**3** — a prompt f-string that interpolates only locals now scores 0.50 rather than 1.00.
+Downgraded and not suppressed, because `skills_list` *is* derived from a parameter,
+transitively; the distinction this pass can honestly draw is one step wide. Suppressing
+would have required a list of parameter names that are "probably config".
+
+**4** — measured, and the measurement is the interesting part. Three separate producers
+report that one line. Gating the taint sink moved AGENT-034 from 0.85 to 0.65; gating
+`subprocess_expanded` left it firing via `eval_exec_expanded`; gating that one left
+AGENT-047 at 0.80. The line still carries a finding. What changed is that the tool no
+longer claims a `shell_execution` taint flow from user input, and no longer reports *Tool
+Function Without Input Validation* about a function that is not a tool.
+
+**2b** — untouched, and it is the one that needs the provenance model rather than another
+heuristic. `db_name` comes from `urlparse(config_url)`; `config_url` is a parameter.
+
+Two tests in `tests/test_issue8_provenance_shapes.py` assert the *remaining* defects, so
+each fails the moment it is fixed. Ledger section W41.
+
+**Draft reply**
+
+> v0.20.0 moves two more of your four problems. Re-running your shapes at HEAD:
+>
+> **Problem 2, the credential half — fixed.** `f"email={email}\npassword={password}"` no
+> longer produces AGENT-004. Your suggestion was the right one and is what we implemented:
+> a hardcoded credential is a literal in the source, and the "value" our regex captured was
+> `{password}\n`, which is nothing but interpolation. `f"sk-{suffix}"` still gets analysed,
+> because it has a real prefix.
+>
+> **Problem 3 — downgraded, not fixed.** Your `<skill_system>` case drops from BLOCK/1.0 to
+> INFO/0.50. We can now tell "an inbound parameter goes straight into the prompt" from "a
+> local that some computation produced", which is one step of distance and all a
+> single-file pass can honestly see. We did not suppress it, because `skills_list` really
+> is derived from `config`, which really is a parameter — the thing that makes it safe is
+> that `config` is configuration, and that is the provenance model, not a heuristic.
+>
+> **Problem 4 — improved, and the measurement is worth sharing.** Your line no longer
+> carries a taint flow claiming `cmd` reached a shell from user input, and no longer
+> reports "Tool Function Without Input Validation" about a function that is not a tool. But
+> it still produces a finding, now AGENT-047. We found that **three separate producers
+> report that one line**, and silencing two of them just moved the finding to the third.
+> That is our bug, not a disagreement with you, and it is written up.
+>
+> **Problem 2's SQL half — not fixed**, and it is the one blocking closure along with the
+> rest of the provenance work. `conn.execute(f'CREATE DATABASE "{db_name}"')` still fires
+> at BLOCK/1.0. Scoped as its own release rather than a rider.
+>
+> Leaving this open. Two of four is not a closure, and we would rather you saw the score
+> than a green checkmark.
+
+---
+
 ## Summary
 
 | # | title | verdict | can it close? |

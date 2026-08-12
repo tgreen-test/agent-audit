@@ -50,15 +50,93 @@ there is nothing to update them *to*; they are withdrawn.
 The reproducible current value, from `python3 tests/benchmark/precision_recall.py`:
 
 ```
-TP 196  FP 93  FN 40
-Precision 67.82%   Recall 83.05%   F1 74.67%   FP Rate 32.18%
+TP 199  FP 90  FN 37
+Precision 68.86%   Recall 84.32%   F1 75.81%   FP Rate 31.14%
 ```
 
 Two qualifications travel with that, and both are in
 `docs/decisions/METRICS_RETRACTION.md` § 3: precision fell since v0.19.0 because three
 *discovery bugs were fixed* and the tool began finding correct things the corpus does not
-label, and at least 21 of the 93 false positives are unlabelled true positives — so 67.82%
+label, and at least 21 of the 90 false positives are unlabelled true positives — so 68.86%
 is a floor, not a point estimate. It is stated as a bound rather than silently adjusted.
+
+### Corrected — one rule count, on every surface that publishes one
+
+**Four different numbers were published for one set of rules: 40, 49, 53 and 72.** The set
+contains 66. `packages/audit/pyproject.toml` said 53 and is the PyPI description — the only
+rule count on a distribution surface, and the most-read line the project has.
+
+Eighteen in-repo locations now say 66, and the number is checkable rather than asserted:
+
+```bash
+python3 -c "import sys;sys.path.insert(0,'tests');from test_rule_producers import advertised_rules;print(len(advertised_rules()))"
+```
+
+`tests/test_published_rule_count.py` fails the suite if a published count and the rule set
+ever disagree again, and fails per surface if a page stops stating a count at all — a page
+dropping quietly out of the guard is how `docs/index.html` came to publish 49 while the
+README published 72. The two published blog posts are left as written, with dated
+correction notes: "40+" is vague rather than false, and the record of what was posted is
+worth more than a silently-updated page.
+
+Every metric on every in-repo surface is now the measured value with the command that
+produces it beside it. `tests/README.md` carried the largest error — 30 points of precision
+and 17 of recall, twice over, with no retraction note — and now opens with one.
+
+### Fixed — the quality gate could pass without measuring anything
+
+`quality_gate_check.py` decided the build by reading `results/layer1.json`, and read nothing
+else. Two ways it exited 0 while proving nothing, both measured:
+
+- **A stale results file passed.** `results/layer1.json` is committed, so every checkout has
+  one whether or not anything measured it. A file describing a corpus three labels out of
+  date cleared the ratchet and reported success.
+- **No results file passed.** An empty results directory produced SKIP for two layers
+  declared `enabled: true, blocking: true`, and SKIP is not counted as a failure.
+
+Layer 1 results now carry a provenance stamp fingerprinting the three inputs a measurement
+is a function of — the ground-truth labels, the fixture corpus, and the scanner source —
+plus which `agent_audit` the interpreter that ran the scan actually imported. The gate
+recomputes it and refuses to score a file that does not describe the tree it is checking.
+Content-based, not time-based, so it does not fail correct builds in CI. A missing results
+file for an enabled, blocking layer is now a failure; `--layers` lets a job state which
+claim it is making instead of letting silence stand in for success.
+
+**If you run the gate in your own CI, add `--layers` naming the layers that job measures**,
+or a layer you do not produce results for will now fail the build rather than being skipped.
+
+### Fixed — false positives, from two bug reports
+
+- **AGENT-041 no longer treats every `.execute()` as a SQL sink** (issue #10). The KNOWN-008
+  branch — SQL built upstream and passed in — had no evidence from its argument by design
+  and asked none from its receiver, so `target_agent.execute(task)` was SQL injection at
+  confidence 1.0. The receiver must now look like a database handle, by name or by an
+  assignment in the same file that gives it one. Positive evidence, so an unrecognised
+  receiver is silence rather than a BLOCK-tier accusation. Both true positives in the
+  reporter's case survive, including the upstream-SQL one.
+- **AGENT-004 no longer reports format strings as hardcoded credentials** (issue #8).
+  `f"password={password}"` matched on the word and scored the entropy of `{password}\n`. A
+  hardcoded credential is a literal in the source; a value that is entirely interpolation is
+  not one. `f"sk-{suffix}"` keeps its literal prefix and is still analysed.
+- **AGENT-010 distinguishes an inbound value from a computed one.** A prompt f-string that
+  interpolates only locals scores 0.50 rather than 1.00. Downgraded rather than suppressed,
+  because one step of distance is all a single-file pass can honestly see.
+- **A subprocess call that names its own program is no longer treated as a shell sink.**
+  `subprocess.run(["docker", "run", ..., image])` carried a taint flow claiming it reached a
+  shell from user input. It does not. The reduction is confidence only, never suppression,
+  because `["pip", "install", pkg]` has the identical shape and is a real finding.
+
+None of these moved the benchmark, and that is worth knowing: the graded corpus contains
+none of these shapes. They are validated against the reporters' code and pinned by tests.
+
+### Decided — slopsquatting is not becoming a rule
+
+A newly published attack class in this tool's declared territory, assessed and declined
+with the measurement in `docs/decisions/SLOPSQUATTING.md`. The test that distinguishes
+slopsquatting from any other supply-chain issue is *does this package name exist in the
+registry*, and scanning makes no network calls by design. The half a static analyser can
+see — runtime acquisition of code whose identity is not fixed in the source — is a rule this
+project already owes its own corpus, and it is scoped for v0.21.0 in `NEXT_ROUND.md`.
 
 ### Added — `CAPABILITY_BOUNDARIES.md`
 

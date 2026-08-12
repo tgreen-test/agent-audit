@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 # and in rules/builtin/asi_coverage_v030.yaml; the Python scanner gates it on
 # `tool_boundary_detector.is_tool_entry_point()`. This scanner emitted the same
 # rule ID with no such gate from the day it shipped — see TOOL_SCOPED_RULES use
-# below and NIGHT_RUN_LEDGER § W20.
+# below, and DECISIONS.md for the audit that found it.
 TOOL_SCOPED_RULES: frozenset = frozenset({"AGENT-034"})
 
 

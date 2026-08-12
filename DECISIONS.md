@@ -1121,3 +1121,109 @@ retargetable labels alone takes Layer 1 from F1 0.7467 to **0.7581**.
   no input anywhere in the repository. **Layer 1 delta: exactly zero, measured.**
 - No oracle, no dataset, no ground-truth label, no existing fixture, no confidence value,
   no tier boundary and no threshold was modified. No push, merge, rebase, tag or publish.
+
+---
+
+# RUN 8 — items 40 to 43
+
+Same rule as before: everything under `NEEDS-HEADY` was deliberately **not** acted on.
+Everything else was done and is reversible.
+
+## Decisions taken (session 9, reversible, done)
+
+- `fda9f06` — `scripts/finalize_run7.sh` applied by Heady and committed. F1 0.746667 →
+  0.758095, TP 196→199 / FP 93→90 / FN 40→37, exactly the RUN7 prediction. Ratchet raised
+  to `recall_min` 0.82 / `f1_min` 0.73; two dead threshold files removed.
+- `e9291ea` — **W38.** `quality_gate_check.py` could exit 0 on a stale results file and on
+  no results file at all. Layer 1 results now carry a provenance stamp over the corpus, the
+  scanner source and the interpreter's `agent_audit`; a missing file for an
+  enabled+blocking layer is a FAIL; `--layers` replaces silence-as-success. No threshold
+  changed. Guard: `tests/test_gate_provenance.py`.
+- `9b366fc` — **W40/W41.** Issue #10 fixed (AGENT-041 receiver gate). Issue #8: two of four
+  claims fixed, one downgraded, one improved. Layer 1 unmoved across all four scanner
+  changes, because the corpus contains none of these shapes.
+- `87baefc` — **W42.** One rule count, 66, on eighteen surfaces; metrics corrected to the
+  measured values with the command beside each; `tests/README.md` gains the retraction.
+  Guard: `tests/test_published_rule_count.py`.
+- **W43.** Slopsquatting assessed and declined as a rule, with the measurement.
+  `docs/decisions/SLOPSQUATTING.md`; scope for v0.21.0 in `NEXT_ROUND.md`.
+- No oracle, no dataset, no ground-truth label, no existing fixture, no confidence tier
+  boundary and no threshold was modified by me. No push, merge, rebase, tag or publish.
+
+---
+
+## NEEDS-HEADY
+
+### 40. Agent-Vuln-Bench results carry no provenance stamp
+
+Layer 1's staleness hole is closed; the same hole in the AVB path is not.
+`quality_gate_check.py` reports it rather than enforcing it:
+
+```
+ℹ️ [INFO] Agent-Vuln-Bench results at results/avb_results.json carry no provenance
+   stamp — unlike Layer 1, nothing here can tell a current measurement from a stale one
+```
+
+**Why I did not fix it.** The file is written by `tests/benchmark/agent-vuln-bench/harness/`,
+whose dataset lives under a `datasets/` path the guard hook protects, and stamping it means
+changing that harness rather than the gate. It is a small change with the design already
+settled — reuse `tests/benchmark/provenance.py`, fingerprint the dataset and the scanner
+source, compare content and never time.
+
+Leaving it as `INFO` rather than `WARN` is deliberate: exit 2 on every CI run becomes noise
+that is filtered, and a filtered warning is worse than a visible one.
+
+### 41. The repository's own `.agent-audit.yaml` has been disabled since February
+
+```
+$ git ls-files | grep agent-audit.yaml
+.agent-audit.yaml.bak
+packages/audit/.agent-audit.yaml
+
+$ ls -la .agent-audit.yaml*
+-rw-r--r--  294  Feb  3  2026  .agent-audit.yaml.bak
+```
+
+`precision_recall.run_scan` renames the nearest `.agent-audit.yaml` to `.yaml.bak` for the
+duration of a benchmark scan and restores it in a `finally`. On 2026-02-03 a run did not
+reach the restore, and **the renamed file was committed in that state**. The repository root
+has had no `.agent-audit.yaml` for six months.
+
+Layer 1 is unaffected — the benchmark disables that file on purpose, so a missing one and a
+renamed one measure identically, which is exactly why nothing noticed. What is affected is
+every `agent-audit scan .` against this repository, which has silently not honoured the
+project's own ignore rules since February.
+
+The fix is `git mv .agent-audit.yaml.bak .agent-audit.yaml`, and it is yours because
+restoring it changes what a scan of this repository reports. Worth pairing with a guard
+that fails if a `.yaml.bak` is ever tracked, and with making `run_scan` restore on
+`SIGINT` as well as on exception.
+
+### 42. Issue #10 can now close, and #8's reply needs re-sending
+
+`ISSUE_TRIAGE.md` has an addendum with both updated verdicts and both redrafted replies.
+Nothing was posted — the guard blocks `gh` writes and that remains correct.
+
+| # | action |
+|---|---|
+| #10 | **close as fixed**, with the before/after and the note that the benchmark did not move |
+| #12 | close as **won't fix, documented** (unchanged from RUN7) |
+| #8 | reply, **leave open** — two of four claims fixed |
+| #11 | reply, **leave open** — unchanged |
+| #5 | label `enhancement` / `needs-design`, **leave open** — unchanged |
+
+### 43. The producer set for one line is wider than any rule table shows
+
+W41's measurement: one `subprocess.run` line is reported by **three separate producers**,
+and gating two of them relocated the finding to the third rather than removing it.
+`CLAUDE.md` warns that three *pattern types* map to AGENT-034; the set of producers that
+can fire on a single call is wider again, and nothing enumerates it.
+
+This is not a bug with a fix — it is a missing view. Every false-positive report so far
+(#8, #10) has cost more than it should because "which producers claim this line" is a
+question nobody can answer without reading the scanner. A `--explain <file>:<line>` mode,
+or a debug dump of the pattern list before rule mapping, would pay for itself on the next
+report.
+
+Recorded rather than built, because it is a CLI surface decision and v0.20.0 is a
+correction release.
