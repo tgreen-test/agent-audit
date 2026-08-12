@@ -49,11 +49,13 @@ claim, and it drifts the same way.**
 all been corrected to v0.20.0 values. The correction pass updated the metrics in that sentence
 and left the denominator they were measured over.
 
-This is the eighth instance of the pattern RUN8 named as a question — *if this mechanism
-silently stopped working, what would be different?* — with "the mechanism" being **human
-review of a document set**. The answer, measured: two sessions of careful manual cataloguing
-missed one location in twenty-two, and it stayed missed through a correction pass that
-explicitly listed it as done.
+This is RUN8's question — *if this mechanism silently stopped working, what would be
+different?* — applied to a mechanism that is not an instrument at all: **human review of a
+document set**. RUN8 asked it of six advertised rules, a tree-sitter path, an MCP discovery
+walk, a coverage report and the quality gate. The answer here, measured: two sessions of
+careful manual cataloguing missed one location in twenty-two, and the miss survived a
+correction pass that listed the file by name as already done. Nothing was observably
+different, which is the whole point of the question.
 
 Both are fixed. `docs/COMPETITIVE-COMPARISON.md` now carries the measured values, the causal
 note, the bound, a fourth column stating that the agent-audit row and the two baseline rows
