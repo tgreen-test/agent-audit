@@ -1227,3 +1227,30 @@ report.
 
 Recorded rather than built, because it is a CLI surface decision and v0.20.0 is a
 correction release.
+
+### 44. Two unpublished drafts in the working tree carry a fifth rule count
+
+`blog_post.md` and `twitter_thread.md` are untracked in the repository root and both say
+**56 rules**. That is a fifth number for the same set, and it is in the two files most
+likely to be published next:
+
+```
+blog_post.md:27       It evaluates 56 detection rules covering all 10 categories ...
+twitter_thread.md:35  We built Agent Audit — open-source, 56 rules mapped to OWASP ...
+```
+
+`blog_post.md` also states "AST-level taint analysis" without qualification, which
+`CAPABILITY_BOUNDARIES.md` section 4 contradicts for TypeScript and JavaScript — those are
+regex-level, by decision, and the post is about a TypeScript-heavy ecosystem.
+
+I did not edit them. They are untracked drafts, they are not part of this release, and
+`tests/test_published_rule_count.py` deliberately does not read untracked files — a guard
+that failed on a draft in someone's working tree would be turned off. But they are one
+`git add` away from being the sixth surface this release exists to correct, so: **fix the
+count to 66 and qualify the AST claim before either goes out.**
+
+The count is checkable, and the check is one line:
+
+```bash
+python3 -c "import sys;sys.path.insert(0,'tests');from test_rule_producers import advertised_rules;print(len(advertised_rules()))"
+```
