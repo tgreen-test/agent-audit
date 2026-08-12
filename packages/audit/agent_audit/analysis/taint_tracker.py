@@ -26,6 +26,7 @@ import ast
 from typing import Dict, List, Optional, Set, Tuple
 
 # Import shared types from base module and re-export for backward compatibility
+from agent_audit.analysis.argv_shape import is_fixed_program_argv
 from agent_audit.analysis.base_taint_tracker import (  # noqa: F401
     BaseTaintTracker,
     DANGEROUS_SINKS,
@@ -677,6 +678,11 @@ class SinkReachabilityChecker:
                 if func_name:
                     sink_type = self._get_sink_type(func_name)
                     if sink_type:
+                        # A subprocess call that names its own program is not a
+                        # shell-execution sink: only its arguments can move. See
+                        # analysis/argv_shape.py and issue #8, problem 4.
+                        if is_fixed_program_argv(node, func_name, self.func_node):
+                            continue
                         self._sink_calls.append((func_name, sink_type, node.lineno))
 
     def check(self) -> List[SinkReach]:

@@ -19,7 +19,11 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any, Tuple
 
 from agent_audit.analysis.entropy import shannon_entropy, entropy_confidence
-from agent_audit.analysis.placeholder_detector import is_placeholder, is_vendor_example
+from agent_audit.analysis.placeholder_detector import (
+    is_interpolated_value,
+    is_placeholder,
+    is_vendor_example,
+)
 from agent_audit.analysis.value_analyzer import (
     KNOWN_CREDENTIAL_FORMATS,
     detect_hex_digest_format,
@@ -634,9 +638,26 @@ class SemanticAnalyzer:
                 "Value is a URL query parameter (not a hardcoded credential)"
             )
 
+        # === v0.20.0 (issue #8, problem 2): the value IS the interpolation ===
+        # A hardcoded credential is a literal in the source. If the matched value is made
+        # only of interpolation forms, escapes and separators, the source contains no
+        # literal to be hardcoded — whatever the variable beside it is called.
+        #
+        # The reported case: `handle.write(f"email={email}\npassword={password}\n")`, where
+        # the generic secret regex matched the word `password`, captured `{password}\n` as
+        # its value, and the entropy of that string carried it to AGENT-004 at WARN/0.70.
+        # The values there are function parameters. Deliberately narrower than the
+        # env-style branch below, which it also subsumes: `f"sk-{suffix}"` keeps a real
+        # `sk-` prefix and is still analysed.
+        interpolation = is_interpolated_value(value)
+        if interpolation.is_placeholder:
+            return (False, 0.05, f"Not a hardcoded credential: {interpolation.reason}")
+
         # === NEW v0.8.0: F-String ENV Interpolation Detection ===
         # Check if value appears to be an f-string with env-sourced variables
         # This reduces confidence for patterns like: f"postgres://{DB_USER}:{DB_PASS}@..."
+        # Retained for the case the check above does not cover: a value with real literal
+        # content around ALL_CAPS interpolations, e.g. postgres://{DB_USER}:{DB_PASS}@host
         raw_text = candidate.raw_text
         if raw_text and ('{' in raw_text or '${' in raw_text):
             # Check if this looks like Python f-string or JS template literal

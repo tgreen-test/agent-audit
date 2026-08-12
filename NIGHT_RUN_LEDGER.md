@@ -4594,3 +4594,186 @@ project's own ignore rules since February.
 Not fixed here: restoring it changes what a scan of this repository reports, which is a
 judgement call about the project's own configuration rather than a defect in the tool.
 Recorded in `DECISIONS.md` with the one-line fix.
+
+---
+
+## W40 — issue #10, and the receiver that was never read
+
+**Reproduced at HEAD from the reporter's two files, unchanged:**
+
+```
+AGENT-041  tp_control.py:7   tier=BLOCK  conf=1.00     cursor.execute(f"SELECT ... '{name}'")
+AGENT-041  tp_control.py:13  tier=BLOCK  conf=1.00     cursor.execute(query)      <- KNOWN-008
+AGENT-041  fp_case.py:7      tier=BLOCK  conf=1.00     return target_agent.execute(task)
+```
+
+The third is the report. The reporter's root-cause analysis is exact:
+`_check_sql_tainted_param` gates only on the method name, and hard-codes
+`sink_type: 'sql_execution'`.
+
+**What the other branches do that this one could not.** Every other branch of the SQL
+check — f-string, `.format()`, concatenation — requires `looks_like_sql` on the argument.
+The KNOWN-008 branch cannot: its entire purpose is the statement built upstream, where
+this file sees a parameter name and nothing else. So it had no evidence from the argument
+and asked for none from the receiver, and `x.execute(p)` was SQL injection at confidence
+1.0 for every `x` in the language.
+
+**The fix asks the receiver.** Two kinds of single-file evidence, either sufficient: the
+receiver is *named* like a database handle (`cursor`, `db_conn`, `self.session` —
+matched per underscore-separated token, so `target_agent` does not), or an assignment in
+this file *gives* it one (`handle = connection.cursor()`, `with sqlite3.connect(...) as
+handle`, `bound = create_engine(url)`).
+
+Positive evidence, not negative. Requiring a database-shaped receiver rather than
+excluding an agent-shaped one means an unrecognised receiver produces silence instead of
+a BLOCK-tier accusation — an incomplete vocabulary becomes a missed detection rather than
+a confident wrong one. There is no list of agent framework names to keep current.
+
+**After:**
+
+```
+AGENT-041 findings: 2
+  tp_control.py :7   tier=BLOCK  conf=1.00
+  tp_control.py :13  tier=BLOCK  conf=1.00
+```
+
+The false positive is gone and **both true positives survive**, including KNOWN-008,
+which is the one a blunter fix would have taken with it.
+
+```
+Layer 1   BEFORE  TP=199 FP=90 FN=37  F1=0.758095
+          AFTER   TP=199 FP=90 FN=37  F1=0.758095
+```
+
+**Unmoved, and that is the point worth writing down.** The graded corpus contains no
+`.execute()` on a non-database receiver, so it could not have caught this defect and
+cannot show the fix. The measurement that matters is the reporter's, on real code —
+`CAPABILITY_BOUNDARIES.md` § 6 already says these numbers do not transfer, and this is
+what that looks like from the inside.
+
+Guard: `tests/test_agent041_receiver.py`, 25 tests, both directions — eight non-database
+receivers that must not fire, ten database receiver names and four factory-assignment
+shapes that must, a bare `execute(...)` that is not judged at all, and an assertion
+through the scanner that the f-string branch was not accidentally routed through the new
+gate.
+
+---
+
+## W41 — issue #8: three of four claims, and a line that three producers report
+
+Reproduced at HEAD from the reporter's shapes:
+
+```
+AGENT-010  agents/lead_agent/prompt.py     :7   tier=BLOCK  conf=1.00
+AGENT-034  aio_sandbox/local_backend.py    :6   tier=WARN   conf=0.85
+AGENT-004  gateway/auth/credential_file.py :7   tier=WARN   conf=0.70
+AGENT-041  persistence/engine.py           :11  tier=BLOCK  conf=1.00
+```
+
+### Claim 2, credential half — fixed
+
+`handle.write(f"email={email}\npassword={password}\n")` was AGENT-004, *Hardcoded
+Credentials*. The generic secret regex matched the word `password`, captured `{password}\n`
+as its value, and the entropy of that string carried it to 0.70.
+
+A hardcoded credential is by definition a literal in the source. `is_interpolated_value`
+removes every interpolation form (`{x}`, `${x}`, `{{x}}`, `%(x)s`, `%s`), escape sequence
+and separator; if nothing survives, the source contains no literal to be hardcoded,
+whatever the variable beside it is called.
+
+Narrower than "the line contains an f-string", deliberately: `f"sk-{suffix}"` keeps its
+literal `sk-` prefix and is still analysed. It also subsumes the v0.8.0 branch that only
+recognised ALL_CAPS interpolations, which is why `{password}` in lower case had survived.
+
+### Claim 3 — downgraded, not fixed
+
+```
+skills_list = get_enabled_skills_for_config(config)
+return f"<skill_system>{skills_list}</skill_system>"      # AGENT-010 BLOCK 1.00
+```
+
+The check asked only whether the f-string interpolated *anything*, so this scored exactly
+as `f"...User request: {user_input}"` does.
+
+The distinction this pass can honestly draw is one step wide: an inbound parameter going
+straight into the prompt, versus a local that some computation produced. Interpolating
+only locals now scores 0.5 — INFO rather than BLOCK.
+
+**Downgraded rather than suppressed, because `skills_list` is still parameter-derived.**
+`config` *is* a parameter of that function; the reporter knows it holds configuration and
+the analyser cannot. Suppressing would have required a list of parameter names that are
+"probably config", which is the kind of one-off this project has been removing. An
+unresolvable interpolation — `f"{fetch()}"` — is not downgraded at all: an incomplete
+answer must fail towards reporting.
+
+The corpus TP at `fstring_system_prompt.py:12` interpolates `user_input`, a parameter,
+directly. It keeps full confidence, measured, not assumed.
+
+### Claim 4 — improved, not fixed, and the finding underneath it
+
+`subprocess.run(cmd)` with `cmd = ["docker", "run", "--rm", "-v", f"{workdir}:/work", image]`
+carried a taint flow asserting `cmd` reached a `shell_execution` sink from `user_input`.
+Both halves false: no shell, and the program is named in the source.
+
+`analysis/argv_shape.py` decides the structural question — list/tuple literal, first
+element a string constant, that constant not itself an interpreter, no `shell=True` —
+in one module, because two call sites needed it.
+
+**What it cannot decide, stated in the module:** `["pip", "install", package]` satisfies
+every clause and is a real supply-chain finding; `["docker", "run", ..., image]`
+satisfies every clause and is the reporter's false positive. They are structurally
+identical and differ only in what the named program does with its argument. So callers
+*reduce* confidence and never decide truth.
+
+Then the measurement that is the actual result of this section:
+
+```
+gate the taint sink        ->  AGENT-034 0.85 -> 0.65   (finding remains)
+gate subprocess_expanded   ->  AGENT-034 0.65           (finding remains, via eval_exec_expanded)
+gate eval_exec_expanded    ->  AGENT-047 0.80           (finding remains, via dangerous_function_call)
+```
+
+**Three separate producers report that one line, and gating two of them relocated the
+finding to the third.** CLAUDE.md warns that three pattern types map to AGENT-034; the
+producer set for a single call is wider than that again. Suppressing per-producer cannot
+answer a per-line complaint — which is the same "one thing in several places" shape as
+the duplicate thresholds of W24 and the four published rule counts, relocated into the
+detection path.
+
+The changes were kept rather than reverted, because what the tool *says* about that line
+improved even though a finding remains: it no longer claims a shell-execution taint flow
+from user input, and no longer reports *Tool Function Without Input Validation* about a
+function that is not a tool. AGENT-047, unsandboxed subprocess, is at least true as
+stated.
+
+### Claim 2, SQL half — not fixed
+
+`conn.execute(f'CREATE DATABASE "{db_name}"')` with `db_name` from `urlparse(config_url)`
+still fires at BLOCK/1.0. `config_url` is a parameter, and nothing in a single-file pass
+separates a deployment's own database URL from an inbound request. This is the provenance
+model ISSUE_TRIAGE.md names, and it is not a heuristic away.
+
+### Measurement
+
+```
+Layer 1   BEFORE  TP=199 FP=90 FN=37  P=0.688581 R=0.843220 F1=0.758095
+          AFTER   TP=199 FP=90 FN=37  P=0.688581 R=0.843220 F1=0.758095
+
+pytest    BEFORE  1 failed, 1833 passed, 3 skipped
+          AFTER   1 failed, 1883 passed, 3 skipped     (+50: 25 W40 + 18 W41 + 7 collected elsewhere)
+```
+
+Zero corpus movement across four scanner changes — no true positive lost anywhere, and no
+false positive removed either, because the corpus contains none of these shapes. Every one
+of these fixes is validated against the reporter's code and pinned by a test, not by the
+benchmark.
+
+### The two pins
+
+`tests/test_issue8_provenance_shapes.py` ends with two tests that assert the *defect*:
+config-derived SQL still fires, and a fixed argv still produces a finding under another
+rule. Each fails the moment it is fixed, with a message saying what else to update. A note
+in a document decays; an allow-list entry would let the fix pass unnoticed.
+
+**Issue #8 stays open.** Two of four claims are fixed, one is downgraded, one is
+unmoved — and by this project's own standard from RUN7, partial credit is not a closure.
