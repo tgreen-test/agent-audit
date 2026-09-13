@@ -6145,7 +6145,133 @@ A fourth denial came from this ledger itself: the prose in § 8 named a publishi
 literally, and the heredoc carried it to the shell. Reworded. That is the guard behaving
 exactly as designed — it cannot tell prose about a command from the command.
 
-## 8. Statement
+## 8. Paired before/after, for the fixes whose evidence was a document rather than a test
+
+§ 3, § 4 and § 5 already carry same-command before/after for the two guards and the
+artifacts. The documentation corrections in § 6 did not, and the hard rule asks for the same
+command on both sides of every fix. They are below.
+
+### 8a. `tests/README.md` — the corpus description and the "3 个误报" residue
+
+Same command each side; the left-hand side reads the pre-audit commit, so the output is the
+file as it actually stood.
+
+```
+$ git show dbae329:tests/README.md | grep -nE "v2\.1，42|198 标注|测试样本数|漏洞标注数|3 个误报"
+41:│   └── labeled_samples.yaml       # 标注的漏洞样本（v2.1，42 样本，198 标注）
+275:- **测试样本数**: 42 个（33 漏洞 + 9 良性）
+276:- **漏洞标注数**: 198 个
+313:- 3 个误报需要规则逻辑优化（AGENT-026, AGENT-034）
+
+$ grep -nE "v2\.2，81|238 标注|测试样本数|漏洞标注数|3 个误报|90 个误报" tests/README.md
+41:│   └── labeled_samples.yaml       # 标注的漏洞样本（v2.2，81 样本，238 标注）
+275:- **测试样本数**: 81 个（69 含漏洞 + 12 良性）
+276:- **漏洞标注数**: 238 个（236 正例 + 2 负例）
+313:- 当前 90 个误报，分布在 32 条规则上；最大的两个来源是 AGENT-004 与 AGENT-034，各 7 个。
+318:> 这一节此前写的是「3 个误报需要规则逻辑优化」。那个 3 不是测量值，而是 98.51% 那次推导里
+```
+
+The replacement values are not asserted either. Counted from the corpus itself:
+
+```
+$ python3 -c "import yaml; d=yaml.safe_load(open('tests/ground_truth/labeled_samples.yaml')); ..."
+version field: 2.2 | header total: 238
+sample files: 81
+labels: 238 | positive: 236 | negative: 2 | files with no vulns: 12
+```
+
+and the 90-across-32 figure from the command now printed beside it in
+`docs/F1_REPRODUCTION.md`:
+
+```
+$ python3 - <<'EOF'   (the block published in docs/F1_REPRODUCTION.md, run verbatim)
+90 false positives across 32 rules
+  AGENT-034  7
+  AGENT-004  7
+  AGENT-116  6
+  AGENT-032  5
+  AGENT-047  5
+  AGENT-030  5
+```
+
+### 8b. The suite count, 1,895 to 1,904
+
+Same command, both ends of the run. The first was taken before
+`tests/test_published_metrics.py` existed, the second after.
+
+```
+BEFORE
+$ python3 -m pytest tests/ packages/audit/tests/ -q
+1 failed, 1895 passed, 4 skipped, 3598 warnings in 42.88s
+
+AFTER
+$ python3 -m pytest tests/ packages/audit/tests/ -q
+1 failed, 1904 passed, 4 skipped in 44.64s
+```
+
+`tests/` alone, same treatment: **1,863 to 1,872**. The delta is nine, which is the test
+count of the one file added.
+
+**The surfaces carrying that number cannot be shown from git, and the reason is worth
+recording.** RUN10 left its corrections *uncommitted*, so `git show dbae329:CLAUDE.md` returns
+the pre-RUN10 text, not the 1,895 that was actually in the working tree when this run started.
+The honest before is the grep run at that moment:
+
+```
+BEFORE  (working tree at session start — RUN10's uncommitted edits)
+CLAUDE.md:11                    **1,895 passed, 1 failed, 4 skipped**
+CLAUDE.md:92                    # 1,900 collected (1,895 pass, 1 red by design, 4 skipped)
+README.md:10                    tests-1895%20passed%2C%201%20red%20by%20design
+README.md:388                   # 1,863 passed, 1 failed by design, 4 skipped
+README_CN.md:12                 tests-1895%20passed%2C%201%20red%20by%20design
+README_CN.md:367                # 1,863 passed, 1 failed by design, 4 skipped
+docs/index.html:896             66 rules · 10/10 OWASP coverage · 1,895 tests
+EXTERNAL_CLAIMS_CHECKLIST.md:106  img.shields.io/badge/tests-1895...
+EXTERNAL_CLAIMS_CHECKLIST.md:192  | tests | **1,895 passing**, 1 red on purpose, 4 skipped |
+OUTREACH_CLAIMS.md:38           | **1,895** tests passing, 1 red by design |
+OUTREACH_CLAIMS.md:153          the measured figure is **1,895 passing, 1
+RELEASE_CHECKLIST.md:30         suite **1,895 passed, 1 failed by design, 4 skipped**
+blog_post.md:203                1,895 tests passing and one committed red on purpose
+scan_external_claims.sh:91,365  stale-count pattern, and the legend
+
+AFTER  (HEAD)
+$ for f in CLAUDE.md README.md README_CN.md docs/index.html EXTERNAL_CLAIMS_CHECKLIST.md OUTREACH_CLAIMS.md; do grep -nE "1,?904|tests-1904|1,?872" "$f"; done
+CLAUDE.md:11                    **1,904 passed, 1 failed, 4 skipped**
+CLAUDE.md:92                    # 1,909 collected (1,904 pass, 1 red by design, 4 skipped)
+README.md:10                    tests-1904%20passed%2C%201%20red%20by%20design
+README.md:388                   # 1,872 passed, 1 failed by design, 4 skipped
+README_CN.md:12                 tests-1904%20passed%2C%201%20red%20by%20design
+README_CN.md:367                # 1,872 passed, 1 failed by design, 4 skipped
+docs/index.html:896             66 rules · 10/10 OWASP coverage · 1,904 tests
+EXTERNAL_CLAIMS_CHECKLIST.md:106  img.shields.io/badge/tests-1904...
+EXTERNAL_CLAIMS_CHECKLIST.md:192  | tests | **1,904 passing**, 1 red on purpose, 4 skipped |
+OUTREACH_CLAIMS.md:38           | **1,904** tests passing, 1 red by design |
+OUTREACH_CLAIMS.md:153          the measured figure is **1,904 passing, 1
+```
+
+**This is the fourth consecutive session in which the test count drifted inside the fix for
+the test count**, and the third in which a previous run's corrections were only recoverable
+from a transcript because they were never committed. `7ddf826` commits them, so the next run
+can diff against a ref instead of a memory.
+
+### 8c. The `CHANGELOG.md` release note, corrected before the release it describes
+
+The v0.20.0 notes said *"Four different numbers were published for one set of rules: 40, 49,
+53 and 72"* and that `pyproject.toml` was *"the only rule count on a distribution surface"*.
+Both were wrong, and the release had not gone out yet.
+
+```
+$ python3 -c "import sys; sys.path.insert(0,'tests'); from test_published_rule_count import _published_counts; rows=list(_published_counts()); print(len(rows)); ..."
+guarded whole-set counts: 19
+  ... all nineteen read 66, including packages/audit/pyproject.toml:4
+      and packages/audit/README.md:26
+```
+
+Nineteen locations, two of them distribution surfaces in the same directory. The note now
+says five numbers, names both distribution surfaces, and states that the second was found
+during this audit because the guard listed the first and not the second.
+
+## 9. Statement
 
 No push, merge, rebase, tag or publish. No `gh` write. No package upload to PyPI. No oracle,
 dataset, ground-truth label, existing fixture, confidence value, tier boundary or threshold

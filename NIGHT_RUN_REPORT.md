@@ -1,5 +1,93 @@
 # NIGHT RUN REPORT — 2026-08-11
 
+> **RUN 11 ADDENDUM — 2026-09-12. W52, the pre-release audit. Evidence in the
+> `NIGHT_RUN_LEDGER.md` § W52 entry; two commits, `7ddf826` and `0e5dfcf`.**
+>
+> **Nothing below changes, and Layer 1 is unmoved: TP 199 / FP 90 / FN 37, P 68.86% /
+> R 84.32% / F1 0.7581**, gate exit 0, guard self-test 11/11, 66 advertised rules, all three
+> version files at 0.20.0. Nothing pushed, merged, tagged or published. No detection code,
+> oracle, dataset, ground-truth label, existing fixture, confidence value, tier boundary or
+> threshold was touched.
+>
+> **The brief's figures were re-measured rather than trusted. Five of six reproduce
+> exactly.** The sixth — signal-to-noise 2.2:1 — has no producer in this repository:
+> `run_eval.sh` does not exist and the string `2.2:1` appears nowhere. Unchanged from RUN10
+> item 52, and not restated.
+>
+> **The finding that matters most is the same shape as RUN10's, one level up: the documents
+> that *define* the current metrics were the stale ones.** `fda9f06` moved the measurement
+> from F1 0.746667 to 0.758095 and every surface a *user* reads was updated in that pass —
+> `README.md:97`, `README_CN.md:98`, `docs/index.html:927,1076`, `BENCHMARK-RESULTS.md` and
+> `COMPETITIVE-COMPARISON.md` all verified correct at HEAD. The documents those surfaces cite
+> as the authority were not. `METRICS_RETRACTION.md` § 3, under the heading **"The correct
+> current values, measured now"**, printed TP 196 / FP 93 / FN 40 and F1 74.67% directly above
+> the command that produces 199 / 90 / 37. `CAPABILITY_BOUNDARIES.md` § 6 printed the same set
+> directly under *"Reproduce with `python3 tests/benchmark/precision_recall.py`"*. And § 3a's
+> table of **replacement** values still gave 0.7467 — so anyone working down the correction
+> list after `fda9f06` would have written a stale figure onto a surface that was already
+> right, using the document whose purpose is to prevent that.
+>
+> **`scan_external_claims.sh` carries patterns for exactly those numbers** — `F1-0.7467`,
+> `P-67.82`, `R-83.05` — **and reported nothing**, because `external_claims_allowlist.txt`
+> exempts `CAPABILITY_BOUNDARIES.md` and `docs/decisions/` by path. The exemption is correct:
+> § 1 of the retraction quotes 98.51 / 100 / 99.25 four times as the evidence that they were
+> never measured, and a scanner failing on those would be failing on true text. But the
+> allowlist is drawn around **documents**, and those documents hold both kinds of block —
+> quotations that must never move, and measurements that must. RUN10 ended on *"a mechanism
+> whose failure mode is silence must be made to prove it can still fire"*; this one could
+> fire, and was pointed away from the one place it was needed. Being pointed away and finding
+> nothing look identical. `DECISIONS.md` item 54.
+>
+> **`tests/test_published_metrics.py` closes it by machine.** The invariant is deliberately
+> narrow: *a fenced block that **names** `precision_recall.py` as its producer must print what
+> `precision_recall.py` produces.* A first draft checked every block containing a TP/FP/FN
+> triple and failed on four true blocks quoting `git show` and an arithmetic demonstration —
+> so the producer-name requirement went in before anything else, and it earns its keep twice,
+> because a block now enters the guard by saying what made it. **Before: 3 failed, 6 passed.
+> After: 9 passed.**
+>
+> **Second defect, and it was on a distribution surface.** `packages/audit/README.md:26` read
+> **"60+ rules"** — a *sixth* published count. That file is the `readme` declared in the same
+> directory's `pyproject.toml`, so it is the wheel's long description and the PyPI project
+> page. The v0.20.0 notes called `pyproject.toml`'s 53 *"the only rule count on a distribution
+> surface"*; the other was beside it, unlisted in the rule-count guard. **Before: 1 failed —
+> `packages/audit/README.md:26 says 60`. After: 8 passed.** The existing regex caught it
+> unchanged; the defect was scope, not detection. `CHANGELOG.md` now says five numbers rather
+> than four and names both distribution surfaces — corrected *before* the release it
+> describes.
+>
+> **Artifacts rebuilt, because that README ships inside them.** wheel
+> `6a631d2a…d433c` → `cff62109…5ee1`, sdist `e874556e…d149` → `9649f1f1…0e8a`. Verified: 66
+> rules in both summary and body, 99 identical package files across wheel and sdist, zero
+> entries matching any evaluation-data path, and a clean-venv install on CPython 3.14.3
+> reproducing RUN10's recorded scan exactly (BLOCK 1 / WARN 5 / INFO 0 / SUPPRESSED 16,
+> 5.2/10). `RELEASE_CHECKLIST.md` § 5 had recorded sizes matching no build that was ever on
+> disk; it now records hashes, because a hash identifies a build and a byte count does not.
+>
+> **Also corrected:** `tests/README.md` described the corpus as v2.1 / 42 samples / 198
+> annotations against an actual v2.2 / 81 / 238 — flagged by `METRICS_RETRACTION.md` § 2 and
+> never done — and its *"3 个误报"*, which is not a measurement but the `3 FP / 201` residue of
+> the 98.51% derivation, surviving every retraction pass because it carries no percent sign.
+>
+> **The suite moved 1,895 → 1,904** (nine new tests), corrected on every current-state
+> surface, with 1,895 added to the scanner's stale-count pattern. Both previously-untracked
+> guard files are committed, so the published count is now true of a fresh clone — RUN10's
+> corrections had been left uncommitted, which is why this run's "before" for those surfaces
+> exists only in a transcript. `NIGHT_RUN_LEDGER.md` § W52 § 8b.
+>
+> **Open, and yours.** `DECISIONS.md` **53** — the published "at least 21 unlabelled true
+> positives" bound is composed as 18 MCP + 3 AGENT-120, but AGENT-029…033 contribute **15**
+> today, so the bound may be three too high; the 18 was a commit delta, not a standing
+> composition. Not changed: it is a judgement about individual findings and a published claim.
+> **54** — the allowlist should be per-block rather than per-file. Neither blocks the release.
+> **Blocker B remains two-thirds open:** your `paper/main.tex` correction and arXiv re-upload
+> close the paper item, but `agent-audit-slides.html` and the five `docs/cais-2026/` files
+> still carry the retracted set. Both are outside this repository, which the RUN 11 brief
+> placed out of scope, so they are reported from RUN10's findings and were **not**
+> re-verified — and note that the 2026-09-11 block below records `paper/main.pdf` as still
+> being the old build at that time; the re-upload is reported by you, not checked here.
+
+
 > **2026-09-11 — the paper correction, authorised mid-session by Heady.** Supersedes the RUN10
 > brief's "no edits outside the repository" for four named items in `paper/`. One was an edit,
 > two were verifications that correctly changed nothing, and the fourth is blocked.
