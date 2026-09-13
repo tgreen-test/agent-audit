@@ -1,0 +1,1636 @@
+{
+  "advertised_count": 72,
+  "probe_count": 122,
+  "dir_scan_rules": [
+    "AGENT-001",
+    "AGENT-004",
+    "AGENT-005",
+    "AGENT-010",
+    "AGENT-014",
+    "AGENT-017",
+    "AGENT-018",
+    "AGENT-019",
+    "AGENT-020",
+    "AGENT-021",
+    "AGENT-022",
+    "AGENT-023",
+    "AGENT-024",
+    "AGENT-025",
+    "AGENT-026",
+    "AGENT-028",
+    "AGENT-029",
+    "AGENT-030",
+    "AGENT-031",
+    "AGENT-032",
+    "AGENT-033",
+    "AGENT-034",
+    "AGENT-035",
+    "AGENT-041",
+    "AGENT-043",
+    "AGENT-044",
+    "AGENT-045",
+    "AGENT-046",
+    "AGENT-047",
+    "AGENT-049",
+    "AGENT-050",
+    "AGENT-053",
+    "AGENT-058",
+    "AGENT-059",
+    "AGENT-060",
+    "AGENT-061",
+    "AGENT-062",
+    "AGENT-063",
+    "AGENT-064",
+    "AGENT-083",
+    "AGENT-084",
+    "AGENT-085",
+    "AGENT-110",
+    "AGENT-111",
+    "AGENT-112",
+    "AGENT-113",
+    "AGENT-114",
+    "AGENT-115",
+    "AGENT-116",
+    "AGENT-117",
+    "AGENT-118",
+    "AGENT-119",
+    "SKILL-000"
+  ],
+  "yaml_rules_with_patterns": [
+    "AGENT-001",
+    "AGENT-004",
+    "AGENT-010",
+    "AGENT-011",
+    "AGENT-013",
+    "AGENT-014",
+    "AGENT-015",
+    "AGENT-016",
+    "AGENT-017",
+    "AGENT-018",
+    "AGENT-019",
+    "AGENT-020",
+    "AGENT-021",
+    "AGENT-022",
+    "AGENT-023",
+    "AGENT-024",
+    "AGENT-025",
+    "AGENT-026",
+    "AGENT-027",
+    "AGENT-028",
+    "AGENT-029",
+    "AGENT-030",
+    "AGENT-031",
+    "AGENT-032",
+    "AGENT-033",
+    "AGENT-034",
+    "AGENT-035",
+    "AGENT-036",
+    "AGENT-037",
+    "AGENT-038",
+    "AGENT-039",
+    "AGENT-040",
+    "AGENT-041",
+    "AGENT-042",
+    "AGENT-050",
+    "AGENT-052",
+    "AGENT-053",
+    "AGENT-110",
+    "AGENT-111",
+    "AGENT-112",
+    "AGENT-113",
+    "AGENT-114",
+    "AGENT-115",
+    "AGENT-116",
+    "AGENT-117",
+    "AGENT-118",
+    "AGENT-119",
+    "AGENT-120"
+  ],
+  "rules": {
+    "AGENT-001": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:asi-02-tool-misuse/direct/eval_bare_no_decorator.py",
+        "fixture:asi-02-tool-misuse/direct/exec_dynamic_code.py",
+        "fixture:asi-02-tool-misuse/direct/os_system.py",
+        "fixture:asi-02-tool-misuse/direct/shell_true_basic.py",
+        "fixture:asi-02-tool-misuse/direct/subprocess_popen.py",
+        "fixture:asi-02-tool-misuse/direct/subprocess_unsandboxed.py"
+      ],
+      "observed_file_count": 12,
+      "rule_id_constructors": [
+        "analysis/context_classifier.py",
+        "analysis/rule_context_config.py",
+        "models/suppression.py",
+        "models/finding.py",
+        "rules/engine.py",
+        "cli/commands/scan.py"
+      ],
+      "pattern_types": {},
+      "yaml_patterns_in": [
+        "owasp_agentic.yaml"
+      ]
+    },
+    "AGENT-002": {
+      "class": "UNREACHABLE",
+      "observed_dir": false,
+      "observed_file_probes": [],
+      "observed_file_count": 0,
+      "rule_id_constructors": [
+        "rules/engine.py"
+      ],
+      "pattern_types": {},
+      "yaml_patterns_in": []
+    },
+    "AGENT-003": {
+      "class": "NO-PRODUCER",
+      "observed_dir": false,
+      "observed_file_probes": [],
+      "observed_file_count": 0,
+      "rule_id_constructors": [],
+      "pattern_types": {},
+      "yaml_patterns_in": []
+    },
+    "AGENT-004": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:asi-03-privilege-abuse/direct/hardcoded_api_key.py",
+        "fixture:asi-04-supply-chain/direct/mcp_excessive_permissions.json",
+        "fixture:asi-05-rce/direct/credential_connection_strings.py",
+        "fixture:asi-05-rce/direct/credential_new_formats.py",
+        "fixture:benign/validated/credential_placeholder.py",
+        "fixture:mcp_configs/claude_desktop_config.json"
+      ],
+      "observed_file_count": 10,
+      "rule_id_constructors": [
+        "analysis/semantic_analyzer.py",
+        "analysis/placeholder_detector.py",
+        "analysis/framework_detector.py",
+        "analysis/env_tracer.py",
+        "analysis/rule_context_config.py",
+        "models/suppression.py",
+        "models/finding.py",
+        "rules/engine.py",
+        "cli/commands/scan.py"
+      ],
+      "pattern_types": {},
+      "yaml_patterns_in": [
+        "owasp_agentic.yaml"
+      ]
+    },
+    "AGENT-005": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:mcp_configs/claude_desktop_config.json",
+        "fixture:mcp_configs/vulnerable_config.json",
+        "synthetic:.mcp.json"
+      ],
+      "observed_file_count": 3,
+      "rule_id_constructors": [
+        "rules/engine.py"
+      ],
+      "pattern_types": {},
+      "yaml_patterns_in": []
+    },
+    "AGENT-010": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:asi-01-goal-hijack/bypass/base64_encoded.py",
+        "fixture:asi-01-goal-hijack/direct/fstring_system_prompt.py",
+        "fixture:vulnerable_agents/goal_hijack.py",
+        "fixture:vulnerable_agents/owasp_agentic_full.py"
+      ],
+      "observed_file_count": 4,
+      "rule_id_constructors": [
+        "scanners/typescript_scanner.py"
+      ],
+      "pattern_types": {
+        "prompt_injection_fstring": [
+          "scanners/python_scanner.py"
+        ],
+        "prompt_injection_fstring_kwarg": [
+          "scanners/python_scanner.py"
+        ],
+        "prompt_injection_format": [
+          "scanners/python_scanner.py"
+        ],
+        "system_prompt_fstring": [
+          "scanners/python_scanner.py"
+        ],
+        "system_prompt_concat": [
+          "scanners/python_scanner.py"
+        ],
+        "system_prompt_format": [
+          "scanners/python_scanner.py"
+        ],
+        "system_prompt_augassign": [
+          "scanners/python_scanner.py"
+        ],
+        "prompt_return_fstring": [
+          "scanners/python_scanner.py"
+        ],
+        "ts_template_prompt_injection": [
+          "scanners/typescript_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "owasp_agentic_v2.yaml"
+      ]
+    },
+    "AGENT-011": {
+      "class": "YAML-ONLY",
+      "observed_dir": false,
+      "observed_file_probes": [],
+      "observed_file_count": 0,
+      "rule_id_constructors": [],
+      "pattern_types": {
+        "agent_without_input_guard": []
+      },
+      "yaml_patterns_in": [
+        "owasp_agentic_v2.yaml"
+      ]
+    },
+    "AGENT-013": {
+      "class": "YAML-ONLY",
+      "observed_dir": false,
+      "observed_file_probes": [],
+      "observed_file_count": 0,
+      "rule_id_constructors": [],
+      "pattern_types": {
+        "hardcoded_credential_in_agent": []
+      },
+      "yaml_patterns_in": [
+        "owasp_agentic_v2.yaml"
+      ]
+    },
+    "AGENT-014": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:asi-03-privilege-abuse/direct/auto_approval.py",
+        "fixture:vulnerable_agents/owasp_agentic_full.py"
+      ],
+      "observed_file_count": 2,
+      "rule_id_constructors": [],
+      "pattern_types": {
+        "excessive_tools": [
+          "scanners/python_scanner.py"
+        ],
+        "auto_approval": [
+          "scanners/python_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "owasp_agentic_v2.yaml"
+      ]
+    },
+    "AGENT-015": {
+      "class": "YAML-ONLY",
+      "observed_dir": false,
+      "observed_file_probes": [],
+      "observed_file_count": 0,
+      "rule_id_constructors": [],
+      "pattern_types": {
+        "npx_unfixed_version": [],
+        "unofficial_mcp_source": []
+      },
+      "yaml_patterns_in": [
+        "owasp_agentic_v2.yaml"
+      ]
+    },
+    "AGENT-016": {
+      "class": "YAML-ONLY",
+      "observed_dir": false,
+      "observed_file_probes": [],
+      "observed_file_count": 0,
+      "rule_id_constructors": [],
+      "pattern_types": {
+        "unvalidated_rag_ingestion": []
+      },
+      "yaml_patterns_in": [
+        "owasp_agentic_v2.yaml"
+      ]
+    },
+    "AGENT-017": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:asi-05-rce/direct/compile_exec.py",
+        "fixture:asi-05-rce/direct/eval_in_tool.py",
+        "fixture:asi-05-rce/direct/exec_in_tool.py",
+        "fixture:vulnerable_agents/command_injection.py",
+        "fixture:vulnerable_agents/owasp_agentic_full.py"
+      ],
+      "observed_file_count": 5,
+      "rule_id_constructors": [
+        "models/finding.py"
+      ],
+      "pattern_types": {
+        "unsandboxed_code_exec_in_tool": [
+          "scanners/python_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "owasp_agentic_v2.yaml"
+      ]
+    },
+    "AGENT-018": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:asi-06-memory-poisoning/direct/raw_user_to_context.py",
+        "fixture:asi-06-memory-poisoning/direct/unsanitized_vectorstore.py",
+        "fixture:asi-06-memory-poisoning/indirect/external_document_load.py",
+        "fixture:asi-06-memory-poisoning/indirect/rag_injection.py",
+        "fixture:vulnerable_agents/owasp_agentic_full.py"
+      ],
+      "observed_file_count": 5,
+      "rule_id_constructors": [
+        "analyzers/memory_context.py",
+        "analysis/memory_method_detector.py",
+        "analysis/rule_context_config.py",
+        "models/finding.py",
+        "scanners/python_scanner.py"
+      ],
+      "pattern_types": {
+        "unsanitized_memory_write": [
+          "scanners/python_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "owasp_agentic_v2.yaml"
+      ]
+    },
+    "AGENT-019": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:asi-06-memory-poisoning/direct/unbounded_memory.py",
+        "fixture:vulnerable_agents/owasp_agentic_full.py"
+      ],
+      "observed_file_count": 2,
+      "rule_id_constructors": [],
+      "pattern_types": {
+        "unbounded_memory": [
+          "scanners/python_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "owasp_agentic_v2.yaml"
+      ]
+    },
+    "AGENT-020": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:asi-07-inter-agent/direct/groupchat_no_auth.py",
+        "fixture:asi-07-inter-agent/direct/http_agent_endpoint.py",
+        "fixture:asi-09-trust/indirect/impersonation_risk.py",
+        "fixture:vulnerable_agents/owasp_agentic_full.py"
+      ],
+      "observed_file_count": 4,
+      "rule_id_constructors": [
+        "analysis/rule_context_config.py"
+      ],
+      "pattern_types": {
+        "multi_agent_no_auth": [
+          "scanners/python_scanner.py"
+        ],
+        "agent_comm_no_tls": [
+          "scanners/python_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "owasp_agentic_v2.yaml"
+      ]
+    },
+    "AGENT-021": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:asi-03-privilege-abuse/direct/auto_approval.py",
+        "fixture:asi-03-privilege-abuse/direct/excessive_tools.py",
+        "fixture:asi-08-cascading/direct/no_max_iterations.py",
+        "fixture:asi-08-cascading/indirect/recursive_agent_call.py",
+        "fixture:asi-10-rogue/direct/no_kill_switch.py",
+        "fixture:asi-10-rogue/indirect/unbounded_tool_access.py"
+      ],
+      "observed_file_count": 7,
+      "rule_id_constructors": [],
+      "pattern_types": {
+        "missing_circuit_breaker": [
+          "scanners/python_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "owasp_agentic_v2.yaml"
+      ]
+    },
+    "AGENT-022": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:asi-01-goal-hijack/indirect/tool_output_injection.py",
+        "fixture:asi-02-tool-misuse/direct/os_system.py",
+        "fixture:asi-02-tool-misuse/direct/shell_true_basic.py",
+        "fixture:asi-02-tool-misuse/direct/subprocess_popen.py",
+        "fixture:asi-02-tool-misuse/indirect/path_traversal.py",
+        "fixture:asi-02-tool-misuse/indirect/ssrf_unvalidated.py"
+      ],
+      "observed_file_count": 10,
+      "rule_id_constructors": [],
+      "pattern_types": {
+        "tool_without_error_handling": [
+          "scanners/python_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "owasp_agentic_v2.yaml"
+      ]
+    },
+    "AGENT-023": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:asi-03-privilege-abuse/direct/auto_approval.py",
+        "fixture:asi-03-privilege-abuse/direct/excessive_tools.py",
+        "fixture:asi-08-cascading/direct/no_max_iterations.py",
+        "fixture:asi-08-cascading/indirect/recursive_agent_call.py",
+        "fixture:asi-09-trust/direct/opaque_output.py",
+        "fixture:asi-10-rogue/direct/no_kill_switch.py"
+      ],
+      "observed_file_count": 9,
+      "rule_id_constructors": [],
+      "pattern_types": {
+        "opaque_agent_output": [
+          "scanners/python_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "owasp_agentic_v2.yaml"
+      ]
+    },
+    "AGENT-024": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:asi-03-privilege-abuse/direct/auto_approval.py",
+        "fixture:asi-03-privilege-abuse/direct/excessive_tools.py",
+        "fixture:asi-08-cascading/direct/no_max_iterations.py",
+        "fixture:asi-08-cascading/indirect/recursive_agent_call.py",
+        "fixture:asi-10-rogue/direct/no_kill_switch.py",
+        "fixture:asi-10-rogue/indirect/unbounded_tool_access.py"
+      ],
+      "observed_file_count": 7,
+      "rule_id_constructors": [],
+      "pattern_types": {
+        "no_kill_switch": [
+          "scanners/python_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "owasp_agentic_v2.yaml"
+      ]
+    },
+    "AGENT-025": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:asi-03-privilege-abuse/direct/auto_approval.py",
+        "fixture:asi-03-privilege-abuse/direct/excessive_tools.py",
+        "fixture:asi-08-cascading/direct/no_max_iterations.py",
+        "fixture:asi-08-cascading/indirect/recursive_agent_call.py",
+        "fixture:asi-09-trust/direct/opaque_output.py",
+        "fixture:asi-10-rogue/direct/no_kill_switch.py"
+      ],
+      "observed_file_count": 9,
+      "rule_id_constructors": [
+        "scanners/python_scanner.py"
+      ],
+      "pattern_types": {
+        "no_observability": [
+          "scanners/python_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "owasp_agentic_v2.yaml"
+      ]
+    },
+    "AGENT-026": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:asi-01-goal-hijack/indirect/tool_output_injection.py",
+        "fixture:asi-02-tool-misuse/direct/os_system.py",
+        "fixture:asi-02-tool-misuse/direct/shell_true_basic.py",
+        "fixture:asi-02-tool-misuse/direct/ssrf_bare_requests.py",
+        "fixture:asi-02-tool-misuse/direct/subprocess_popen.py",
+        "fixture:asi-02-tool-misuse/indirect/path_traversal.py"
+      ],
+      "observed_file_count": 15,
+      "rule_id_constructors": [
+        "scanners/typescript_scanner.py",
+        "scanners/go_scanner.py",
+        "scanners/python_scanner.py",
+        "cli/commands/scan.py"
+      ],
+      "pattern_types": {
+        "langchain_tool_input_unsanitized": [
+          "scanners/python_scanner.py"
+        ],
+        "ssrf_expanded": [
+          "scanners/python_scanner.py"
+        ],
+        "network_request_hardcoded_url": [
+          "scanners/python_scanner.py"
+        ],
+        "ts_ssrf_fetch": [
+          "scanners/typescript_scanner.py"
+        ],
+        "go_http_no_tls": [],
+        "go_tls_skip_verify": []
+      },
+      "yaml_patterns_in": [
+        "langchain_security_v030.yaml"
+      ]
+    },
+    "AGENT-027": {
+      "class": "UNREACHABLE",
+      "observed_dir": false,
+      "observed_file_probes": [],
+      "observed_file_count": 0,
+      "rule_id_constructors": [
+        "scanners/python_scanner.py"
+      ],
+      "pattern_types": {
+        "langchain_system_prompt_injectable": [
+          "scanners/python_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "langchain_security_v030.yaml"
+      ]
+    },
+    "AGENT-028": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:agent_architecture/safe_auto_approve.py",
+        "fixture:agent_architecture/vulnerable_auto_approve.py",
+        "fixture:asi-03-privilege-abuse/direct/auto_approval.py",
+        "fixture:asi-03-privilege-abuse/direct/excessive_tools.py",
+        "fixture:asi-07-inter-agent/direct/http_agent_endpoint.py",
+        "fixture:asi-08-cascading/direct/no_max_iterations.py"
+      ],
+      "observed_file_count": 10,
+      "rule_id_constructors": [
+        "scanners/python_scanner.py"
+      ],
+      "pattern_types": {
+        "agent_max_iterations_unbounded": [
+          "scanners/python_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "langchain_security_v030.yaml"
+      ]
+    },
+    "AGENT-029": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:asi-04-supply-chain/direct/mcp_standalone_json.json",
+        "fixture:mcp_configs/supply_chain_vulnerable.json",
+        "fixture:mcp_configs/vulnerable_config.json",
+        "synthetic:.mcp.json"
+      ],
+      "observed_file_count": 4,
+      "rule_id_constructors": [
+        "analysis/rule_context_config.py",
+        "models/finding.py",
+        "scanners/mcp_config_scanner.py",
+        "scanners/mcp_inspector.py"
+      ],
+      "pattern_types": {
+        "mcp_overly_broad_filesystem": [
+          "scanners/mcp_config_scanner.py",
+          "cli/commands/scan.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "mcp_security_v030.yaml"
+      ]
+    },
+    "AGENT-030": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:asi-04-supply-chain/direct/mcp_excessive_permissions.json",
+        "fixture:asi-04-supply-chain/direct/mcp_standalone_json.json",
+        "fixture:benign/validated/mcp_restricted.json",
+        "fixture:mcp_configs/claude_desktop_config.json",
+        "fixture:mcp_configs/supply_chain_vulnerable.json",
+        "synthetic:.mcp.json"
+      ],
+      "observed_file_count": 6,
+      "rule_id_constructors": [
+        "analysis/rule_context_config.py",
+        "models/finding.py",
+        "scanners/mcp_config_scanner.py"
+      ],
+      "pattern_types": {
+        "mcp_unverified_server_source": [
+          "scanners/mcp_config_scanner.py",
+          "cli/commands/scan.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "mcp_security_v030.yaml"
+      ]
+    },
+    "AGENT-031": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:mcp_configs/claude_desktop_config.json",
+        "fixture:mcp_configs/vulnerable_config.json",
+        "synthetic:.mcp.json"
+      ],
+      "observed_file_count": 3,
+      "rule_id_constructors": [
+        "analysis/rule_context_config.py",
+        "scanners/mcp_config_scanner.py"
+      ],
+      "pattern_types": {
+        "mcp_sensitive_env_exposure": [
+          "scanners/mcp_config_scanner.py",
+          "cli/commands/scan.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "mcp_security_v030.yaml"
+      ]
+    },
+    "AGENT-032": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:agent_architecture/vulnerable_hooks/.mcp.json",
+        "fixture:asi-04-supply-chain/direct/mcp_excessive_permissions.json",
+        "fixture:asi-04-supply-chain/direct/mcp_standalone_json.json",
+        "fixture:mcp_configs/claude_desktop_config.json",
+        "fixture:mcp_configs/vulnerable_config.json"
+      ],
+      "observed_file_count": 5,
+      "rule_id_constructors": [
+        "analysis/rule_context_config.py",
+        "scanners/mcp_config_scanner.py"
+      ],
+      "pattern_types": {
+        "mcp_stdio_no_sandbox": [
+          "scanners/mcp_config_scanner.py",
+          "cli/commands/scan.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "mcp_security_v030.yaml"
+      ]
+    },
+    "AGENT-033": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:mcp_configs/claude_desktop_config.json",
+        "synthetic:.mcp.json"
+      ],
+      "observed_file_count": 2,
+      "rule_id_constructors": [
+        "analysis/rule_context_config.py",
+        "scanners/mcp_config_scanner.py"
+      ],
+      "pattern_types": {
+        "mcp_missing_auth": [
+          "scanners/mcp_config_scanner.py",
+          "cli/commands/scan.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "mcp_security_v030.yaml"
+      ]
+    },
+    "AGENT-034": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:asi-02-tool-misuse/direct/compile_exec_indirect.py",
+        "fixture:asi-02-tool-misuse/direct/os_system.py",
+        "fixture:asi-02-tool-misuse/direct/shell_true_basic.py",
+        "fixture:asi-02-tool-misuse/direct/sql_injection.py",
+        "fixture:asi-02-tool-misuse/direct/subprocess_popen.py",
+        "fixture:asi-02-tool-misuse/indirect/path_traversal.py"
+      ],
+      "observed_file_count": 19,
+      "rule_id_constructors": [
+        "analysis/dangerous_operation_analyzer.py",
+        "analysis/tool_boundary_detector.py",
+        "analysis/taint_tracker.py",
+        "analysis/rule_context_config.py",
+        "models/finding.py",
+        "scanners/typescript_scanner.py",
+        "scanners/go_scanner.py",
+        "scanners/python_scanner.py",
+        "cli/commands/scan.py"
+      ],
+      "pattern_types": {
+        "tool_no_input_validation": [
+          "scanners/python_scanner.py"
+        ],
+        "eval_exec_expanded": [
+          "scanners/python_scanner.py"
+        ],
+        "subprocess_expanded": [
+          "scanners/python_scanner.py"
+        ],
+        "ts_eval_exec": [
+          "scanners/typescript_scanner.py"
+        ],
+        "ts_child_process_exec": [
+          "scanners/typescript_scanner.py"
+        ],
+        "go_exec_command": []
+      },
+      "yaml_patterns_in": [
+        "asi_coverage_v030.yaml"
+      ]
+    },
+    "AGENT-035": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:asi-02-tool-misuse/direct/os_system.py",
+        "fixture:asi-02-tool-misuse/direct/shell_true_basic.py",
+        "fixture:asi-02-tool-misuse/direct/subprocess_popen.py",
+        "fixture:asi-05-rce/direct/compile_exec.py",
+        "fixture:asi-05-rce/direct/eval_in_tool.py",
+        "fixture:asi-05-rce/direct/exec_in_tool.py"
+      ],
+      "observed_file_count": 9,
+      "rule_id_constructors": [
+        "scanners/python_scanner.py"
+      ],
+      "pattern_types": {
+        "tool_unrestricted_execution": [
+          "scanners/python_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "asi_coverage_v030.yaml"
+      ]
+    },
+    "AGENT-036": {
+      "class": "YAML-ONLY",
+      "observed_dir": false,
+      "observed_file_probes": [],
+      "observed_file_count": 0,
+      "rule_id_constructors": [],
+      "pattern_types": {
+        "tool_output_trusted_blindly": []
+      },
+      "yaml_patterns_in": [
+        "asi_coverage_v030.yaml"
+      ]
+    },
+    "AGENT-037": {
+      "class": "UNREACHABLE",
+      "observed_dir": false,
+      "observed_file_probes": [],
+      "observed_file_count": 0,
+      "rule_id_constructors": [
+        "scanners/python_scanner.py"
+      ],
+      "pattern_types": {
+        "missing_human_in_loop": [
+          "scanners/python_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "asi_coverage_v030.yaml"
+      ]
+    },
+    "AGENT-038": {
+      "class": "UNREACHABLE",
+      "observed_dir": false,
+      "observed_file_probes": [],
+      "observed_file_count": 0,
+      "rule_id_constructors": [
+        "scanners/python_scanner.py"
+      ],
+      "pattern_types": {
+        "agent_impersonation_risk": [
+          "scanners/python_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "asi_coverage_v030.yaml"
+      ]
+    },
+    "AGENT-039": {
+      "class": "UNREACHABLE",
+      "observed_dir": false,
+      "observed_file_probes": [],
+      "observed_file_count": 0,
+      "rule_id_constructors": [
+        "scanners/python_scanner.py"
+      ],
+      "pattern_types": {
+        "trust_boundary_violation": [
+          "scanners/python_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "asi_coverage_v030.yaml"
+      ]
+    },
+    "AGENT-040": {
+      "class": "UNREACHABLE",
+      "observed_dir": false,
+      "observed_file_probes": [],
+      "observed_file_count": 0,
+      "rule_id_constructors": [
+        "scanners/mcp_config_scanner.py"
+      ],
+      "pattern_types": {},
+      "yaml_patterns_in": [
+        "mcp_security_v030.yaml"
+      ]
+    },
+    "AGENT-041": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:asi-02-tool-misuse/direct/sql_injection.py",
+        "synthetic:srv.go"
+      ],
+      "observed_file_count": 2,
+      "rule_id_constructors": [
+        "scanners/typescript_scanner.py",
+        "scanners/go_scanner.py",
+        "scanners/python_scanner.py",
+        "cli/commands/scan.py"
+      ],
+      "pattern_types": {
+        "sql_fstring_injection": [
+          "scanners/python_scanner.py"
+        ],
+        "sql_format_injection": [
+          "scanners/python_scanner.py"
+        ],
+        "sql_concat_injection": [
+          "scanners/python_scanner.py"
+        ],
+        "sql_percent_injection": [],
+        "sql_tainted_param": [
+          "scanners/python_scanner.py"
+        ],
+        "ts_sql_template_injection": [
+          "scanners/typescript_scanner.py"
+        ],
+        "go_sql_concat": []
+      },
+      "yaml_patterns_in": [
+        "asi_coverage_v030.yaml"
+      ]
+    },
+    "AGENT-042": {
+      "class": "UNREACHABLE",
+      "observed_dir": false,
+      "observed_file_probes": [],
+      "observed_file_count": 0,
+      "rule_id_constructors": [
+        "scanners/mcp_config_scanner.py"
+      ],
+      "pattern_types": {
+        "mcp_excessive_servers": [
+          "scanners/mcp_config_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "asi_coverage_v030.yaml"
+      ]
+    },
+    "AGENT-043": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:agent_architecture/vulnerable_daemon.py",
+        "fixture:asi-03-privilege-abuse/direct/daemon_systemctl.sh"
+      ],
+      "observed_file_count": 2,
+      "rule_id_constructors": [
+        "analysis/rule_context_config.py",
+        "models/finding.py",
+        "scanners/privilege_scanner.py",
+        "cli/commands/scan.py"
+      ],
+      "pattern_types": {},
+      "yaml_patterns_in": []
+    },
+    "AGENT-044": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:asi-03-privilege-abuse/direct/sudoers_config.sh"
+      ],
+      "observed_file_count": 1,
+      "rule_id_constructors": [
+        "analysis/rule_context_config.py",
+        "models/finding.py",
+        "scanners/privilege_scanner.py"
+      ],
+      "pattern_types": {},
+      "yaml_patterns_in": []
+    },
+    "AGENT-045": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:asi-02-tool-misuse/direct/browser_cdp.py"
+      ],
+      "observed_file_count": 1,
+      "rule_id_constructors": [
+        "analysis/rule_context_config.py",
+        "scanners/privilege_scanner.py"
+      ],
+      "pattern_types": {},
+      "yaml_patterns_in": []
+    },
+    "AGENT-046": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:asi-03-privilege-abuse/direct/keychain_access.py"
+      ],
+      "observed_file_count": 1,
+      "rule_id_constructors": [
+        "analysis/rule_context_config.py",
+        "models/finding.py",
+        "scanners/privilege_scanner.py",
+        "cli/formatters/terminal.py"
+      ],
+      "pattern_types": {},
+      "yaml_patterns_in": []
+    },
+    "AGENT-047": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:asi-03-privilege-abuse/direct/keychain_access.py",
+        "fixture:asi-03-privilege-abuse/direct/root_shell_spawn.py",
+        "fixture:benign/validated/safe_command_execution.py",
+        "fixture:benign/validated/subprocess_with_validation.py",
+        "fixture:safe_agents/basic_agent.py"
+      ],
+      "observed_file_count": 5,
+      "rule_id_constructors": [
+        "analysis/rule_context_config.py",
+        "models/finding.py",
+        "scanners/privilege_scanner.py",
+        "cli/commands/scan.py"
+      ],
+      "pattern_types": {},
+      "yaml_patterns_in": []
+    },
+    "AGENT-048": {
+      "class": "UNREACHABLE",
+      "observed_dir": false,
+      "observed_file_probes": [],
+      "observed_file_count": 0,
+      "rule_id_constructors": [
+        "scanners/privilege_scanner.py"
+      ],
+      "pattern_types": {},
+      "yaml_patterns_in": []
+    },
+    "AGENT-049": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "synthetic:unsafe.ts"
+      ],
+      "observed_file_count": 1,
+      "rule_id_constructors": [
+        "scanners/typescript_scanner.py",
+        "scanners/go_scanner.py",
+        "scanners/python_scanner.py",
+        "cli/commands/scan.py"
+      ],
+      "pattern_types": {
+        "unsafe_deserialization": [
+          "scanners/go_scanner.py",
+          "scanners/python_scanner.py"
+        ],
+        "ts_unsafe_deserialization": [
+          "scanners/typescript_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": []
+    },
+    "AGENT-050": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:asi-03-privilege-abuse/direct/auto_approval.py",
+        "fixture:asi-03-privilege-abuse/direct/excessive_tools.py",
+        "fixture:asi-08-cascading/direct/no_max_iterations.py",
+        "fixture:asi-08-cascading/indirect/recursive_agent_call.py",
+        "fixture:asi-09-trust/direct/opaque_output.py",
+        "fixture:asi-10-rogue/direct/no_kill_switch.py"
+      ],
+      "observed_file_count": 9,
+      "rule_id_constructors": [],
+      "pattern_types": {
+        "langchain_agent_executor_risk": [
+          "scanners/python_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "langchain_security_v030.yaml"
+      ]
+    },
+    "AGENT-052": {
+      "class": "UNREACHABLE",
+      "observed_dir": false,
+      "observed_file_probes": [],
+      "observed_file_count": 0,
+      "rule_id_constructors": [
+        "scanners/python_scanner.py"
+      ],
+      "pattern_types": {
+        "sensitive_logging": [
+          "scanners/python_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "asi_coverage_v030.yaml"
+      ]
+    },
+    "AGENT-053": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:asi-04-supply-chain/direct/pip_install_runtime.py",
+        "fixture:asi-04-supply-chain/direct/unverified_package.py",
+        "fixture:asi-05-rce/indirect/dynamic_import.py"
+      ],
+      "observed_file_count": 3,
+      "rule_id_constructors": [],
+      "pattern_types": {
+        "agent_self_modify": [
+          "scanners/python_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "asi_coverage_v030.yaml"
+      ]
+    },
+    "AGENT-054": {
+      "class": "UNREACHABLE",
+      "observed_dir": false,
+      "observed_file_probes": [],
+      "observed_file_count": 0,
+      "rule_id_constructors": [
+        "scanners/mcp_baseline.py"
+      ],
+      "pattern_types": {
+        "mcp_tool_drift_added": [
+          "scanners/mcp_baseline.py",
+          "cli/commands/scan.py"
+        ],
+        "mcp_tool_drift_modified": [
+          "scanners/mcp_baseline.py",
+          "cli/commands/scan.py"
+        ],
+        "mcp_tool_drift_removed": [
+          "scanners/mcp_baseline.py",
+          "cli/commands/scan.py"
+        ],
+        "mcp_resource_drift_added": [
+          "scanners/mcp_baseline.py"
+        ],
+        "mcp_resource_drift_modified": [
+          "scanners/mcp_baseline.py"
+        ],
+        "mcp_prompt_drift_added": [
+          "scanners/mcp_baseline.py"
+        ],
+        "mcp_prompt_drift_modified": [
+          "scanners/mcp_baseline.py"
+        ],
+        "mcp_server_drift_added": [
+          "scanners/mcp_baseline.py"
+        ]
+      },
+      "yaml_patterns_in": []
+    },
+    "AGENT-055": {
+      "class": "UNREACHABLE",
+      "observed_dir": false,
+      "observed_file_probes": [],
+      "observed_file_count": 0,
+      "rule_id_constructors": [
+        "scanners/mcp_config_scanner.py"
+      ],
+      "pattern_types": {
+        "mcp_tool_shadowing_exact": [
+          "scanners/mcp_config_scanner.py",
+          "cli/commands/scan.py"
+        ],
+        "mcp_tool_shadowing_similar": [
+          "scanners/mcp_config_scanner.py",
+          "cli/commands/scan.py"
+        ]
+      },
+      "yaml_patterns_in": []
+    },
+    "AGENT-056": {
+      "class": "UNREACHABLE",
+      "observed_dir": false,
+      "observed_file_probes": [],
+      "observed_file_count": 0,
+      "rule_id_constructors": [
+        "analysis/tool_description_analyzer.py",
+        "scanners/mcp_config_scanner.py",
+        "scanners/mcp_inspector.py"
+      ],
+      "pattern_types": {
+        "mcp_tool_description_poisoning": [
+          "scanners/mcp_config_scanner.py",
+          "cli/commands/scan.py"
+        ],
+        "mcp_tool_name_poisoning": [
+          "scanners/mcp_config_scanner.py",
+          "cli/commands/scan.py"
+        ]
+      },
+      "yaml_patterns_in": []
+    },
+    "AGENT-057": {
+      "class": "UNREACHABLE",
+      "observed_dir": false,
+      "observed_file_probes": [],
+      "observed_file_count": 0,
+      "rule_id_constructors": [
+        "analysis/tool_description_analyzer.py",
+        "scanners/mcp_config_scanner.py",
+        "scanners/mcp_inspector.py"
+      ],
+      "pattern_types": {
+        "mcp_tool_arg_poisoning": [
+          "scanners/mcp_config_scanner.py",
+          "cli/commands/scan.py"
+        ]
+      },
+      "yaml_patterns_in": []
+    },
+    "AGENT-058": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:openclaw_skills/malicious_skill/SKILL.md",
+        "fixture:skills/curl_pipe_sh/SKILL.md"
+      ],
+      "observed_file_count": 2,
+      "rule_id_constructors": [
+        "scanners/skill_scanner.py",
+        "scanners/skill_body_scanner.py",
+        "cli/commands/scan.py"
+      ],
+      "pattern_types": {
+        "skill_obfuscated_shell": [
+          "scanners/skill_body_scanner.py",
+          "cli/commands/scan.py"
+        ]
+      },
+      "yaml_patterns_in": []
+    },
+    "AGENT-059": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:openclaw_skills/malicious_skill/SKILL.md"
+      ],
+      "observed_file_count": 1,
+      "rule_id_constructors": [
+        "scanners/skill_body_scanner.py"
+      ],
+      "pattern_types": {
+        "skill_critical_file_modification": [
+          "scanners/skill_body_scanner.py",
+          "cli/commands/scan.py"
+        ]
+      },
+      "yaml_patterns_in": []
+    },
+    "AGENT-060": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:openclaw_skills/malicious_skill/SKILL.md",
+        "fixture:openclaw_skills/warn_skill/SKILL.md"
+      ],
+      "observed_file_count": 2,
+      "rule_id_constructors": [
+        "scanners/skill_meta_scanner.py"
+      ],
+      "pattern_types": {
+        "skill_suspicious_network_endpoint": [
+          "scanners/skill_meta_scanner.py",
+          "cli/commands/scan.py"
+        ]
+      },
+      "yaml_patterns_in": []
+    },
+    "AGENT-061": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:openclaw_skills/malicious_skill/SKILL.md"
+      ],
+      "observed_file_count": 1,
+      "rule_id_constructors": [
+        "scanners/skill_meta_scanner.py"
+      ],
+      "pattern_types": {
+        "skill_sandbox_override": [
+          "scanners/skill_meta_scanner.py",
+          "cli/commands/scan.py"
+        ]
+      },
+      "yaml_patterns_in": []
+    },
+    "AGENT-062": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:openclaw_skills/malicious_skill/SKILL.md"
+      ],
+      "observed_file_count": 1,
+      "rule_id_constructors": [
+        "scanners/skill_body_scanner.py"
+      ],
+      "pattern_types": {
+        "skill_fake_dependency": [
+          "scanners/skill_body_scanner.py",
+          "cli/commands/scan.py"
+        ]
+      },
+      "yaml_patterns_in": []
+    },
+    "AGENT-063": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:openclaw_skills/malicious_skill/SKILL.md"
+      ],
+      "observed_file_count": 1,
+      "rule_id_constructors": [
+        "scanners/skill_meta_scanner.py",
+        "profiles/defi/rules.py"
+      ],
+      "pattern_types": {
+        "skill_daemon_persistence": [
+          "scanners/skill_meta_scanner.py",
+          "cli/commands/scan.py"
+        ]
+      },
+      "yaml_patterns_in": []
+    },
+    "AGENT-064": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:openclaw_skills/malicious_skill/SKILL.md"
+      ],
+      "observed_file_count": 1,
+      "rule_id_constructors": [
+        "scanners/skill_scanner.py",
+        "scanners/skill_meta_scanner.py",
+        "cli/commands/scan.py"
+      ],
+      "pattern_types": {
+        "skill_always_true_auto_invoke": [
+          "scanners/skill_meta_scanner.py",
+          "cli/commands/scan.py"
+        ]
+      },
+      "yaml_patterns_in": []
+    },
+    "AGENT-083": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "synthetic:vuln.sol"
+      ],
+      "observed_file_count": 1,
+      "rule_id_constructors": [
+        "scanners/solidity_scanner.py",
+        "cli/commands/scan.py"
+      ],
+      "pattern_types": {
+        "sol_unsafe_delegatecall": []
+      },
+      "yaml_patterns_in": []
+    },
+    "AGENT-084": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "synthetic:vuln.sol"
+      ],
+      "observed_file_count": 1,
+      "rule_id_constructors": [
+        "scanners/solidity_scanner.py",
+        "cli/commands/scan.py"
+      ],
+      "pattern_types": {
+        "sol_tx_origin_auth": []
+      },
+      "yaml_patterns_in": []
+    },
+    "AGENT-085": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "synthetic:srv.go"
+      ],
+      "observed_file_count": 1,
+      "rule_id_constructors": [
+        "scanners/go_scanner.py",
+        "cli/commands/scan.py"
+      ],
+      "pattern_types": {
+        "go_weak_rand": []
+      },
+      "yaml_patterns_in": []
+    },
+    "AGENT-110": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:agent_architecture/vulnerable_package/package.json",
+        "synthetic:package.json"
+      ],
+      "observed_file_count": 2,
+      "rule_id_constructors": [
+        "scanners/package_scanner.py",
+        "cli/commands/scan.py"
+      ],
+      "pattern_types": {
+        "source_map_in_package": [
+          "scanners/package_scanner.py"
+        ],
+        "debug_artifact_in_dist": [
+          "scanners/package_scanner.py"
+        ],
+        "npmignore_missing": [
+          "scanners/package_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "agent_architecture_security_v016.yaml"
+      ]
+    },
+    "AGENT-111": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:agent_architecture/vulnerable_internal_config.py"
+      ],
+      "observed_file_count": 1,
+      "rule_id_constructors": [
+        "scanners/package_scanner.py",
+        "cli/commands/scan.py"
+      ],
+      "pattern_types": {
+        "internal_config_exposed": [],
+        "internal_hostname_in_code": [
+          "scanners/package_scanner.py"
+        ],
+        "debug_mode_default_on": [
+          "scanners/package_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "agent_architecture_security_v016.yaml"
+      ]
+    },
+    "AGENT-112": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:agent_architecture/vulnerable_subagent.py"
+      ],
+      "observed_file_count": 1,
+      "rule_id_constructors": [
+        "scanners/python_scanner.py"
+      ],
+      "pattern_types": {
+        "subagent_inherits_all_tools": [
+          "scanners/python_scanner.py"
+        ],
+        "subagent_inherits_all_permissions": [
+          "scanners/python_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "agent_architecture_security_v016.yaml"
+      ]
+    },
+    "AGENT-113": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:agent_architecture/vulnerable_hitl_bypass.py"
+      ],
+      "observed_file_count": 1,
+      "rule_id_constructors": [
+        "scanners/python_scanner.py"
+      ],
+      "pattern_types": {
+        "delegation_without_auth": [
+          "scanners/python_scanner.py"
+        ],
+        "agent_handoff_no_verification": []
+      },
+      "yaml_patterns_in": [
+        "agent_architecture_security_v016.yaml"
+      ]
+    },
+    "AGENT-114": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:agent_architecture/vulnerable_coordinator.py",
+        "fixture:asi-07-inter-agent/direct/groupchat_no_auth.py",
+        "fixture:vulnerable_agents/owasp_agentic_full.py"
+      ],
+      "observed_file_count": 3,
+      "rule_id_constructors": [
+        "scanners/python_scanner.py"
+      ],
+      "pattern_types": {
+        "coordinator_unrestricted_dispatch": [
+          "scanners/python_scanner.py"
+        ],
+        "group_chat_no_scope": [
+          "scanners/python_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "agent_architecture_security_v016.yaml"
+      ]
+    },
+    "AGENT-115": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:agent_architecture/vulnerable_daemon.py"
+      ],
+      "observed_file_count": 1,
+      "rule_id_constructors": [
+        "scanners/python_scanner.py"
+      ],
+      "pattern_types": {
+        "agent_daemon_no_ttl": [
+          "scanners/python_scanner.py"
+        ],
+        "agent_infinite_loop_no_timeout": [
+          "scanners/python_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "agent_architecture_security_v016.yaml"
+      ]
+    },
+    "AGENT-116": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:agent_architecture/vulnerable_memory.py",
+        "fixture:asi-06-memory-poisoning/direct/unbounded_memory.py",
+        "fixture:benign/hardened/bounded_memory.py",
+        "fixture:vulnerable_agents/owasp_agentic_full.py"
+      ],
+      "observed_file_count": 4,
+      "rule_id_constructors": [
+        "scanners/python_scanner.py"
+      ],
+      "pattern_types": {
+        "shared_memory_no_isolation": [
+          "scanners/python_scanner.py"
+        ],
+        "session_memory_no_scoping": []
+      },
+      "yaml_patterns_in": [
+        "agent_architecture_security_v016.yaml"
+      ]
+    },
+    "AGENT-117": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:agent_architecture/vulnerable_auto_approve.py"
+      ],
+      "observed_file_count": 1,
+      "rule_id_constructors": [
+        "scanners/python_scanner.py"
+      ],
+      "pattern_types": {
+        "auto_approve_all_tools": [
+          "scanners/python_scanner.py"
+        ],
+        "human_input_never_with_execute": [
+          "scanners/python_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "agent_architecture_security_v016.yaml"
+      ]
+    },
+    "AGENT-118": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:agent_architecture/vulnerable_hitl_bypass.py"
+      ],
+      "observed_file_count": 1,
+      "rule_id_constructors": [
+        "scanners/python_scanner.py"
+      ],
+      "pattern_types": {
+        "hitl_bypass_via_delegation": [],
+        "mutable_approval_settings": [
+          "scanners/python_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "agent_architecture_security_v016.yaml"
+      ]
+    },
+    "AGENT-119": {
+      "class": "LIVE",
+      "observed_dir": true,
+      "observed_file_probes": [
+        "fixture:agent_architecture/vulnerable_trace_suppression.py"
+      ],
+      "observed_file_count": 1,
+      "rule_id_constructors": [
+        "scanners/python_scanner.py"
+      ],
+      "pattern_types": {
+        "git_author_sanitization": [
+          "scanners/python_scanner.py"
+        ],
+        "ai_trace_suppression": [
+          "scanners/python_scanner.py"
+        ],
+        "agent_attribution_removal": [
+          "scanners/python_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "agent_architecture_security_v016.yaml"
+      ]
+    },
+    "AGENT-120": {
+      "class": "UNREACHABLE",
+      "observed_dir": false,
+      "observed_file_probes": [],
+      "observed_file_count": 0,
+      "rule_id_constructors": [
+        "scanners/package_scanner.py"
+      ],
+      "pattern_types": {
+        "ai_tool_hooks_poisoning": [
+          "scanners/package_scanner.py"
+        ],
+        "claude_settings_malicious_hooks": [
+          "scanners/package_scanner.py"
+        ],
+        "cursor_settings_malicious_hooks": [
+          "scanners/package_scanner.py"
+        ],
+        "mcp_json_suspicious_command": [
+          "scanners/package_scanner.py"
+        ]
+      },
+      "yaml_patterns_in": [
+        "agent_architecture_security_v016.yaml"
+      ]
+    }
+  }
+}

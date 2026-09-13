@@ -8,15 +8,10 @@ This document provides a comprehensive reference for all agent-audit security ru
 |---------|----------|-----|-------|-------|
 | [AGENT-001](#agent-001-command-injection-via-unsanitized-input) | CRITICAL | CWE-78 | ASI-02 | Command Injection via Unsanitized Input |
 | [AGENT-002](#agent-002-excessive-agent-permissions) | MEDIUM | CWE-250 | ASI-03 | Excessive Agent Permissions |
-| [AGENT-003](#agent-003-potential-data-exfiltration-chain) | HIGH | CWE-200 | ASI-05 | Potential Data Exfiltration Chain |
 | [AGENT-004](#agent-004-hardcoded-credentials-in-agent-config) | CRITICAL | CWE-798 | ASI-04 | Hardcoded Credentials in Agent Config |
 | [AGENT-005](#agent-005-unverified-mcp-server) | HIGH | CWE-494 | ASI-04 | Unverified MCP Server |
 | [AGENT-010](#agent-010-system-prompt-injection-vector) | CRITICAL | CWE-77 | ASI-01 | System Prompt Injection Vector in User Input Path |
-| [AGENT-011](#agent-011-missing-goal-validation) | HIGH | - | ASI-01 | Missing Goal Validation / Instruction Boundary |
-| [AGENT-013](#agent-013-long-lived-credentials) | HIGH | CWE-798 | ASI-03 | Agent with Long-Lived or Shared Credentials |
 | [AGENT-014](#agent-014-overly-permissive-role) | HIGH | - | ASI-03 | Overly Permissive Agent Role / Tool Access |
-| [AGENT-015](#agent-015-untrusted-mcp-source) | CRITICAL | CWE-494 | ASI-04 | Untrusted MCP Server Source |
-| [AGENT-016](#agent-016-unvalidated-rag-source) | HIGH | - | ASI-04 | Unvalidated RAG Data Source |
 | [AGENT-017](#agent-017-unsandboxed-code-execution) | CRITICAL | CWE-94 | ASI-05 | Unsandboxed Code Execution in Agent |
 | [AGENT-018](#agent-018-unsanitized-memory-input) | CRITICAL | CWE-20 | ASI-06 | Unsanitized Input to Persistent Memory |
 | [AGENT-019](#agent-019-conversation-history-risk) | MEDIUM | - | ASI-06 | Conversation History Without Integrity Protection |
@@ -36,7 +31,6 @@ This document provides a comprehensive reference for all agent-audit security ru
 | [AGENT-033](#agent-033-missing-authentication) | HIGH | CWE-306 | ASI-09 | MCP Server Without Authentication |
 | [AGENT-034](#agent-034-tool-no-validation) | HIGH | CWE-20 | ASI-02 | Tool Function Without Input Validation |
 | [AGENT-035](#agent-035-unrestricted-execution) | CRITICAL | CWE-94 | ASI-02 | Tool With Unrestricted Code Execution |
-| [AGENT-036](#agent-036-unsanitized-tool-output) | HIGH | CWE-94 | ASI-02 | Tool Output Trusted Without Sanitization |
 | [AGENT-037](#agent-037-missing-human-approval) | MEDIUM | CWE-862 | ASI-09 | Missing Human-in-the-Loop for Side Effect Operations |
 | [AGENT-038](#agent-038-impersonation-risk) | HIGH | CWE-290 | ASI-09 | Agent Impersonation Risk |
 | [AGENT-039](#agent-039-trust-boundary-violation) | MEDIUM | CWE-306 | ASI-09 | Trust Boundary Violation in Multi-Agent System |
@@ -87,7 +81,6 @@ This document provides a comprehensive reference for all agent-audit security ru
 Attacker manipulates agent's goals, decision logic, or task selection.
 
 - [AGENT-010](#agent-010-system-prompt-injection-vector): System Prompt Injection Vector
-- [AGENT-011](#agent-011-missing-goal-validation): Missing Goal Validation
 - [AGENT-027](#agent-027-injectable-system-prompt): Injectable System Prompt
 - [AGENT-050](#agent-050-agentexecutor-risk): AgentExecutor Without Safety Parameters
 - [AGENT-056](#agent-056-tool-description-poisoning): Tool Description Poisoning
@@ -102,7 +95,6 @@ Agent is manipulated to misuse tools for unauthorized actions.
 - [AGENT-032](#agent-032-no-sandbox-isolation): No Sandbox Isolation
 - [AGENT-034](#agent-034-tool-no-validation): Tool Without Input Validation
 - [AGENT-035](#agent-035-unrestricted-execution): Unrestricted Code Execution
-- [AGENT-036](#agent-036-unsanitized-tool-output): Unsanitized Tool Output
 - [AGENT-040](#agent-040-insecure-tool-schema): Insecure Tool Schema
 - [AGENT-041](#agent-041-sql-injection): SQL Injection
 
@@ -110,7 +102,6 @@ Agent is manipulated to misuse tools for unauthorized actions.
 Agent misuses identity or escalates privileges beyond intended scope.
 
 - [AGENT-002](#agent-002-excessive-agent-permissions): Excessive Permissions
-- [AGENT-013](#agent-013-long-lived-credentials): Long-Lived Credentials
 - [AGENT-014](#agent-014-overly-permissive-role): Overly Permissive Role
 - [AGENT-042](#agent-042-excessive-mcp-servers): Excessive MCP Servers
 
@@ -119,8 +110,6 @@ External dependencies (APIs, models, MCP servers) pose security risks.
 
 - [AGENT-004](#agent-004-hardcoded-credentials-in-agent-config): Hardcoded Credentials
 - [AGENT-005](#agent-005-unverified-mcp-server): Unverified MCP Server
-- [AGENT-015](#agent-015-untrusted-mcp-source): Untrusted MCP Source
-- [AGENT-016](#agent-016-unvalidated-rag-source): Unvalidated RAG Source
 - [AGENT-030](#agent-030-unverified-server-source): Unverified Server Source
 - [AGENT-054](#agent-054-mcp-rug-pull): MCP Rug Pull / Baseline Drift
 - [AGENT-055](#agent-055-tool-shadowing): Cross-server Tool Shadowing
@@ -128,7 +117,6 @@ External dependencies (APIs, models, MCP servers) pose security risks.
 ### ASI-05: Improper Output Handling / Code Execution
 Agent generates or executes malicious code.
 
-- [AGENT-003](#agent-003-potential-data-exfiltration-chain): Data Exfiltration Chain
 - [AGENT-017](#agent-017-unsandboxed-code-execution): Unsandboxed Code Execution
 - [AGENT-031](#agent-031-sensitive-env-exposure): Sensitive Env Exposure
 
@@ -178,7 +166,6 @@ Autonomous agents deviate from intended goals without external manipulation.
 | AGENT-001 | Command Injection via Unsanitized Input | ASI-02 |
 | AGENT-004 | Hardcoded Credentials in Agent Config | ASI-04 |
 | AGENT-010 | System Prompt Injection Vector | ASI-01 |
-| AGENT-015 | Untrusted MCP Server Source | ASI-04 |
 | AGENT-017 | Unsandboxed Code Execution | ASI-05 |
 | AGENT-018 | Unsanitized Input to Persistent Memory | ASI-06 |
 | AGENT-024 | Agent Without Kill Switch | ASI-10 |
@@ -193,12 +180,8 @@ Autonomous agents deviate from intended goals without external manipulation.
 
 | Rule | Title | OWASP |
 |------|-------|-------|
-| AGENT-003 | Potential Data Exfiltration Chain | ASI-05 |
 | AGENT-005 | Unverified MCP Server | ASI-04 |
-| AGENT-011 | Missing Goal Validation | ASI-01 |
-| AGENT-013 | Long-Lived Credentials | ASI-03 |
 | AGENT-014 | Overly Permissive Role | ASI-03 |
-| AGENT-016 | Unvalidated RAG Data Source | ASI-04 |
 | AGENT-020 | Insecure Inter-Agent Channel | ASI-07 |
 | AGENT-021 | Missing Circuit Breaker | ASI-08 |
 | AGENT-025 | No Behavioral Monitoring | ASI-10 |
@@ -207,7 +190,6 @@ Autonomous agents deviate from intended goals without external manipulation.
 | AGENT-031 | Sensitive Env Exposure | ASI-05 |
 | AGENT-033 | Missing Authentication | ASI-09 |
 | AGENT-034 | Tool Without Validation | ASI-02 |
-| AGENT-036 | Unsanitized Tool Output | ASI-02 |
 | AGENT-038 | Impersonation Risk | ASI-09 |
 | AGENT-050 | AgentExecutor Risk | ASI-01 |
 | AGENT-052 | Sensitive Data Logging | ASI-09 |
@@ -283,28 +265,6 @@ Excessive permissions increase attack surface and potential damage from compromi
 **How to fix**
 
 Apply principle of least privilege, split into specialized agents, require approval for high-risk operations.
-
----
-
-### AGENT-003: Potential Data Exfiltration Chain
-
-| Property | Value |
-|----------|-------|
-| **Severity** | HIGH |
-| **CWE** | [CWE-200: Exposure of Sensitive Information](https://cwe.mitre.org/data/definitions/200.html) |
-| **OWASP Agentic** | ASI-05: Improper Output Handling |
-
-**What it detects**
-
-Agent has access to both sensitive data sources (secrets, files, database) and external network capabilities.
-
-**Why it matters**
-
-This combination enables data exfiltration where sensitive information can be sent to external servers.
-
-**How to fix**
-
-Implement network egress allowlist, add approval workflow for sensitive operations.
 
 ---
 
@@ -393,67 +353,6 @@ messages = [
 
 ---
 
-### AGENT-011: Missing Goal Validation
-
-| Property | Value |
-|----------|-------|
-| **Severity** | HIGH |
-| **OWASP Agentic** | ASI-01: Agent Goal Hijacking |
-
-**What it detects**
-
-Agent configuration lacks explicit goal boundaries, `max_iterations`, or instruction immutability controls.
-
-**Why it matters**
-
-Without boundaries, agent objectives can be silently redirected via poisoned documents or tool outputs.
-
-**How to fix**
-
-Implement explicit goal boundaries, define `allowed_tools` explicitly, set `max_iterations`.
-
-```python
-agent = AgentExecutor(
-    agent=agent,
-    tools=allowed_tools_only,
-    max_iterations=10,
-    handle_parsing_errors=True,
-)
-```
-
----
-
-### AGENT-013: Long-Lived Credentials
-
-| Property | Value |
-|----------|-------|
-| **Severity** | HIGH |
-| **CWE** | [CWE-798: Use of Hard-coded Credentials](https://cwe.mitre.org/data/definitions/798.html) |
-| **OWASP Agentic** | ASI-03: Identity and Privilege Abuse |
-
-**What it detects**
-
-Agent uses long-lived API keys, shared service accounts, or hardcoded tokens instead of short-lived, scoped credentials.
-
-**Why it matters**
-
-Long-lived credentials increase exposure window and enable persistent unauthorized access.
-
-**How to fix**
-
-Use short-lived, session-scoped credentials. Implement credential rotation.
-
-```python
-# Vulnerable
-agent = Agent(api_key="sk-hardcoded-key-123")
-
-# Fixed
-credential = get_scoped_credential(scope="read:documents", ttl=timedelta(minutes=15))
-agent = Agent(credential=credential)
-```
-
----
-
 ### AGENT-014: Overly Permissive Role
 
 | Property | Value |
@@ -472,57 +371,6 @@ Violates the Least-Agency principle and increases potential damage from compromi
 **How to fix**
 
 Grant agents only the minimum tools needed. Review tool lists regularly.
-
----
-
-### AGENT-015: Untrusted MCP Source
-
-| Property | Value |
-|----------|-------|
-| **Severity** | CRITICAL |
-| **CWE** | [CWE-494: Download of Code Without Integrity Check](https://cwe.mitre.org/data/definitions/494.html) |
-| **OWASP Agentic** | ASI-04: Agentic Supply Chain |
-
-**What it detects**
-
-MCP server loaded via `npx` without version pinning, using `@latest` tag, or from unofficial sources.
-
-**Why it matters**
-
-Unpinned packages can receive malicious updates. Malicious MCP servers have been documented in the wild.
-
-**How to fix**
-
-Pin versions explicitly. Verify integrity with checksums.
-
-```json
-// Vulnerable
-"args": ["-y", "some-unknown-package"]
-
-// Fixed
-"args": ["-y", "@modelcontextprotocol/server-filesystem@1.2.3"]
-```
-
----
-
-### AGENT-016: Unvalidated RAG Source
-
-| Property | Value |
-|----------|-------|
-| **Severity** | HIGH |
-| **OWASP Agentic** | ASI-04: Agentic Supply Chain |
-
-**What it detects**
-
-RAG pipeline ingests data from external sources (`WebBaseLoader`, `UnstructuredURLLoader`) without integrity validation.
-
-**Why it matters**
-
-Poisoned RAG data can silently corrupt agent decisions across sessions.
-
-**How to fix**
-
-Validate all RAG data sources. Implement integrity checks and data lineage tracking.
 
 ---
 
@@ -1051,39 +899,6 @@ Use sandboxed environments (Docker, gVisor, RestrictedPython).
 
 ---
 
-### AGENT-036: Unsanitized Tool Output
-
-| Property | Value |
-|----------|-------|
-| **Severity** | HIGH |
-| **CWE** | [CWE-94: Improper Control of Generation of Code](https://cwe.mitre.org/data/definitions/94.html) |
-| **OWASP Agentic** | ASI-02: Tool Misuse |
-
-**What it detects**
-
-Tool output directly interpolated into next LLM prompt without sanitization.
-
-**Why it matters**
-
-Compromised tool can inject instructions into subsequent agent interactions.
-
-**How to fix**
-
-Sanitize or truncate tool outputs before including in prompts.
-
-```python
-# Vulnerable
-result = tool.run(query)
-next_prompt = f"Tool returned: {result}. What next?"
-
-# Fixed
-result = tool.run(query)
-sanitized = sanitize_tool_output(result, max_length=500)
-next_prompt = f"Tool returned: {sanitized}. What next?"
-```
-
----
-
 ### AGENT-037: Missing Human Approval
 
 | Property | Value |
@@ -1470,12 +1285,8 @@ The Python AST scanner detects patterns in Python source code using the built-in
 | Rule | Title | Detection Method |
 |------|-------|------------------|
 | AGENT-001 | Command Injection | Dangerous function calls (`subprocess.run`, `os.system`, `eval`, `exec`) |
-| AGENT-003 | Data Exfiltration Chain | Permission analysis (sensitive data + network access) |
 | AGENT-010 | System Prompt Injection | f-string in `SystemMessage`, `ChatPromptTemplate` |
-| AGENT-011 | Missing Goal Validation | Agent configuration without `allowed_tools`, `max_iterations` |
-| AGENT-013 | Long-Lived Credentials | Hardcoded API keys near agent/tool instantiation |
 | AGENT-014 | Overly Permissive Role | Dangerous tool combinations, auto-approval patterns |
-| AGENT-016 | Unvalidated RAG Source | Loader functions without validation |
 | AGENT-017 | Unsandboxed Code Execution | `eval`/`exec` in tool decorators without sandbox guards |
 | AGENT-018 | Unsanitized Memory Input | Write functions without sanitization |
 | AGENT-019 | Conversation History Risk | Unbounded memory classes |
@@ -1490,7 +1301,6 @@ The Python AST scanner detects patterns in Python source code using the built-in
 | AGENT-028 | Unbounded Iterations | Agent without iteration limits |
 | AGENT-034 | Tool Without Validation | `@tool` functions missing validation checks |
 | AGENT-035 | Unrestricted Execution | Tool with `eval`/`exec`/`shell=True` |
-| AGENT-036 | Unsanitized Tool Output | Tool output directly in prompts |
 | AGENT-037 | Missing Human Approval | Side-effect tools without approval handlers |
 | AGENT-041 | SQL Injection | f-string in `cursor.execute()` |
 | AGENT-050 | AgentExecutor Risk | `AgentExecutor` without safety parameters |
@@ -1523,7 +1333,6 @@ Static analyzer for MCP server configuration files (JSON/YAML).
 | Rule | Title | Detection Method |
 |------|-------|------------------|
 | AGENT-005 | Unverified MCP Server | Server not from trusted sources |
-| AGENT-015 | Untrusted MCP Source | `npx` without version pinning |
 | AGENT-029 | Broad Filesystem Access | Dangerous paths (`/`, `~`, `/etc`) |
 | AGENT-030 | Unverified Server Source | Unpinned packages, HTTP URLs |
 | AGENT-031 | Sensitive Env Exposure | Hardcoded values in env config |
@@ -1607,4 +1416,48 @@ agent-audit scan . --baseline baseline.json
 
 ---
 
-*63 rules as of v0.19.0 (includes AGENT-110 to AGENT-119 agent architecture security rules)*
+*66 rules as of v0.20.0. Every rule listed above has a producer in the package and a
+runtime test demonstrating it fires; see `tests/test_rule_producers.py`. Six previously
+listed rules were withdrawn — see Withdrawn Rules below.*
+
+---
+
+## Withdrawn Rules
+
+These rule IDs appeared in earlier versions of this document and in
+`RULE_CWE_MAPPING`, and **no code path in the package could construct any of them**.
+They could not fire on any input, at any commit. They were removed from the
+advertised rule set in v0.20.0 rather than left published, and the IDs are retired
+rather than recycled so that a future rule cannot silently reuse an ID that appears
+in published documents and in the labelled corpus.
+
+Five of the six are not "detection that was never written". Their detection *was*
+written, in full, as a `detection.patterns` block in `rules/builtin/*.yaml` — the
+place the contributor checklist says to write it. The only code that can execute
+such a block is `RuleEngine.evaluate()`, and nothing in the product calls it.
+
+| Rule | Title | Why it was withdrawn |
+|------|-------|----------------------|
+| AGENT-003 | Potential Data Exfiltration Chain | No detection of any kind — no pattern type, no YAML block, no constructor. Its definition ("access to both sensitive data and network capability") states no operational threshold. |
+| AGENT-011 | Missing Goal Validation | YAML-only. Absence-of-configuration detection with no agreed definition of what counts as a goal boundary. |
+| AGENT-013 | Long-Lived Credentials | YAML-only, and subsumed by **AGENT-004** (Hardcoded Credentials), which has a producer, a semantic analyzer and corpus labels. |
+| AGENT-015 | Untrusted MCP Server Source | YAML-only, and a duplicate of **AGENT-030** (Unverified MCP Server Source) — same severity, same CWE-494, same ASI-04 category, same detection content. AGENT-030 superseded it during the 0.3.0 development series (never released) and this entry was never withdrawn. |
+| AGENT-016 | Unvalidated RAG Data Source | YAML-only. Detection is absence-of-validation around loader calls; what counts as validation is undefined. |
+| AGENT-036 | Tool Output Trusted Without Sanitization | YAML-only. Needs data-flow from a tool return value into prompt construction — a taint-tracker capability, not a pattern. |
+
+### Known gaps this leaves
+
+Withdrawing a rule does not make the risk go away. AGENT-003 (exfiltration chains),
+AGENT-011 (goal boundaries), AGENT-016 (RAG provenance) and AGENT-036 (tool-output
+trust) name real ASI categories that this tool does not currently detect. They are
+recorded here as gaps rather than advertised as coverage.
+
+AGENT-013 and AGENT-015 are different: those risks *are* covered, by AGENT-004 and
+AGENT-030 respectively.
+
+### One rule that is advertised but a directory scan cannot reach
+
+**AGENT-054** (MCP Baseline Drift) compares a live MCP server against a stored
+baseline. It is produced only through `agent-audit inspect`; no static input can
+trigger it during `agent-audit scan`. It is listed above because it is a real,
+working rule — but not one a scan will ever report.

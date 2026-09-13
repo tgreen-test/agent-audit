@@ -1,0 +1,36 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/night-guard.sh"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '夜跑中。硬规则:禁 push/merge/tag/publish;禁改 oracle/fixture/threshold;每个修复必须有前后同一条命令的真实输出。进度写 PROGRESS.md,证据写 NIGHT_RUN_LEDGER.md。'"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Unattended overnight run on agent-audit. Check the transcript. (1) Does NIGHT_RUN_LEDGER.md contain, for every claimed fix, a BEFORE and an AFTER block running the SAME command with real pasted output? (2) Has NIGHT_RUN_REPORT.md been written? (3) Did it avoid push/merge/tag/publish and avoid editing any oracle, fixture, dataset, or threshold? If work remains in the W0-W5 queue and no blocking NEEDS-HEADY reason was logged, it should keep going. Respond {\"ok\": false, \"reason\": \"<what is missing or what to do next>\"} if any check fails, otherwise {\"ok\": true}."
+          }
+        ]
+      }
+    ]
+  }
+}

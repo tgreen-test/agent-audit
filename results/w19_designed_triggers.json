@@ -1,0 +1,176 @@
+{
+  "results": {
+    "AGENT-002": {
+      "trigger": "agent002/many_tools.py",
+      "fires_on_file": false,
+      "fires_on_dir": false,
+      "file_rules": [
+        "AGENT-028",
+        "AGENT-050"
+      ],
+      "dir_rules": [
+        "AGENT-028",
+        "AGENT-050"
+      ]
+    },
+    "AGENT-027": {
+      "trigger": "agent027/prompt.py",
+      "fires_on_file": false,
+      "fires_on_dir": false,
+      "file_rules": [
+        "AGENT-010"
+      ],
+      "dir_rules": [
+        "AGENT-010"
+      ]
+    },
+    "AGENT-037": {
+      "trigger": "agent037/no_approval.py",
+      "fires_on_file": false,
+      "fires_on_dir": false,
+      "file_rules": [
+        "AGENT-028",
+        "AGENT-050"
+      ],
+      "dir_rules": [
+        "AGENT-028",
+        "AGENT-050"
+      ]
+    },
+    "AGENT-038": {
+      "trigger": "agent038/impersonate.py",
+      "fires_on_file": false,
+      "fires_on_dir": false,
+      "file_rules": [],
+      "dir_rules": []
+    },
+    "AGENT-039": {
+      "trigger": "agent039/trust.py",
+      "fires_on_file": false,
+      "fires_on_dir": false,
+      "file_rules": [
+        "AGENT-028"
+      ],
+      "dir_rules": [
+        "AGENT-028"
+      ]
+    },
+    "AGENT-040": {
+      "trigger": "agent040/.mcp.json",
+      "fires_on_file": true,
+      "fires_on_dir": true,
+      "file_rules": [
+        "AGENT-030",
+        "AGENT-040"
+      ],
+      "dir_rules": [
+        "AGENT-030",
+        "AGENT-040"
+      ]
+    },
+    "AGENT-042": {
+      "trigger": "agent042/.mcp.json",
+      "fires_on_file": true,
+      "fires_on_dir": true,
+      "file_rules": [
+        "AGENT-030",
+        "AGENT-042"
+      ],
+      "dir_rules": [
+        "AGENT-030",
+        "AGENT-042"
+      ]
+    },
+    "AGENT-048": {
+      "trigger": "agent048/extensions/myplugin/index.js",
+      "fires_on_file": true,
+      "fires_on_dir": true,
+      "file_rules": [
+        "AGENT-048"
+      ],
+      "dir_rules": [
+        "AGENT-048"
+      ]
+    },
+    "AGENT-052": {
+      "trigger": "agent052/logit.py",
+      "fires_on_file": true,
+      "fires_on_dir": true,
+      "file_rules": [
+        "AGENT-052"
+      ],
+      "dir_rules": [
+        "AGENT-052"
+      ]
+    },
+    "AGENT-054": {
+      "trigger": "agent054/.mcp.json",
+      "fires_on_file": false,
+      "fires_on_dir": false,
+      "file_rules": [
+        "AGENT-030"
+      ],
+      "dir_rules": [
+        "AGENT-030"
+      ]
+    },
+    "AGENT-055": {
+      "trigger": "agent055/.mcp.json",
+      "fires_on_file": true,
+      "fires_on_dir": true,
+      "file_rules": [
+        "AGENT-030",
+        "AGENT-055"
+      ],
+      "dir_rules": [
+        "AGENT-030",
+        "AGENT-055"
+      ]
+    },
+    "AGENT-056": {
+      "trigger": "agent056/.mcp.json",
+      "fires_on_file": false,
+      "fires_on_dir": false,
+      "file_rules": [
+        "AGENT-030",
+        "AGENT-057"
+      ],
+      "dir_rules": [
+        "AGENT-030",
+        "AGENT-057"
+      ]
+    },
+    "AGENT-120": {
+      "trigger": "agent120/.claude/settings.json",
+      "fires_on_file": false,
+      "fires_on_dir": false,
+      "file_rules": [],
+      "dir_rules": []
+    },
+    "AGENT-057": {
+      "trigger": "agent056/.mcp.json",
+      "fires_on_file": true,
+      "fires_on_dir": true,
+      "file_rules": [
+        "AGENT-030",
+        "AGENT-057"
+      ],
+      "dir_rules": [
+        "AGENT-030",
+        "AGENT-057"
+      ]
+    }
+  },
+  "whole_tree": [
+    "AGENT-010",
+    "AGENT-028",
+    "AGENT-030",
+    "AGENT-040",
+    "AGENT-042",
+    "AGENT-048",
+    "AGENT-050",
+    "AGENT-052",
+    "AGENT-055",
+    "AGENT-057"
+  ]
+}

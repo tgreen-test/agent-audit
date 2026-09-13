@@ -16,6 +16,34 @@ import yaml
 
 from .base_adapter import BaseAdapter, ToolFinding, ToolNotAvailable, normalize_severity
 
+# The in-repo package directory. The adapter shells out to `-m agent_audit`, which
+# normally resolves through an editable install. If that install is missing or stale
+# (e.g. the repo was moved after `pip install -e`), the subprocess would fail with
+# ModuleNotFoundError. Putting the working tree on the child's PYTHONPATH makes the
+# benchmark runnable from a bare checkout and pins it to *this* source tree rather
+# than to whatever happens to be in site-packages.
+#   adapters/ -> harness/ -> agent-vuln-bench/ -> benchmark/ -> tests/ -> <repo root>
+_REPO_ROOT = Path(__file__).resolve().parents[5]
+_PACKAGE_DIR = _REPO_ROOT / "packages" / "audit"
+
+
+def _child_env() -> Dict[str, str]:
+    """Return a copy of the environment with the in-repo package on PYTHONPATH."""
+    env = dict(os.environ)
+    if not _PACKAGE_DIR.is_dir():
+        return env
+    existing = env.get("PYTHONPATH", "")
+    parts = [str(_PACKAGE_DIR)] + ([existing] if existing else [])
+    return {**env, "PYTHONPATH": os.pathsep.join(parts)}
+
+
+def _stderr_tail(stderr: str, limit: int = 400) -> str:
+    """Condense subprocess stderr for inclusion in an exception message."""
+    text = (stderr or "").strip()
+    if not text:
+        return "<empty stderr>"
+    return text[-limit:]
+
 
 class AgentAuditAdapter(BaseAdapter):
     """Adapter for agent-audit SAST tool."""
@@ -60,14 +88,25 @@ class AgentAuditAdapter(BaseAdapter):
                     capture_output=True,
                     text=True,
                     timeout=30,
+                    env=_child_env(),
                 )
-                # Parse version from output
+                # A non-zero exit means the module could not even be imported. Do NOT
+                # fall through to parsing the output: `output.split()[-1]` on
+                # "... No module named agent_audit" yields the plausible-looking string
+                # "agent_audit", which is how a dead tool previously reported a version.
+                if result.returncode != 0:
+                    raise ToolNotAvailable(
+                        f"`{sys.executable} -m agent_audit --version` exited "
+                        f"{result.returncode}: {_stderr_tail(result.stderr)}"
+                    )
                 output = result.stdout.strip() or result.stderr.strip()
                 if output:
                     # Handle various version formats
-                    self._version = output.split()[-1] if output else "unknown"
+                    self._version = output.split()[-1]
                 else:
                     self._version = "unknown"
+            except ToolNotAvailable:
+                raise
             except Exception as e:
                 raise ToolNotAvailable(f"agent-audit not available: {e}")
         return self._version
@@ -82,6 +121,13 @@ class AgentAuditAdapter(BaseAdapter):
         Returns:
             List of standardized ToolFinding objects.
         """
+        # NOTE ON FAILURE SEMANTICS: this method must never convert "the scanner did not
+        # run" into "the scanner found nothing". A genuinely clean scan emits valid JSON
+        # with an empty findings list; anything unparseable is a harness/tool failure and
+        # is raised so the harness reports ERROR instead of scoring the sample as all-FN.
+        # (This silent `return []` is what produced 12/12 FN at 0.0s each — see
+        # NIGHT_RUN_LEDGER.md W0.) The scanner exits non-zero when it finds BLOCK-tier
+        # issues, so return code alone is NOT a failure signal — parseability is.
         try:
             # Run agent-audit with JSON output
             result = subprocess.run(
@@ -97,31 +143,22 @@ class AgentAuditAdapter(BaseAdapter):
                 capture_output=True,
                 text=True,
                 timeout=300,
+                env=_child_env(),
             )
 
             # Parse JSON output
             output = result.stdout
-            if not output:
+            if not output.strip():
                 # Check if it's in stderr
                 if result.stderr and result.stderr.strip().startswith("{"):
                     output = result.stderr
                 else:
-                    return []
+                    raise ToolNotAvailable(
+                        f"agent-audit produced no output scanning {project_path} "
+                        f"(exit {result.returncode}): {_stderr_tail(result.stderr)}"
+                    )
 
-            try:
-                data = json.loads(output)
-            except json.JSONDecodeError:
-                # Try to find JSON in output
-                for line in output.split("\n"):
-                    line = line.strip()
-                    if line.startswith("{"):
-                        try:
-                            data = json.loads(line)
-                            break
-                        except json.JSONDecodeError:
-                            continue
-                else:
-                    return []
+            data = self._parse_json_output(output, project_path, result)
 
             # Handle both list and dict with 'findings' key
             if isinstance(data, list):
@@ -129,7 +166,10 @@ class AgentAuditAdapter(BaseAdapter):
             elif isinstance(data, dict):
                 raw_findings = data.get("findings", [])
             else:
-                return []
+                raise ToolNotAvailable(
+                    f"agent-audit returned unexpected JSON type {type(data).__name__} "
+                    f"scanning {project_path}"
+                )
 
             return [self._convert_finding(f) for f in raw_findings]
 
@@ -137,6 +177,33 @@ class AgentAuditAdapter(BaseAdapter):
             raise ToolNotAvailable("agent-audit scan timed out after 300 seconds")
         except FileNotFoundError:
             raise ToolNotAvailable("agent-audit not found in PATH")
+
+    @staticmethod
+    def _parse_json_output(
+        output: str,
+        project_path: str,
+        result: "subprocess.CompletedProcess[str]",
+    ) -> Any:
+        """Parse scanner stdout as JSON, raising ToolNotAvailable if it cannot be read."""
+        try:
+            return json.loads(output)
+        except json.JSONDecodeError:
+            pass
+
+        # Rich/CLI banners can precede the payload; look for a JSON object per line.
+        for line in output.split("\n"):
+            line = line.strip()
+            if line.startswith("{"):
+                try:
+                    return json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+        raise ToolNotAvailable(
+            f"agent-audit output was not parseable JSON scanning {project_path} "
+            f"(exit {result.returncode}): stdout={output[:200]!r} "
+            f"stderr={_stderr_tail(result.stderr)}"
+        )
 
     def _convert_finding(self, finding: Dict[str, Any]) -> ToolFinding:
         """Convert agent-audit finding to standardized format."""

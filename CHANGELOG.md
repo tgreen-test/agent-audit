@@ -5,6 +5,284 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.0] - 2026-08-11
+
+This is a correction release. The improvements are real, but the first thing an existing
+user needs is the list of things that were wrong, so that is what leads.
+
+### Withdrawn — six rules removed from the advertised set
+
+**The advertised rule count is 66. It was 72, and six of those rules could never fire.**
+
+`AGENT-003`, `AGENT-011`, `AGENT-013`, `AGENT-015`, `AGENT-016`, `AGENT-036` are withdrawn.
+No code path in the package could construct any of them, at any commit. Five had their
+detection written out in full as a `detection.patterns` block in `rules/builtin/*.yaml` —
+the place `CLAUDE.md` tells contributors to put it — and the only code that can execute
+such a block, `RuleEngine.evaluate()`, has never had a caller outside a unit test. The
+sixth, `AGENT-003`, had no detection of any kind.
+
+Two of the six were also duplicates of live rules: `AGENT-015` duplicates `AGENT-030` (same
+severity, same CWE-494, same ASI-04 category, same detection content), and `AGENT-013`
+likewise. Those defects are still detected, under the surviving IDs.
+
+**If you filter, suppress or report on any of the six IDs, that configuration was matching
+nothing and can be deleted.** The gaps the withdrawals leave — notably untrusted package or
+code acquisition in general application code — are recorded in `docs/RULES.md` under
+Withdrawn Rules rather than papered over.
+
+`tests/test_rule_producers.py` now fails the suite if an advertised rule has no producer.
+There is no allow-list, deliberately: pinning the known-bad set is what made "advertised and
+unproducible" a permanently acceptable state for six rules across four minor versions.
+
+### Retracted — benchmark figures that were never measurements
+
+**Any previously published figure of 98.51% precision, 100% recall, 99.25% F1 or 1.49%
+false-positive rate is withdrawn.** So is `CHANGELOG.md`'s "Precision: 98.51% → 100%",
+"Recall maintained at 100%" and "F1 Score: 100%" under `[0.4.1]`.
+
+These are not stale measurements. The recall figure was `FN = 0` **by assertion** — the
+v0.4.1 development brief states `Recall = 100% (0 FN)` in as many words — and the "→ 100%"
+values were copied from that brief's *target* block and published as an achievement. The
+`results/layer1.json` committed in the same commit measured **124 false negatives and 47.46%
+recall**. There is no commit at which the published numbers were produced by any script, so
+there is nothing to update them *to*; they are withdrawn.
+
+The reproducible current value, from `python3 tests/benchmark/precision_recall.py`:
+
+```
+TP 199  FP 90  FN 37
+Precision 68.86%   Recall 84.32%   F1 75.81%   FP Rate 31.14%
+```
+
+Two qualifications travel with that, and both are in
+`docs/decisions/METRICS_RETRACTION.md` § 3: precision fell since v0.19.0 because three
+*discovery bugs were fixed* and the tool began finding correct things the corpus does not
+label, and at least 21 of the 90 false positives are unlabelled true positives — so 68.86%
+is a floor, not a point estimate. It is stated as a bound rather than silently adjusted.
+
+### Corrected — one rule count, on every surface that publishes one
+
+**Five different numbers were published for one set of rules: 40, 49, 53, 60+ and 72.** The
+set contains 66.
+
+Two of them sat on **distribution** surfaces, in the same directory, and only one was found
+first: `packages/audit/pyproject.toml` said 53 and is the PyPI description, while
+`packages/audit/README.md` said "60+" and is the wheel's long description — the PyPI project
+page itself. The second was caught on 2026-09-12, during the pre-release audit, because the
+guard below listed the first and not the second. Both are corrected and both are now guarded.
+
+Nineteen in-repo locations now say 66, and the number is checkable rather than asserted:
+
+```bash
+python3 -c "import sys;sys.path.insert(0,'tests');from test_rule_producers import advertised_rules;print(len(advertised_rules()))"
+```
+
+`tests/test_published_rule_count.py` fails the suite if a published count and the rule set
+ever disagree again, and fails per surface if a page stops stating a count at all — a page
+dropping quietly out of the guard is how `docs/index.html` came to publish 49 while the
+README published 72. The two published blog posts are left as written, with dated
+correction notes: "40+" is vague rather than false, and the record of what was posted is
+worth more than a silently-updated page.
+
+Every metric on every in-repo surface is now the measured value with the command that
+produces it beside it. `tests/README.md` carried the largest error — 30 points of precision
+and 17 of recall, twice over, with no retraction note — and now opens with one.
+
+### Fixed — the quality gate could pass without measuring anything
+
+`quality_gate_check.py` decided the build by reading `results/layer1.json`, and read nothing
+else. Two ways it exited 0 while proving nothing, both measured:
+
+- **A stale results file passed.** `results/layer1.json` is committed, so every checkout has
+  one whether or not anything measured it. A file describing a corpus three labels out of
+  date cleared the ratchet and reported success.
+- **No results file passed.** An empty results directory produced SKIP for two layers
+  declared `enabled: true, blocking: true`, and SKIP is not counted as a failure.
+
+Layer 1 results now carry a provenance stamp fingerprinting the three inputs a measurement
+is a function of — the ground-truth labels, the fixture corpus, and the scanner source —
+plus which `agent_audit` the interpreter that ran the scan actually imported. The gate
+recomputes it and refuses to score a file that does not describe the tree it is checking.
+Content-based, not time-based, so it does not fail correct builds in CI. A missing results
+file for an enabled, blocking layer is now a failure; `--layers` lets a job state which
+claim it is making instead of letting silence stand in for success.
+
+**If you run the gate in your own CI, add `--layers` naming the layers that job measures**,
+or a layer you do not produce results for will now fail the build rather than being skipped.
+
+### Fixed — false positives, from two bug reports
+
+- **AGENT-041 no longer treats every `.execute()` as a SQL sink** (issue #10). The KNOWN-008
+  branch — SQL built upstream and passed in — had no evidence from its argument by design
+  and asked none from its receiver, so `target_agent.execute(task)` was SQL injection at
+  confidence 1.0. The receiver must now look like a database handle, by name or by an
+  assignment in the same file that gives it one. Positive evidence, so an unrecognised
+  receiver is silence rather than a BLOCK-tier accusation. Both true positives in the
+  reporter's case survive, including the upstream-SQL one.
+- **AGENT-004 no longer reports format strings as hardcoded credentials** (issue #8).
+  `f"password={password}"` matched on the word and scored the entropy of `{password}\n`. A
+  hardcoded credential is a literal in the source; a value that is entirely interpolation is
+  not one. `f"sk-{suffix}"` keeps its literal prefix and is still analysed.
+- **AGENT-010 distinguishes an inbound value from a computed one.** A prompt f-string that
+  interpolates only locals scores 0.50 rather than 1.00. Downgraded rather than suppressed,
+  because one step of distance is all a single-file pass can honestly see.
+- **A subprocess call that names its own program is no longer treated as a shell sink.**
+  `subprocess.run(["docker", "run", ..., image])` carried a taint flow claiming it reached a
+  shell from user input. It does not. The reduction is confidence only, never suppression,
+  because `["pip", "install", pkg]` has the identical shape and is a real finding.
+
+None of these moved the benchmark, and that is worth knowing: the graded corpus contains
+none of these shapes. They are validated against the reporters' code and pinned by tests.
+
+### Decided — slopsquatting is not becoming a rule
+
+A newly published attack class in this tool's declared territory, assessed and declined
+with the measurement in `docs/decisions/SLOPSQUATTING.md`. The test that distinguishes
+slopsquatting from any other supply-chain issue is *does this package name exist in the
+registry*, and scanning makes no network calls by design. The half a static analyser can
+see — runtime acquisition of code whose identity is not fixed in the source — is a rule this
+project already owes its own corpus, and it is scoped for v0.21.0 in `NEXT_ROUND.md`.
+
+### Added — `CAPABILITY_BOUNDARIES.md`
+
+A new document at the repository root stating what the tool does not do: no cross-file
+analysis, no call graph, no import following, no type resolution, no object-lifecycle
+modelling, no runtime dispatch-order reasoning, no runtime behaviour. It includes the
+blind-audit result — with 0 files skipped and 0 parse failures, recall on 6 real defects
+in a real codebase was **0** — and the structural reason this class of defect survived:
+**a rule that never fires and a clean codebase produce identical output**, so no test suite,
+benchmark or CI gate could have distinguished them.
+
+Read it before treating a clean report as an assurance.
+
+### Added — shipping as preview: SkillScanner and the PDF report
+
+Seven commits merged before this branch (`ab6f0ee`..`78e1337`, the merge titled *WIP,
+pre-0.20.0*) were already inside the release artifacts and named in no release note: four for
+SkillScanner (one of code, three of protocol and findings documents), one for the PDF report
+generator, one `.gitignore` rail keeping a third-party Skills corpus out of the repository, and
+the merge. They ship, and they ship labelled **preview** — the label is about what has not been
+done to them. Both carry tests; neither has been measured on a graded corpus. Every figure this
+release publishes — P 68.86% / R 84.32% / F1 0.7581 — is `AGENT-*` rules against the
+eighty-one-sample labelled corpus and says nothing about either feature.
+
+- **SkillScanner** (`scanners/skill_scanner.py`, twenty-eight tests) analyses `SKILL.md` files
+  on every scan, no flag required. It emits a `SKILL-000` / `SKILL-010` / `SKILL-020`
+  namespace kept deliberately outside the advertised `AGENT-*` set and outside
+  `RULE_CWE_MAPPING`, so the published count of sixty-six is unaffected by it. That namespace
+  is tier-ceilinged in `rules/skill_rule_context.py` — `SKILL-010` ≤ WARN, `SKILL-000` and
+  `SKILL-020` ≤ INFO, the first checked exhaustively across [0.0, 1.0] — so **no `SKILL-*`
+  finding can fail a build**. Use them to find Skills worth a human read; a quiet result is not
+  evidence a Skill is safe. The cross-lingual fairness evaluation it exists for is
+  pre-registered in `docs/skillscanner/eval/PROTOCOL.md` and is unfinished: no precision or
+  recall figure for it is published here, because none has been measured.
+- **SkillScanner's Layer 2 *can* fail a build, and that is a behaviour change.** Fenced
+  `python` and `shell` blocks inside a `SKILL.md` are routed through the existing Python and
+  privilege scanners and their findings remapped onto the `SKILL.md` line. Those are ordinary
+  `AGENT-*` findings keeping ordinary tiering — the ceiling above is explicitly scoped to the
+  `SKILL-*` namespace (`skill_rule_context.py`: *"Existing AGENT-\* code-level rules surfaced
+  via Layer 2 keep their existing tiering logic untouched"*). Measured on
+  `tests/fixtures/skills/eval_python`, a Skill whose example block calls `eval()` on a tool
+  argument emits **`AGENT-001` at BLOCK (1.00) and `AGENT-034` at BLOCK (0.95)**. A repository with
+  code inside its `SKILL.md` files can therefore start failing a BLOCK-gated CI job that
+  passed under 0.19.2.
+- **`SKILL-010` can call the Claude API during an ordinary scan.** `get_default_judge()`
+  returns `SemanticJudge` when the `anthropic` SDK is importable *and* `ANTHROPIC_API_KEY` is
+  set, and that backend sends each `SKILL.md` `description` to `claude-sonnet-4-6`. With no key
+  it returns `NullJudge` and makes no call. Measured both ways, without issuing a request:
+  `backend: NullJudge` with the variable unset, `backend: SemanticJudge` with it set. There is
+  no flag to disable it; unset the variable for the scan step if the scanned code is
+  confidential.
+- **`agent-audit report <scan.json> -o <out.pdf>`** renders `--format json` output as a PDF
+  (`agent_audit/report/`, thirty-three tests), behind `pip install "agent-audit[report]"`. The
+  only claim hardcoded into a generated report is *Standards Alignment*: 10/10 coverage of the
+  OWASP ASI Top 10. It reproduces — the advertised set spans all ten ASI categories, checked
+  against the YAML `owasp_agentic_id` of every advertised rule — and no precision, recall or
+  rule count is printed in a report at all.
+- **`langdetect` is a new *required* runtime dependency.** Measured from the wheel metadata:
+  `0.19.2` declared six unconditional `Requires-Dist` entries, `0.20.0` declares seven.
+  `reportlab`/`matplotlib` (`[report]`) and `anthropic` (`[judge]`) are extras and are not
+  installed unless asked for.
+
+### Fixed
+
+- **The missing-`reportlab` message told the user to install the wrong thing.** `agent-audit
+  report` without the extra printed *"Install with: pip install agent-audit"* — Rich parsed the
+  `[report]` in the interpolated exception text as a style tag and rendered nothing for it, so
+  the instruction named the package without the extra that carries the dependency. Escaped, and
+  pinned by `tests/test_report/test_cli_report.py::test_missing_reportlab_names_the_extra`,
+  which asserts the extra survives to the output. Found by executing the path; the previous
+  review read the code and recorded it as handled.
+- **MCP configuration discovery did not recurse.** It used a non-recursive `iterdir()` over
+  the scan root where nine other scanners use `rglob`, so **six MCP rules had a
+  directory-scan count of exactly zero** — they fired when a config file was named
+  explicitly and never during a normal project scan. (`f649dcc`)
+- **AI-tool hook discovery did not recurse.** `AGENT-120` resolved `.claude/settings.json`
+  and friends by joining onto the scan root, so it fired only when the scan root *was* the
+  project directory. (`d4d2850`)
+- **AGENT-034 had no tool-boundary constraint on TypeScript.**
+  `analysis/ts_tool_boundary_detector.py` — 325 lines with a full test file — was imported by
+  nothing, so the rule fired outside tool entry points on every TypeScript scan since it
+  shipped. Now wired. (`2ee8345`)
+- **Python 3.12–3.14 support.** `ast.NameConstant` fallbacks removed in 3.14 are gone
+  (`0f321ff`); the suite runs clean on 3.12, 3.13 and 3.14, and classifiers now say so.
+- **Layer 1 had two thresholds.** `precision_recall.py` carried its own
+  `if f1 < 0.75: sys.exit(1)` while `tests/benchmark/gates.yaml` — which calls itself the
+  single source of truth — carried 0.72, so the same build could pass the documented gate and
+  fail the undocumented one. The hard-coded floor is deleted; the script measures and
+  `quality_gate_check.py` decides. **No threshold was lowered.** (`78d8fe5`)
+- **Layer 1 scored non-deterministically** across identical runs. Fixed and pinned; ten
+  consecutive runs now agree to six decimal places, including under three `PYTHONHASHSEED`
+  values. (`cca9265`)
+- Substantial false-positive reduction across the TypeScript scanner: receiver resolution for
+  `.exec`/`.spawn`/`.fetch`, suppression of `child_process` calls with an all-literal argument
+  list, fixed non-shell executables no longer treated as shell execution, declarations and
+  quoted strings no longer treated as calls, `AGENT-041` requiring SQL statement syntax rather
+  than a bare keyword, and weak prompt names requiring corroboration. Measured on a real agent
+  codebase, this took the signal-to-noise ratio from **58:1 to 2.2:1**.
+
+### Known limitations, stated rather than left to be discovered
+
+- **TypeScript and JavaScript analysis is regex-level, not AST-level.** `TreeSitterParser`
+  contains a tree-sitter path; it has never executed in any shipped environment and stays
+  unreached deliberately. Wired up on a scratch build it **lost 2 true positives, added 6
+  known false positives, and broke 42 tests**. The extra remains optional and the declared
+  pin (`tree-sitter = "^0.22.0"` against `^0.23.0` grammars) cannot work in any case.
+  `tests/test_treesitter_differential.py` now blocks anyone enabling it without re-measuring.
+- **Shell scripts are not read.** No scanner opens a `.sh` file.
+- **`AGENT-041` still fires on an unrecognised receiver when the SQL is at the call site.**
+  `zz.execute(f"SELECT * FROM users WHERE name = '{name}'")` is a finding whatever `zz` is,
+  because the argument is evidence on its own. This bullet used to say the rule over-triggers
+  on *any* `.execute()` receiver; that was written before the receiver fix above and is no
+  longer true — `target_agent.execute(task)`, `dispatcher.execute(job)` and
+  `executor.execute(fn, arg)` produce **0 findings** at this release, measured. The cost is
+  now the opposite one: a real database cursor under a name the vocabulary does not know,
+  with its query built upstream, is silence. Both directions are in `ISSUE_REPLIES.md` § 1.
+- **Configuration-derived values are treated as user input.** There is no provenance model
+  separating configuration and internal computation from untrusted input, which is the root of
+  several reported false positives. Open.
+
+### Testing
+
+The suite is **1,924 passed / 1 failed / 4 skipped** (`pytest tests/ packages/audit/tests/`).
+The one failure is deliberate: `tests/test_corpus_label_rules.py` fails because three ground-truth labels still cite a rule
+no code path can emit. It is committed red because ground truth is not the scanner author's to
+edit and a guard that passes while the defect is present is what this project keeps
+rediscovering.
+
+New guards, all of which fail the suite rather than warn:
+
+- `tests/test_rule_producers.py` — every advertised rule must have a producer
+- `tests/test_rule_fixture_coverage.py` — every advertised rule must have an input that makes
+  it fire
+- `tests/test_corpus_label_rules.py` — every corpus label must cite a rule that can be emitted
+- `tests/test_rule_reachability.py` — a rule that fires on a file scan must fire on a
+  directory scan
+- `tests/test_layer1_gate_singleton.py` — there is one Layer 1 threshold and it lives in
+  `gates.yaml`
+- `tests/test_treesitter_differential.py` — enabling tree-sitter may add findings, never
+  remove them
+
 ## [0.19.2] - 2026-07-03
 
 ### Fixed
@@ -172,9 +450,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Quality Metrics
 
 - All 393 tests passing
-- 3 false positives eliminated (Precision: 98.51% → 100%)
-- Recall maintained at 100%
-- F1 Score: 100%
+- ~~3 false positives eliminated (Precision: 98.51% → 100%)~~ **WITHDRAWN 2026-08-11**
+- ~~Recall maintained at 100%~~ **WITHDRAWN 2026-08-11**
+- ~~F1 Score: 100%~~ **WITHDRAWN 2026-08-11**
+
+  > These three lines were never measurements. They are the *target* block of the v0.4.1
+  > development brief, published as an achievement — the brief states `Recall = 100%
+  > (0 FN)` in as many words, and the evaluation output committed alongside this entry
+  > measured 124 false negatives and 47.46% recall. They are struck rather than updated
+  > because no re-run can reproduce them and there is no commit to update them *to*.
+  > See `docs/decisions/METRICS_RETRACTION.md`.
 
 ## [0.4.0] - 2026-02-04
 

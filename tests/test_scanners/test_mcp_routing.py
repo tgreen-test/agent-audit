@@ -209,3 +209,86 @@ mcpServers:
         server_names = {s.name for r in results for s in r.servers}
         assert "server1" in server_names
         assert "server2" in server_names
+
+
+class TestMCPConfigRecursiveDiscovery:
+    """Regression: MCP configs below the scan root were never discovered.
+
+    `_find_config_files` walked the scan root with `path.iterdir()`, which does
+    not recurse, while every other scanner in the package uses `rglob`. A config
+    one directory below the scan root was therefore invisible, so AGENT-029/030/
+    032 could not fire during an ordinary directory scan — which is how the tool
+    is normally invoked, and how the Layer 1 benchmark scans its fixture tree.
+
+    Originating scan: the Layer 1 ASI-04 row read 0.0%; two of its seven labels
+    were detections that existed but were unreachable by directory walk.
+    """
+
+    @pytest.fixture
+    def scanner(self):
+        return MCPConfigScanner()
+
+    @staticmethod
+    def _write_config(target: Path, server_name: str) -> None:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps({
+            "mcpServers": {
+                server_name: {"command": "npx", "args": ["-y", "some-server"]}
+            }
+        }))
+
+    @pytest.mark.parametrize("depth", [1, 2, 3])
+    def test_finds_config_below_scan_root(self, scanner, tmp_path, depth):
+        """A config nested `depth` levels down is found by a scan of the root."""
+        nested = tmp_path.joinpath(*[f"level{i}" for i in range(depth)]) / "mcp.json"
+        self._write_config(nested, "nested-server")
+
+        results = scanner.scan(tmp_path)
+
+        assert len(results) == 1, f"config at depth {depth} was not discovered"
+        assert results[0].servers[0].name == "nested-server"
+
+    def test_nonstandard_filename_below_scan_root(self, scanner, tmp_path):
+        """Recursion applies to the content-sniffed path, not just known names."""
+        self._write_config(tmp_path / "sub" / "whatever.json", "sniffed-server")
+
+        results = scanner.scan(tmp_path)
+
+        assert len(results) == 1
+        assert results[0].servers[0].name == "sniffed-server"
+
+    def test_directory_scan_matches_file_scan(self, scanner, tmp_path):
+        """The invariant the bug broke: same file, same servers, either way in."""
+        config = tmp_path / "pkg" / "conf" / "mcp.json"
+        self._write_config(config, "parity-server")
+
+        via_file = scanner.scan(config)
+        via_dir = scanner.scan(tmp_path)
+
+        assert {s.name for r in via_file for s in r.servers} == \
+               {s.name for r in via_dir for s in r.servers}
+
+    def test_skips_dependency_and_vcs_directories(self, scanner, tmp_path):
+        """Recursion must not walk into node_modules/.git/.venv and friends.
+
+        Without this the fix would read every JSON file in every vendored
+        dependency of every scanned repository.
+        """
+        for noisy in ("node_modules", ".git", "__pycache__", ".venv", "venv"):
+            self._write_config(tmp_path / noisy / "mcp.json", f"{noisy}-server")
+        self._write_config(tmp_path / "src" / "mcp.json", "real-server")
+
+        results = scanner.scan(tmp_path)
+
+        assert {s.name for r in results for s in r.servers} == {"real-server"}
+
+    def test_each_config_reported_once(self, scanner, tmp_path):
+        """A config matching both a known filename and the sniffer is not doubled."""
+        self._write_config(tmp_path / "a" / "mcp.json", "known-name")
+        self._write_config(tmp_path / "b" / "custom.json", "sniffed-name")
+
+        results = scanner.scan(tmp_path)
+
+        paths = [r.source_file for r in results]
+        assert len(paths) == len(set(paths)), f"duplicate config results: {paths}"
+        assert len(results) == 2

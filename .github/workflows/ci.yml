@@ -32,9 +32,19 @@ jobs:
         working-directory: packages/audit
         run: poetry install
 
+      # Both test roots. packages/audit/tests/ (32 tests) was never run by CI and could
+      # not even be collected — see NIGHT_RUN_LEDGER.md W2.
       - name: Run tests
         working-directory: packages/audit
-        run: poetry run pytest ../../tests/ -v --cov=agent_audit --cov-report=xml
+        run: poetry run pytest ../../tests/ tests/ -v --cov=agent_audit --cov-report=xml
+
+      # Guard for W2: the root suite used to import the package only because
+      # tests/benchmark/performance_test.py happened to sort first and mutate sys.path
+      # at import time. A subset run is the cheapest check that imports are declared
+      # (root pytest.ini `pythonpath`) rather than inherited by accident.
+      - name: Run a test subset (import-path regression guard)
+        working-directory: packages/audit
+        run: poetry run pytest ../../tests/test_scanners/ -q
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -86,12 +96,30 @@ jobs:
 
       - name: Run agent-audit self-scan
         working-directory: packages/audit
-        # Self-scan finds false positives in its own regex patterns; don't fail CI
-        run: poetry run agent-audit scan . --format sarif --output agent-audit-results.sarif || true
+        # Findings must not fail CI (the self-scan trips its own regex patterns), but a
+        # scanner *crash* must. A bare `|| true` made those indistinguishable: no SARIF
+        # was produced, the upload step swallowed the miss via continue-on-error, and a
+        # completely broken scanner looked like a clean run. Same failure family as the
+        # benchmark adapter in NIGHT_RUN_LEDGER.md W0.
+        run: |
+          set +e
+          poetry run agent-audit scan . --format sarif --output agent-audit-results.sarif
+          rc=$?
+          set -e
+          echo "agent-audit exited $rc"
+          if [ ! -s agent-audit-results.sarif ]; then
+            echo "::error::self-scan produced no SARIF output (exit $rc) — the scanner did not run"
+            exit 1
+          fi
+          python -c "import json,sys; json.load(open('agent-audit-results.sarif'))" \
+            || { echo "::error::self-scan SARIF is not valid JSON"; exit 1; }
 
       - name: Upload SARIF to GitHub
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
           sarif_file: packages/audit/agent-audit-results.sarif
+        # Retained deliberately: upload-sarif fails on forks and when code-scanning
+        # permissions are unavailable. The scan itself is now hard-gated above, so this
+        # no longer hides a broken scanner — only a publishing-side limitation.
         continue-on-error: true

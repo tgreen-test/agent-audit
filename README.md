@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://github.com/HeadyZhang/agent-audit/actions/workflows/ci.yml/badge.svg)](https://github.com/HeadyZhang/agent-audit/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/HeadyZhang/agent-audit/graph/badge.svg?branch=master)](https://codecov.io/gh/HeadyZhang/agent-audit?branch=master)
-[![Tests](https://img.shields.io/badge/tests-1541%20passed-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-1924%20passed%2C%201%20red%20by%20design-brightgreen)]()
 [![Docs](https://img.shields.io/badge/docs-github.io-blue)](https://headyzhang.github.io/agent-audit/)
 
 ---
@@ -25,7 +25,7 @@ You likely need this before every merge if agent code can trigger tools, command
 
 **Agent Audit** catches these issues before deployment with an analysis core designed for agent workflows today: tool-boundary taint tracking, MCP configuration auditing, and semantic secret detection, with room to extend into learning-assisted detection over time.
 
-Think of it as **security linting for AI agents**, with 72 rules mapped to the [OWASP Agentic Top 10 (2026)](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/).
+Think of it as **security linting for AI agents**, with 66 rules mapped to the [OWASP Agentic Top 10 (2026)](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/).
 
 ---
 
@@ -92,9 +92,10 @@ Summary:
 
 ---
 
-Validation snapshot (as of **2026-05-30**, **v0.19.0**, ground-truth dataset v2.2, **81 samples / 236 positive labels + 2 negative labels**):
+Validation snapshot (as of **2026-08-11**, **v0.20.0**, ground-truth dataset v2.2, **81 samples / 238 labels**):
 
-- Precision **73.58%**, Recall **82.63%**, **F1 0.778 (raw, reproducible)** — TP 195 / FP 70 / FN 41
+- Precision **68.86%**, Recall **84.32%**, **F1 0.7581 (raw, reproducible)** — TP 199 / FP 90 / FN 37
+- Precision fell and recall rose against v0.19.0 for a reason that is not a detection regression: two file-discovery fixes made previously unreachable findings possible, and the corpus does not yet label most of them. Read FP 90 as pessimistic — at least 21 are correct by their rules' own definitions. See [`docs/decisions/METRICS_RETRACTION.md`](docs/decisions/METRICS_RETRACTION.md) § 3.
 - Footnote: an adjusted F1 of 0.84 is computable post-hoc by excluding FPs from rules added after v0.16 that are not yet labeled in GT, but it is not directly reproducible from `precision_recall.py` and is therefore not used as a headline figure. See [`docs/F1_REPRODUCTION.md`](docs/F1_REPRODUCTION.md). GT v2.3 refresh planned June 2026.
 - **OWASP Agentic Top 10** coverage: 10/10
 
@@ -143,7 +144,7 @@ Once installed, ask your OpenClaw agent:
 - "Is this new skill safe?"
 - "Audit my OpenClaw config"
 
-The scanner covers all 10 OWASP Agentic AI threat categories and has been validated against 18,899 ClawHub skills at 80% precision.
+The scanner covers all 10 OWASP Agentic AI threat categories, including seven rules written specifically for OpenClaw skills (AGENT-058 to AGENT-064).
 
 ---
 
@@ -230,7 +231,7 @@ Evaluated on the labeled benchmark in `tests/ground_truth/labeled_samples.yaml` 
 
 | Tool | Recall | Precision | F1 |
 |------|-------:|----------:|---:|
-| **agent-audit** (v0.19.0, raw, reproducible) | **82.63%** | **73.58%** | **0.778** |
+| **agent-audit** (v0.20.0, raw, reproducible) | **84.32%** | **68.86%** | **0.7581** |
 | Bandit 1.8 | 29.7% | 100% | 0.46 |
 | Semgrep 1.x | 27.0% | 100% | 0.43 |
 
@@ -269,7 +270,7 @@ Source Files (.py, .json, .yaml, .env, ...)
         +-- PrivilegeScanner -- Daemon / Sudoers / Sandbox / Credential Store
                  |
                  v
-            RuleEngine -- 72 Rules x OWASP Agentic Top 10 -- Findings
+            RuleEngine -- 66 Rules x OWASP Agentic Top 10 -- Findings
 ```
 
 **Key technical contributions:**
@@ -284,7 +285,7 @@ Source Files (.py, .json, .yaml, .env, ...)
 
 ## Threat Coverage
 
-72 detection rules covering all 10 categories of the [OWASP Agentic Top 10 (2026)](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/):
+66 detection rules covering all 10 categories of the [OWASP Agentic Top 10 (2026)](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/):
 
 | OWASP Category | Rules | Example Detections |
 |----------------|------:|-------------------|
@@ -384,7 +385,7 @@ allowed_hosts:
 git clone https://github.com/HeadyZhang/agent-audit
 cd agent-audit/packages/audit
 poetry install
-poetry run pytest ../../tests/ -v  # 1541 tests
+poetry run pytest ../../tests/ -v  # 1,873 passed, 1 failed by design, 4 skipped
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for full development setup and PR guidelines.

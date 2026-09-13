@@ -7,6 +7,7 @@ from pathlib import Path
 
 import click
 from rich.console import Console
+from rich.markup import escape
 
 console = Console()
 
@@ -94,7 +95,12 @@ def report(
         console.print(f"[green]Report generated:[/green] {result_path}")
 
     except Exception as exc:
-        console.print(f"[red]Error generating report:[/red] {exc}")
+        # escape(), not a bare interpolation. The message this path most often carries is
+        # generator.py's "Install with: pip install agent-audit[report]", and Rich reads
+        # `[report]` in interpolated text as a style tag and prints nothing for it — so the
+        # user was told to `pip install agent-audit`, which does not install reportlab. The
+        # extra is the whole content of the instruction.
+        console.print(f"[red]Error generating report:[/red] {escape(str(exc))}")
         if verbose:
             import traceback
             console.print(traceback.format_exc())

@@ -19,8 +19,16 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any, Tuple
 
 from agent_audit.analysis.entropy import shannon_entropy, entropy_confidence
-from agent_audit.analysis.placeholder_detector import is_placeholder, is_vendor_example
-from agent_audit.analysis.value_analyzer import KNOWN_CREDENTIAL_FORMATS, detect_uuid_format
+from agent_audit.analysis.placeholder_detector import (
+    is_interpolated_value,
+    is_placeholder,
+    is_vendor_example,
+)
+from agent_audit.analysis.value_analyzer import (
+    KNOWN_CREDENTIAL_FORMATS,
+    detect_hex_digest_format,
+    detect_uuid_format,
+)
 from agent_audit.analysis.identifier_analyzer import (
     analyze_identifier,
     IdentifierCategory,
@@ -533,6 +541,27 @@ class SemanticAnalyzer:
                         f"Masked/redacted value detected: {mask_reason}"
                     )
 
+        # === Hex Digest Shape Detection ===
+        # A bare 40-hex string is a SHA-1 — a git object id, a checksum-manifest
+        # entry — not a credential. The AWS secret-key pattern is a bare 40-char
+        # run over the base64 alphabet, which every SHA-1 satisfies, so without
+        # this a repository that pins content by hash reports hundreds of
+        # "Potential AWS Secret Key" findings. Checked with the same standing as
+        # UUID detection below, and for the same reason: it is a shape fact about
+        # the value, independent of context.
+        #
+        # A credential-named identifier does not rescue it. `api_key` set to a
+        # SHA-1 is a content hash stored under an unfortunate name far more often
+        # than it is a secret, and if it really is a secret the value is a digest
+        # of one rather than the secret itself.
+        digest_analysis = detect_hex_digest_format(value)
+        if digest_analysis.is_digest:
+            return (
+                False,
+                0.05,
+                f"Hex digest shape ({digest_analysis.format_name}), not a credential"
+            )
+
         # === NEW: UUID Format Detection ===
         # Check if value is UUID format BEFORE other analysis
         uuid_analysis = detect_uuid_format(value)
@@ -609,9 +638,26 @@ class SemanticAnalyzer:
                 "Value is a URL query parameter (not a hardcoded credential)"
             )
 
+        # === v0.20.0 (issue #8, problem 2): the value IS the interpolation ===
+        # A hardcoded credential is a literal in the source. If the matched value is made
+        # only of interpolation forms, escapes and separators, the source contains no
+        # literal to be hardcoded — whatever the variable beside it is called.
+        #
+        # The reported case: `handle.write(f"email={email}\npassword={password}\n")`, where
+        # the generic secret regex matched the word `password`, captured `{password}\n` as
+        # its value, and the entropy of that string carried it to AGENT-004 at WARN/0.70.
+        # The values there are function parameters. Deliberately narrower than the
+        # env-style branch below, which it also subsumes: `f"sk-{suffix}"` keeps a real
+        # `sk-` prefix and is still analysed.
+        interpolation = is_interpolated_value(value)
+        if interpolation.is_placeholder:
+            return (False, 0.05, f"Not a hardcoded credential: {interpolation.reason}")
+
         # === NEW v0.8.0: F-String ENV Interpolation Detection ===
         # Check if value appears to be an f-string with env-sourced variables
         # This reduces confidence for patterns like: f"postgres://{DB_USER}:{DB_PASS}@..."
+        # Retained for the case the check above does not cover: a value with real literal
+        # content around ALL_CAPS interpolations, e.g. postgres://{DB_USER}:{DB_PASS}@host
         raw_text = candidate.raw_text
         if raw_text and ('{' in raw_text or '${' in raw_text):
             # Check if this looks like Python f-string or JS template literal

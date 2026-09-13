@@ -1,0 +1,100 @@
+{
+  "AGENT-002": {
+    "trigger": "a002/many_tools.py",
+    "scan_dir": "a002",
+    "file": true,
+    "dir": true,
+    "file_rules": [
+      "AGENT-002"
+    ],
+    "dir_rules": [
+      "AGENT-002"
+    ]
+  },
+  "AGENT-027": {
+    "trigger": "a027/prompt.py",
+    "scan_dir": "a027",
+    "file": true,
+    "dir": true,
+    "file_rules": [
+      "AGENT-027"
+    ],
+    "dir_rules": [
+      "AGENT-027"
+    ]
+  },
+  "AGENT-037": {
+    "trigger": "a037/no_approval.py",
+    "scan_dir": "a037",
+    "file": true,
+    "dir": true,
+    "file_rules": [
+      "AGENT-028",
+      "AGENT-037",
+      "AGENT-050"
+    ],
+    "dir_rules": [
+      "AGENT-028",
+      "AGENT-037",
+      "AGENT-050"
+    ]
+  },
+  "AGENT-038": {
+    "trigger": "a038/impersonate.py",
+    "scan_dir": "a038",
+    "file": true,
+    "dir": true,
+    "file_rules": [
+      "AGENT-038",
+      "AGENT-119"
+    ],
+    "dir_rules": [
+      "AGENT-038",
+      "AGENT-119"
+    ]
+  },
+  "AGENT-039": {
+    "trigger": "a039/crew.py",
+    "scan_dir": "a039",
+    "file": true,
+    "dir": true,
+    "file_rules": [
+      "AGENT-039"
+    ],
+    "dir_rules": [
+      "AGENT-039"
+    ]
+  },
+  "AGENT-056": {
+    "trigger": "a056/.mcp.json",
+    "scan_dir": "a056",
+    "file": true,
+    "dir": true,
+    "file_rules": [
+      "AGENT-030",
+      "AGENT-056"
+    ],
+    "dir_rules": [
+      "AGENT-030",
+      "AGENT-056"
+    ]
+  },
+  "AGENT-120@root": {
+    "trigger": "a120root/.claude/settings.json",
+    "scan_dir": "a120root",
+    "file": false,
+    "dir": true,
+    "file_rules": [],
+    "dir_rules": [
+      "AGENT-120"
+    ]
+  },
+  "AGENT-120@nested": {
+    "trigger": "a120nest/project/.claude/settings.json",
+    "scan_dir": "a120nest",
+    "file": false,
+    "dir": false,
+    "file_rules": [],
+    "dir_rules": []
+  }
+}

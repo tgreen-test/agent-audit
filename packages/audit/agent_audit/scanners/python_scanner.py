@@ -19,6 +19,7 @@ from agent_audit.analysis.tool_boundary_detector import (
     FileToolContext,
 )
 from agent_audit.analysis.memory_method_detector import is_agent_memory_method
+from agent_audit.analysis.argv_shape import is_fixed_program_argv
 from agent_audit.analysis.taint_tracker import TaintTracker, TaintAnalysisResult
 
 logger = logging.getLogger(__name__)
@@ -1244,9 +1245,11 @@ class PythonASTVisitor(ast.NodeVisitor):
         """Check if a subprocess call has shell=True."""
         for keyword in node.keywords:
             if keyword.arg == 'shell':
+                # `is True` on purpose: shell=1 / shell="yes" are not shell=True.
+                # (A former ast.NameConstant fallback lived here. NameConstant has been
+                # an alias for ast.Constant since 3.8 and was removed in 3.14, where
+                # merely naming it raised AttributeError for any non-literal shell=.)
                 if isinstance(keyword.value, ast.Constant):
-                    return keyword.value.value is True
-                if isinstance(keyword.value, ast.NameConstant):  # Python 3.7 compat
                     return keyword.value.value is True
         return False
 
@@ -1393,6 +1396,59 @@ class PythonASTVisitor(ast.NodeVisitor):
 
         return None
 
+    @staticmethod
+    def _interpolation_root(expr: ast.expr) -> Optional[str]:
+        """The base identifier an interpolated expression reads, if there is one.
+
+        `user_input` -> 'user_input'; `request.json['q']` -> 'request'; `helper(x)` ->
+        None, because the value comes from a call this pass does not follow.
+        """
+        current: ast.AST = expr
+        while True:
+            if isinstance(current, ast.Name):
+                return current.id
+            if isinstance(current, (ast.Attribute, ast.Subscript)):
+                current = current.value
+                continue
+            return None
+
+    def _fstring_interpolates_inbound_value(self, joined: ast.JoinedStr) -> bool:
+        """Does this f-string interpolate something that arrived from outside the function?
+
+        Issue #8, problem 3. `AGENT-010` fired at BLOCK/1.0 on
+
+            skills_list = get_enabled_skills_for_config(config)
+            return f"<skill_system>{skills_list}</skill_system>"
+
+        with the same confidence as `f"...User request: {user_input}"`, because the check
+        asked only whether an f-string interpolated *anything*.
+
+        The distinction this can honestly draw is one step wide: an inbound parameter
+        going straight into the prompt, versus a local variable that some computation in
+        between produced. It is not a provenance model — `skills_list` above is still
+        derived from a parameter, transitively, and this pass cannot see what the step
+        did with it. So the second case is *downgraded*, not suppressed, and the limit is
+        recorded in CAPABILITY_BOUNDARIES.md rather than papered over with a list of
+        variable names that are "probably config".
+
+        Anything unresolvable — a call, an expression — counts as inbound. An
+        incomplete answer must fail towards reporting.
+        """
+        for value in joined.values:
+            if not isinstance(value, ast.FormattedValue):
+                continue
+            root = self._interpolation_root(value.value)
+            if root is None:
+                return True
+            if root in self._current_function_params:
+                return True
+        return False
+
+    # Confidence for an ASI-01 prompt finding whose interpolations are all one step
+    # removed from the function's inputs. WARN rather than BLOCK: worth a human look,
+    # not worth failing a build over.
+    INDIRECT_PROMPT_CONFIDENCE = 0.5
+
     def _check_system_prompt_concat(self, node: ast.Assign) -> Optional[Dict[str, Any]]:
         """
         ASI-01: Detect system_prompt variable constructed via string concatenation.
@@ -1408,13 +1464,20 @@ class PythonASTVisitor(ast.NodeVisitor):
 
             # Check for f-string
             if isinstance(node.value, ast.JoinedStr):
-                return {
+                finding = {
                     'type': 'system_prompt_fstring',
                     'variable': target.id,
                     'line': node.lineno,
                     'snippet': self._get_line(node.lineno),
                     'owasp_id': 'ASI-01',
                 }
+                if not self._fstring_interpolates_inbound_value(node.value):
+                    finding['confidence'] = self.INDIRECT_PROMPT_CONFIDENCE
+                    finding['note'] = (
+                        'interpolates locals rather than this function\'s inputs — one '
+                        'step removed from an inbound value, see issue #8'
+                    )
+                return finding
 
             # Check for + concatenation
             if isinstance(node.value, ast.BinOp) and isinstance(node.value.op, ast.Add):
@@ -1517,7 +1580,7 @@ class PythonASTVisitor(ast.NodeVisitor):
         if not has_variable_interpolation:
             return None
 
-        return {
+        finding = {
             'type': 'prompt_return_fstring',
             'function': self._current_function,
             'line': node.lineno,
@@ -1525,6 +1588,13 @@ class PythonASTVisitor(ast.NodeVisitor):
             'owasp_id': 'ASI-01',
             'risk': 'Prompt-building function returns f-string with interpolated variables',
         }
+        if not self._fstring_interpolates_inbound_value(node.value):
+            finding['confidence'] = self.INDIRECT_PROMPT_CONFIDENCE
+            finding['note'] = (
+                'interpolates locals rather than this function\'s inputs — one step '
+                'removed from an inbound value, see issue #8'
+            )
+        return finding
 
     def _check_excessive_tools(self, node: ast.Call) -> Optional[Dict[str, Any]]:
         """
@@ -3604,8 +3674,27 @@ class PythonASTVisitor(ast.NodeVisitor):
 
         Pattern: cursor.execute(query) where query is a function parameter.
         This catches cases where the SQL string was constructed upstream.
+
+        v0.20.0 (issue #10): the receiver must also look like a database handle.
+
+        Every other branch of the SQL check requires `looks_like_sql` on the argument.
+        This one cannot — the whole point of KNOWN-008 is that the statement was built
+        somewhere this file cannot see — so with no evidence from the argument and none
+        from the receiver, `x.execute(param)` was reported as SQL injection at confidence
+        1.0 whatever `x` was. In agent code `.execute()` is a common non-SQL idiom:
+        `target_agent.execute(task)`, a task runner, a `concurrent.futures.Executor`, an
+        ORM query builder. See CAPABILITY_BOUNDARIES.md § 1, "no type resolution" — the
+        `.eval`-on-a-Redis-client and `.fetch`-on-a-request-handler families are the same
+        bug under different names.
+
+        The evidence must be positive. Requiring a database-shaped receiver rather than
+        excluding an agent-shaped one means an unrecognised receiver is silence, not a
+        BLOCK-tier accusation.
         """
         if simple_name not in ('execute', 'executemany', 'executescript'):
+            return None
+
+        if not self._receiver_looks_like_db_handle(node):
             return None
 
         # Check if first argument is a variable from function params
@@ -3635,6 +3724,115 @@ class PythonASTVisitor(ast.NodeVisitor):
                 }
 
         return None
+
+    # Receiver names that are database handles in DB-API, SQLAlchemy, Django and the
+    # async drivers. Matched per underscore-separated token, so `db_conn`, `read_cursor`
+    # and `self.session` all qualify and `target_agent` does not.
+    _DB_RECEIVER_TOKENS = frozenset({
+        'cursor', 'cur', 'crsr', 'curs',
+        'conn', 'connection', 'connexion',
+        'db', 'dbh', 'database', 'sqlite', 'sqlite3', 'psycopg', 'psycopg2',
+        'session', 'engine', 'transaction', 'tx', 'trans',
+        'cnx', 'pool',
+    })
+
+    # Calls whose return value is a database handle. `x = conn.cursor()` and
+    # `engine = create_engine(url)` are the two that carry most of the weight.
+    _DB_HANDLE_FACTORIES = frozenset({
+        'cursor', 'connect', 'connection', 'create_engine', 'create_async_engine',
+        'sessionmaker', 'Session', 'AsyncSession', 'scoped_session', 'begin',
+        'acquire', 'get_connection', 'get_cursor', 'get_session', 'get_db',
+    })
+
+    @staticmethod
+    def _receiver_name_parts(receiver: ast.expr) -> List[str]:
+        """The identifier tokens of a receiver expression, lowercased.
+
+        `cursor` -> ['cursor']; `self.db_conn` -> ['db', 'conn']; `pool.acquire()` -> [].
+        Only Name and Attribute chains yield tokens: a call or a subscript is not a name
+        this heuristic can read, and inventing tokens for it would be guessing.
+        """
+        if isinstance(receiver, ast.Name):
+            base = receiver.id
+        elif isinstance(receiver, ast.Attribute):
+            base = receiver.attr
+        else:
+            return []
+        return [part for part in base.lower().split('_') if part]
+
+    def _receiver_is_assigned_a_db_handle(self, name: str) -> bool:
+        """Does an assignment in this file give `name` a database handle?
+
+        Single-file and syntactic, like everything else here: it looks for
+        `name = <...>.cursor()`, `name = sqlite3.connect(...)`, `name = create_engine(...)`
+        and the `with ... as name` form of the same. It does not follow imports and does
+        not know what any function actually returns.
+        """
+        if self._tree is None:
+            return False
+
+        def is_factory_call(value: ast.AST) -> bool:
+            if not isinstance(value, ast.Call):
+                return False
+            func = value.func
+            if isinstance(func, ast.Attribute):
+                return func.attr in self._DB_HANDLE_FACTORIES
+            if isinstance(func, ast.Name):
+                return func.id in self._DB_HANDLE_FACTORIES
+            return False
+
+        for stmt in ast.walk(self._tree):
+            if isinstance(stmt, ast.Assign):
+                if any(
+                    isinstance(target, ast.Name) and target.id == name
+                    for target in stmt.targets
+                ) and is_factory_call(stmt.value):
+                    return True
+            elif isinstance(stmt, (ast.AnnAssign, ast.NamedExpr)):
+                target = stmt.target
+                if (
+                    isinstance(target, ast.Name)
+                    and target.id == name
+                    and stmt.value is not None
+                    and is_factory_call(stmt.value)
+                ):
+                    return True
+            elif isinstance(stmt, (ast.With, ast.AsyncWith)):
+                for item in stmt.items:
+                    var = item.optional_vars
+                    if (
+                        isinstance(var, ast.Name)
+                        and var.id == name
+                        and is_factory_call(item.context_expr)
+                    ):
+                        return True
+        return False
+
+    def _receiver_looks_like_db_handle(self, node: ast.Call) -> bool:
+        """Is the receiver of this `.execute()` plausibly a database handle?
+
+        Two kinds of single-file evidence, either of which is enough:
+
+        1. the receiver is *named* like one (`cursor`, `db_conn`, `self.session`), or
+        2. an assignment in this file gives it one (`cur = conn.cursor()`).
+
+        A bare `execute(...)` with no receiver at all returns False: there is nothing to
+        judge, and the module-level function named `execute` in an agent codebase is far
+        more often a dispatcher than a DB-API call.
+        """
+        func = node.func
+        if not isinstance(func, ast.Attribute):
+            return False
+
+        receiver = func.value
+        tokens = self._receiver_name_parts(receiver)
+        if any(token in self._DB_RECEIVER_TOKENS for token in tokens):
+            return True
+
+        if isinstance(receiver, ast.Name) and self._receiver_is_assigned_a_db_handle(receiver.id):
+            return True
+
+        return False
 
     def _check_orm_raw_sql(
         self,
@@ -3824,6 +4022,14 @@ class PythonASTVisitor(ast.NodeVisitor):
         else:
             # Lower confidence if using local/constant values
             confidence = max(confidence - 0.10, 0.30)
+
+        # issue #8, problem 4: same reduction as _check_subprocess_expanded, applied here
+        # because this branch also reaches subprocess calls. Two producers of AGENT-034
+        # seeing the same call must agree about its shape, or suppressing one just moves
+        # the finding to the other — which is exactly what the first attempt did.
+        fixed_program = is_fixed_program_argv(node, func_name, self._current_function_node)
+        if fixed_program:
+            confidence = max(confidence - 0.25, 0.20)
 
         # Skip if this is already detected by ASI-05 in tool context
         # (avoid duplicate findings)
@@ -4033,6 +4239,14 @@ class PythonASTVisitor(ast.NodeVisitor):
         else:
             confidence = max(confidence - 0.10, 0.30)
 
+        # issue #8, problem 4: the call names its own program, so only its arguments can
+        # move. Reduced rather than dropped — `["pip", "install", pkg]` has the same shape
+        # and is a real supply-chain finding. See analysis/argv_shape.py for why this
+        # cannot be a truth test.
+        fixed_program = is_fixed_program_argv(node, func_name, self._current_function_node)
+        if fixed_program:
+            confidence = max(confidence - 0.25, 0.20)
+
         # Skip if already detected in tool context
         if self._in_tool_function:
             return None  # Will be caught by existing checks
@@ -4051,6 +4265,7 @@ class PythonASTVisitor(ast.NodeVisitor):
             'context_type': context_type,
             'has_shell_true': has_shell_true,
             'has_tainted_input': has_tainted_input,
+            'fixed_program_argv': fixed_program,
             'in_function': self._current_function,
             'in_class': self._current_class,
         }
@@ -4376,13 +4591,13 @@ class PythonASTVisitor(ast.NodeVisitor):
             if not isinstance(child, ast.While):
                 continue
 
-            # Check for while True or while 1
+            # Check for while True or while 1.
+            # (A former ast.NameConstant elif lived here. NameConstant has been an alias
+            # for ast.Constant since 3.8 and was removed in 3.14, where merely naming it
+            # raised AttributeError for any non-literal while test such as `while run:`.)
             is_infinite = False
             if isinstance(child.test, ast.Constant):
                 if child.test.value is True or child.test.value == 1:
-                    is_infinite = True
-            elif isinstance(child.test, ast.NameConstant):
-                if child.test.value is True:
                     is_infinite = True
 
             if not is_infinite:

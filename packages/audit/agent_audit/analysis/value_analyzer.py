@@ -257,6 +257,63 @@ UUID_PATTERNS: List[Tuple[re.Pattern, str, float]] = [
 ]
 
 
+# Hex digest formats. A string of exactly N hex digits and nothing else is a
+# checksum, not a credential: it carries 4 bits per character, whereas every
+# provider secret of comparable length uses a base62/base64 alphabet at ~6.
+#
+# 40 hex is the one that matters in practice — SHA-1, and therefore every git
+# blob/tree/commit object id, every `sha1sum` line, and every lockfile or
+# translation-manifest entry that pins content by hash.
+#
+# Deliberately NOT listed: 64 hex. It is SHA-256, but it is also a raw
+# secp256k1 private key with the `0x` stripped, which the scanner detects
+# elsewhere as a real credential. Suppressing that shape by length alone would
+# trade a false positive for a missed private key. If 64-hex noise ever needs
+# handling it must be done with surrounding context, not shape.
+HEX_DIGEST_PATTERNS: List[Tuple[re.Pattern, str]] = [
+    (re.compile(r'^[a-f0-9]{40}$', re.I), "SHA-1 / git object id (40 hex)"),
+]
+
+
+@dataclass
+class HexDigestAnalysis:
+    """Result of hex-digest shape detection."""
+    is_digest: bool
+    format_name: Optional[str] = None
+
+
+def detect_hex_digest_format(value: str) -> HexDigestAnalysis:
+    """
+    Detect whether a value is a bare hex digest rather than a credential.
+
+    Motivation: the AWS secret-key pattern is a bare 40-character run over the
+    base64 alphabet, which a 40-character SHA-1 satisfies. On a repository that
+    pins content by checksum this produced hundreds of "Potential AWS Secret
+    Key" findings against git object ids. An AWS secret access key is 40
+    characters of base64 and is essentially never all-hex; a 40-character
+    all-hex string is essentially always a digest.
+
+    This is a shape test, not a confidence adjustment: a value either has the
+    digest shape or it does not.
+
+    Args:
+        value: String value to check
+
+    Returns:
+        HexDigestAnalysis with detection result
+    """
+    if not value:
+        return HexDigestAnalysis(is_digest=False)
+
+    value = value.strip()
+
+    for pattern, name in HEX_DIGEST_PATTERNS:
+        if pattern.match(value):
+            return HexDigestAnalysis(is_digest=True, format_name=name)
+
+    return HexDigestAnalysis(is_digest=False)
+
+
 @dataclass
 class UUIDAnalysis:
     """Result of UUID format detection."""

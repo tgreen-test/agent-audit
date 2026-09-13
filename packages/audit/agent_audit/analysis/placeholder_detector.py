@@ -20,6 +20,70 @@ class PlaceholderResult:
     reason: Optional[str] = None
 
 
+# Runtime interpolation forms, in the languages this scanner reads. A value made only of
+# these carries no literal content: whatever it holds at runtime is not in the source.
+_INTERPOLATION_FORMS = re.compile(
+    r"""
+      \$\{[^{}]*\}       # JS/TS template literal, shell:  ${name}
+    | \{\{[^{}]*\}\}     # Jinja / Handlebars:             {{ name }}
+    | \{[^{}]*\}         # Python f-string / str.format:   {name}
+    | %\([^()]*\)[sdrf]  # printf-style with a key:        %(name)s
+    | %[sdrf]            # printf-style positional:        %s
+    """,
+    re.VERBOSE,
+)
+
+# Escapes and separators that carry no secret on their own. Once the interpolations are
+# gone, what is left of `{password}\n` should be nothing rather than a two-character
+# "value" that entropy analysis then scores.
+_ESCAPE_SEQUENCES = re.compile(r"\\[nrtvbf0\\'\"]|\\x[0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4}")
+_SEPARATORS = re.compile(r"[\s\-_:;,./\\|@#=+()\[\]{}<>\"'`!?*&^~$%]")
+
+
+def is_interpolated_value(value: str) -> PlaceholderResult:
+    """Is this "value" a runtime interpolation rather than a literal?
+
+    Issue #8, problem 2: `handle.write(f"email={email}\\npassword={password}\\n")` was
+    reported as AGENT-004, Hardcoded Credentials, at confidence 0.70. The generic
+    secret regex matched the word `password`, took `{password}\\n` as the value, and the
+    entropy of that string carried it over the line. There is no credential in that file
+    — the values are function parameters.
+
+    A hardcoded credential is, definitionally, a literal in the source. If removing every
+    interpolation form, escape sequence and separator leaves nothing behind, then the
+    source contains no literal to be hardcoded, whatever the variable is called.
+
+    This is deliberately narrower than "the line contains an f-string". `f"sk-{suffix}"`
+    keeps its literal `sk-` prefix and is still analysed: a real key with an interpolated
+    tail is a real key. Only a value that is *entirely* interpolation is excluded.
+
+    Returns a PlaceholderResult so it composes with `is_placeholder`, but it is a
+    separate question and has its own reason text — a placeholder is a stand-in a human
+    wrote, this is a value that does not exist until the program runs.
+    """
+    if not value:
+        return PlaceholderResult(is_placeholder=False, confidence=0.0)
+
+    stripped = value.strip().strip('"\'`')
+    if not _INTERPOLATION_FORMS.search(stripped):
+        return PlaceholderResult(is_placeholder=False, confidence=0.0)
+
+    remainder = _INTERPOLATION_FORMS.sub("", stripped)
+    remainder = _ESCAPE_SEQUENCES.sub("", remainder)
+    remainder = _SEPARATORS.sub("", remainder)
+
+    if remainder:
+        # Literal content survives — `sk-{suffix}` and friends. Not this function's case.
+        return PlaceholderResult(is_placeholder=False, confidence=0.0)
+
+    return PlaceholderResult(
+        is_placeholder=True,
+        confidence=0.95,
+        matched_pattern=_INTERPOLATION_FORMS.pattern,
+        reason="value is runtime interpolation, not a literal in the source",
+    )
+
+
 # Placeholder patterns with descriptions
 # Format: (pattern, description, confidence)
 PLACEHOLDER_PATTERNS: List[Tuple[str, str, float]] = [

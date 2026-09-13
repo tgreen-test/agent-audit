@@ -22,11 +22,18 @@ import logging
 import subprocess
 import sys
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import yaml
+
+# Same directory, no package here — this file is always run as a script, which puts its
+# own directory on sys.path. Written explicitly so importing it from a test by path (see
+# tests/test_layer1_determinism.py) does not depend on the caller's cwd.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import provenance  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -124,9 +131,23 @@ def load_ground_truth(path: Path) -> Dict[str, List[VulnerabilityLabel]]:
     return labels
 
 
-def run_scan(fixtures_path: Path) -> List[Finding]:
+@dataclass(frozen=True)
+class ScanOutcome:
+    """A scan's findings, plus which interpreter produced them.
+
+    The interpreter is part of the result, not an implementation detail: this script
+    measures by shelling out to `<python> -m agent_audit`, so the build being measured is
+    whichever `agent_audit` that interpreter imports. `provenance.resolve_runtime_package`
+    asks it, and the answer goes into the stamp written alongside the numbers.
+    """
+
+    findings: List[Finding]
+    python_cmd: Optional[str] = None
+
+
+def run_scan(fixtures_path: Path) -> ScanOutcome:
     """Run agent-audit scan and parse results.
-    
+
     Temporarily disables .agent-audit.yaml ignore rules by renaming the file,
     since benchmark needs to evaluate all findings in test fixtures.
     """
@@ -162,12 +183,12 @@ def run_scan(fixtures_path: Path) -> List[Finding]:
                     break
             except subprocess.TimeoutExpired:
                 logger.error("Scan timed out")
-                return []
+                return ScanOutcome([], python_cmd)
             except FileNotFoundError:
                 continue
         else:
             logger.error("agent-audit not found - tried: " + ", ".join(python_cmds))
-            return []
+            return ScanOutcome([], None)
     finally:
         # Restore config file
         if backup_file and backup_file.exists():
@@ -176,7 +197,7 @@ def run_scan(fixtures_path: Path) -> List[Finding]:
 
     if not result.stdout.strip():
         logger.warning("Empty scan output")
-        return []
+        return ScanOutcome([], python_cmd)
 
     try:
         data = json.loads(result.stdout)
@@ -191,7 +212,7 @@ def run_scan(fixtures_path: Path) -> List[Finding]:
                     continue
         else:
             logger.error(f"Could not parse JSON: {result.stdout[:200]}")
-            return []
+            return ScanOutcome([], python_cmd)
 
     findings = []
     items = data.get("findings", data) if isinstance(data, dict) else data
@@ -221,7 +242,7 @@ def run_scan(fixtures_path: Path) -> List[Finding]:
             )
         )
 
-    return findings
+    return ScanOutcome(findings, python_cmd)
 
 
 @dataclass
@@ -280,7 +301,16 @@ def evaluate(
     # Track which expected vulns were matched for per-ASI
     matched_expected: Set[Tuple[str, int, str]] = set()
 
-    for d_file, d_line, d_rule in detected_vulns:
+    # Iterate in sorted order, not set order. Both `detected_vulns` and
+    # `expected_vulns` are sets, and set iteration order for these tuples varies
+    # with PYTHONHASHSEED. When one detection is within tolerance of two labels,
+    # whichever label the fuzzy loop reached first claimed the match, so the
+    # score moved between runs of the identical command:
+    #     PYTHONHASHSEED=0 -> TP 196, F1 74.95%
+    #     PYTHONHASHSEED=1 -> TP 197, F1 75.19%
+    # A quality gate cannot ratchet against a number that flaps, so the order is
+    # pinned here. See TestEvaluateDeterminism.
+    for d_file, d_line, d_rule in sorted(detected_vulns):
         found_match = False
 
         # Try exact match first
@@ -291,17 +321,26 @@ def evaluate(
             matched_expected.add((d_file, d_line, d_rule))
             found_match = True
         else:
-            # Try fuzzy line match
-            for e_file, e_line, e_rule in expected_vulns:
-                if e_file == d_file and e_rule == d_rule:
-                    if abs(e_line - d_line) <= line_tolerance:
-                        if (e_file, e_line, e_rule) not in matched:
-                            result.true_positives += 1
-                            result.tp_details.append(f"{d_file}:{d_line}~{e_line} {d_rule}")
-                            matched.add((e_file, e_line, e_rule))
-                            matched_expected.add((e_file, e_line, e_rule))
-                            found_match = True
-                            break
+            # Fuzzy line match. Credit the detection to the *nearest* unmatched
+            # label rather than to whichever one iteration happened to reach
+            # first; ties break toward the lower line number.
+            candidates = sorted(
+                (
+                    (abs(e_line - d_line), e_file, e_line, e_rule)
+                    for (e_file, e_line, e_rule) in expected_vulns
+                    if e_file == d_file
+                    and e_rule == d_rule
+                    and abs(e_line - d_line) <= line_tolerance
+                    and (e_file, e_line, e_rule) not in matched
+                )
+            )
+            if candidates:
+                _, e_file, e_line, e_rule = candidates[0]
+                result.true_positives += 1
+                result.tp_details.append(f"{d_file}:{d_line}~{e_line} {d_rule}")
+                matched.add((e_file, e_line, e_rule))
+                matched_expected.add((e_file, e_line, e_rule))
+                found_match = True
 
         if not found_match:
             # Check if this is a finding in a safe file
@@ -314,7 +353,7 @@ def evaluate(
                 result.fp_details.append(f"{d_file}:{d_line} {d_rule} (not labeled)")
 
     # False negatives: expected but not detected
-    for e_file, e_line, e_rule in expected_vulns:
+    for e_file, e_line, e_rule in sorted(expected_vulns):
         if (e_file, e_line, e_rule) not in matched:
             result.false_negatives += 1
             result.fn_details.append(f"{e_file}:{e_line} {e_rule}")
@@ -336,6 +375,50 @@ def evaluate(
     return result, per_asi_metrics
 
 
+GATES_PATH = Path(__file__).parent / "gates.yaml"
+
+
+def load_layer1_gates(path: Path = GATES_PATH) -> Tuple[Dict[str, float], Dict[str, float]]:
+    """Read the Layer 1 ratchet and target from gates.yaml.
+
+    There is deliberately no fallback set of numbers here. This report used to carry
+    its own copy of 0.90 / 0.85 / 0.87 / 0.05, which is a second definition of the
+    figures in gates.yaml `layer1.target` — the same defect this file's exit gate was.
+    If gates.yaml cannot be read, the report says so rather than inventing floors.
+    """
+    try:
+        with open(path) as f:
+            config = yaml.safe_load(f) or {}
+    except OSError as e:
+        logger.warning(f"Could not read {path}: {e}; thresholds will not be reported")
+        return {}, {}
+
+    layer1 = config.get("layer1", {}) or {}
+    return layer1.get("thresholds", {}) or {}, layer1.get("target", {}) or {}
+
+
+def _threshold_lines(
+    result: EvaluationResult, floors: Dict[str, float]
+) -> List[Tuple[str, bool]]:
+    """Build (label, passed) rows for whichever floors the config actually defines."""
+    metrics = (
+        ("precision_min", "Precision", result.precision, False),
+        ("recall_min", "Recall", result.recall, False),
+        ("f1_min", "F1", result.f1_score, False),
+        ("fp_rate_max", "FP Rate", result.false_positive_rate, True),
+    )
+    rows: List[Tuple[str, bool]] = []
+    for key, label, value, is_max in metrics:
+        if key not in floors:
+            continue
+        bound = floors[key]
+        if is_max:
+            rows.append((f"{label} <= {bound:.0%}", value <= bound))
+        else:
+            rows.append((f"{label} >= {bound:.0%}", value >= bound))
+    return rows
+
+
 def print_report(result: EvaluationResult, verbose: bool = False) -> None:
     """Print evaluation report."""
     print("\n" + "=" * 60)
@@ -352,22 +435,27 @@ def print_report(result: EvaluationResult, verbose: bool = False) -> None:
     print(f"  F1-Score:  {result.f1_score:.2%}")
     print(f"  FP Rate:   {result.false_positive_rate:.2%}")
 
-    # Quality gate check
-    print("\nQuality Gate:")
-    gates = [
-        ("Precision >= 90%", result.precision >= 0.90),
-        ("Recall >= 85%", result.recall >= 0.85),
-        ("F1 >= 0.87", result.f1_score >= 0.87),
-        ("FP Rate <= 5%", result.false_positive_rate <= 0.05),
-    ]
+    # Threshold REPORT, read from gates.yaml. Nothing here decides an exit code:
+    # quality_gate_check.py is the only thing that gates Layer 1.
+    ratchet, target = load_layer1_gates()
 
-    all_pass = True
-    for name, passed in gates:
-        status = "PASS" if passed else "FAIL"
-        print(f"  [{status}] {name}")
-        all_pass = all_pass and passed
+    if not ratchet and not target:
+        print(f"\nThresholds: unavailable ({GATES_PATH} could not be read)")
+    else:
+        ratchet_rows = _threshold_lines(result, ratchet)
+        if ratchet_rows:
+            print("\nRatchet (tests/benchmark/gates.yaml layer1.thresholds — blocks CI")
+            print("via quality_gate_check.py, which is what decides the build):")
+            for name, passed in ratchet_rows:
+                print(f"  [{'PASS' if passed else 'FAIL'}] {name}")
+            verdict = "WOULD PASS" if all(p for _, p in ratchet_rows) else "WOULD FAIL"
+            print(f"\n  -> against the ratchet, Layer 1 {verdict}")
 
-    print(f"\n{'QUALITY GATE PASSED' if all_pass else 'QUALITY GATE FAILED'}")
+        target_rows = _threshold_lines(result, target)
+        if target_rows:
+            print("\nTarget (gates.yaml layer1.target — aspirational, never blocks):")
+            for name, passed in target_rows:
+                print(f"  [{'MET' if passed else 'not met'}] {name}")
 
     if verbose:
         if result.tp_details:
@@ -438,9 +526,13 @@ def main() -> None:
         with open(args.scan_results) as f:
             data = json.load(f)
         findings = [Finding(**f) for f in data.get("findings", data)]
+        # Pre-recorded findings: no interpreter ran here, so there is no runtime package
+        # to attribute the numbers to and the stamp says so rather than guessing.
+        scan_python_cmd = None
     else:
         logger.info(f"Running scan on {args.fixtures}")
-        findings = run_scan(args.fixtures)
+        outcome = run_scan(args.fixtures)
+        findings, scan_python_cmd = outcome.findings, outcome.python_cmd
 
     logger.info(f"Got {len(findings)} findings")
 
@@ -460,7 +552,25 @@ def main() -> None:
                 "tp": metrics.tp,
             }
 
+        # The stamp says what this number is a number ABOUT: which labels, which corpus,
+        # which scanner source, and which interpreter's agent_audit actually ran. It is
+        # computed over the paths this invocation used, not the repository defaults — a
+        # measurement against a synthetic corpus must not carry the real corpus's
+        # fingerprint. quality_gate_check.py refuses to gate on a file whose stamp does
+        # not describe the tree it is checking; see tests/benchmark/provenance.py.
+        try:
+            stamp = provenance.current_stamp(
+                python_cmd=scan_python_cmd,
+                ground_truth=args.ground_truth,
+                fixtures=args.fixtures,
+                generated_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            )
+        except provenance.ProvenanceError as exc:
+            logger.warning(f"Could not compute a provenance stamp: {exc}")
+            stamp = {"schema_version": provenance.SCHEMA_VERSION, "error": str(exc)}
+
         output = {
+            "provenance": stamp,
             "true_positives": result.true_positives,
             "false_positives": result.false_positives,
             "false_negatives": result.false_negatives,
@@ -477,13 +587,20 @@ def main() -> None:
             json.dump(output, f, indent=2)
         logger.info(f"Results written to {args.output_json}")
 
-    # Exit with error if quality gate failed.
-    # Threshold is set just below current measured RAW F1 (v0.19.0, 2026-05-30 = 0.778)
-    # so the gate catches regressions without producing a permanent CI red.
-    # Raise to 0.84 once GT label refresh for new rules (AGENT-053+) lands (target: June 2026),
-    # at which point raw F1 ≈ adjusted F1 ≈ 0.84+.
-    if result.f1_score < 0.75:
-        sys.exit(1)
+    # This script MEASURES. It does not gate.
+    #
+    # It used to end with its own `if result.f1_score < 0.75: sys.exit(1)`, a second
+    # blocking Layer 1 floor living alongside `tests/benchmark/gates.yaml`, whose header
+    # calls itself the single source of truth and carries f1_min there. The two never
+    # knew about each other: on 2026-08-11 F1 measured 0.7467, so gates.yaml passed and
+    # this line failed the same build. Before that it was 0.7510 — one thousandth above
+    # the floor, which is the only reason the contradiction had not yet fired.
+    #
+    # The floor now lives in exactly one place. `quality_gate_check.py --config
+    # tests/benchmark/gates.yaml` reads the JSON this script writes and owns the exit
+    # code; .github/workflows/benchmark.yml runs it as a separate step. Do not
+    # reintroduce a threshold here. See DECISIONS.md item 31 and
+    # NIGHT_RUN_LEDGER.md § W24.
 
 
 if __name__ == "__main__":

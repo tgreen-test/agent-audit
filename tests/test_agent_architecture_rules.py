@@ -500,3 +500,82 @@ class TestAgent120HooksPoisoning:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ===========================================================================
+# AGENT-111: a dotted property chain is not a hostname
+# ===========================================================================
+
+
+class TestAgent111HostnameShape:
+    """
+    The internal-hostname pattern was
+    ``[\\w.-]+\\.(?:internal|corp|staging)\\.[\\w.-]+`` with IGNORECASE. ``\\w``
+    includes underscores and capitals and ``.`` is the JavaScript member
+    operator, so every property chain through a property named ``internal``
+    matched: ``this.internal.loadCache``, ``internal.sessions``,
+    ``this.internal.version``.
+
+    Two things separate a host from a property chain, and both are needed.
+    Lowercase DNS labels alone leave ``this.internal.version`` matching; being
+    inside a string literal or carrying an explicit scheme is what a hostname
+    written into source always has and an expression never does.
+
+    Regression source: the audit-target measurement recorded in
+    NIGHT_RUN_LEDGER.md section W17, pattern 4. All 12 of its AGENT-111
+    findings were property chains.
+    """
+
+    def _hostnames(self, tmp_path, body, name="probe.ts"):
+        target = tmp_path / name
+        target.write_text(body, encoding="utf-8")
+        scanner = PackageScanner()
+        out = []
+        for result in scanner.scan(target):
+            out.extend(
+                f for f in result.findings
+                if f.rule_id == "AGENT-111"
+                and "Hostname" in f.title
+            )
+        return out
+
+    # --- Must NOT trigger: property chains ---------------------------------
+
+    def test_this_internal_property_chain_not_flagged(self, tmp_path):
+        assert self._hostnames(tmp_path, "const job = this.internal.loadCache.get(url);\n") == []
+
+    def test_lowercase_property_chain_not_flagged(self, tmp_path):
+        """All-lowercase, so DNS-label shape alone would not have saved it."""
+        assert self._hostnames(tmp_path, "switch (this.internal.version) {\n") == []
+
+    def test_bare_internal_namespace_not_flagged(self, tmp_path):
+        assert self._hostnames(tmp_path, "const records = [...internal.sessions.values()];\n") == []
+
+    def test_staging_property_chain_not_flagged(self, tmp_path):
+        assert self._hostnames(tmp_path, "return config.staging.enabled;\n") == []
+
+    # --- Must STILL trigger: real hostnames --------------------------------
+
+    def test_quoted_internal_hostname_flagged(self, tmp_path):
+        body = 'const API = "https://api.internal.example.com/v1";\n'
+        assert len(self._hostnames(tmp_path, body)) >= 1
+
+    def test_quoted_hostname_without_scheme_flagged(self, tmp_path):
+        body = "const host = 'metrics.corp.example.net';\n"
+        assert len(self._hostnames(tmp_path, body)) >= 1
+
+    def test_unquoted_url_with_scheme_flagged(self, tmp_path):
+        body = "const url = new URL(https://build.staging.example.org/api);\n"
+        assert len(self._hostnames(tmp_path, body)) >= 1
+
+    def test_python_internal_hostname_flagged(self, tmp_path):
+        body = 'BASE_URL = "http://db.internal.example.com:5432"\n'
+        assert len(self._hostnames(tmp_path, body, name="settings.py")) >= 1
+
+    def test_mixed_file_keeps_only_the_hostname(self, tmp_path):
+        body = (
+            "const job = this.internal.loadCache.get(url);\n"
+            "const records = [...internal.sessions.values()];\n"
+            'const API = "https://api.internal.example.com/v1";\n'
+        )
+        assert len(self._hostnames(tmp_path, body)) == 1

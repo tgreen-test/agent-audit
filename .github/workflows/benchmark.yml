@@ -33,8 +33,14 @@ jobs:
           python tests/benchmark/precision_recall.py \
             --output-json results/layer1.json \
             --verbose
-        # NOTE (2026-05-30): continue-on-error removed. This step now fails the
-        # job if precision_recall.py exits non-zero (F1 < 0.75 raw, see script).
+        # NOTE (2026-05-30): continue-on-error removed. This step fails the job if
+        # precision_recall.py exits non-zero — which now means the measurement could
+        # not be produced at all (missing ground truth, unparseable scan output), not
+        # that a threshold was missed.
+        # NOTE (2026-08-11): precision_recall.py used to carry its own
+        # `if f1 < 0.75: sys.exit(1)`, a second Layer 1 floor competing with
+        # tests/benchmark/gates.yaml. It is deleted. The floor is evaluated once, by
+        # the "Layer 1 Quality Gate Check" step below. Do not gate here.
 
       - name: Upload Layer 1 Results
         if: always()  # upload artifacts even on failure for forensics
@@ -43,42 +49,26 @@ jobs:
           name: layer1-results
           path: results/layer1.json
 
+      # NOTE (2026-08-11): the inline Layer 1 gate that used to live here is
+      # deleted. It carried its own floors (P 0.72 / R 0.80 / F1 0.75) while
+      # quality_gates_v2.yaml carried different ones (P 0.90 / R 0.85 / F1 0.87),
+      # and neither knew about the other. Two gates on one layer is how that
+      # contradiction survived six months. Thresholds now live in exactly one
+      # place, tests/benchmark/gates.yaml, and are evaluated by
+      # quality_gate_check.py — which honours its documented exit contract
+      # (0 = pass, 1 = blocking failure, 2 = warnings).
+      # NOTE (2026-08-11): --layers layer1 is required, not cosmetic. A missing results
+      # file for an enabled+blocking layer is now a FAIL rather than a SKIP — because a
+      # SKIP is not counted as a failure, and an empty results directory used to exit 0
+      # (NIGHT_RUN_LEDGER.md § W38). This job measures Layer 1 only; Agent-Vuln-Bench is
+      # measured in its own job and both are checked together by the quality-gate job
+      # below. Naming the layer is how this step says which claim it is making.
       - name: Layer 1 Quality Gate Check
         run: |
-          python3 << 'EOF'
-          import json
-          import sys
-          p = 'results/layer1.json'
-          # Thresholds are set just below current measured v0.19.0 raw performance
-          # (P=73.6%, R=82.6%, F1=0.778). Goal: catch regressions, not gate at
-          # an aspirational number we don't currently meet. Raise these once GT
-          # label refresh for new rules (AGENT-053+) lands; target: June 2026.
-          MIN_PRECISION = 0.72
-          MIN_RECALL = 0.80
-          MIN_F1 = 0.75
-          try:
-              with open(p) as f:
-                  r = json.load(f)
-          except FileNotFoundError:
-              print('::error::Layer 1 results not found — precision_recall.py did not produce results/layer1.json')
-              sys.exit(1)
-          print(f'Precision: {r.get("precision", 0):.2%}')
-          print(f'Recall: {r.get("recall", 0):.2%}')
-          print(f'F1: {r.get("f1_score", 0):.2%}')
-          print(f'TP: {r.get("true_positives", 0)} | FP: {r.get("false_positives", 0)} | FN: {r.get("false_negatives", 0)}')
-          failures = []
-          if r.get('precision', 0) < MIN_PRECISION:
-              failures.append(f'Precision {r["precision"]:.2%} below {MIN_PRECISION:.0%} floor')
-          if r.get('recall', 0) < MIN_RECALL:
-              failures.append(f'Recall {r["recall"]:.2%} below {MIN_RECALL:.0%} floor')
-          if r.get('f1_score', 0) < MIN_F1:
-              failures.append(f'F1 {r["f1_score"]:.2%} below {MIN_F1:.0%} floor')
-          if failures:
-              for w in failures:
-                  print(f'::error::{w}')
-              sys.exit(1)
-          print('::notice::Layer 1 quality gate PASSED')
-          EOF
+          python tests/benchmark/quality_gate_check.py \
+            --config tests/benchmark/gates.yaml \
+            --results results/ \
+            --layers layer1
 
   atlas-coverage:
     runs-on: ubuntu-latest
@@ -168,8 +158,17 @@ jobs:
           if_no_artifact_found: ignore
           workflow_conclusion: success
           branch: main
+        # Retained deliberately: there is genuinely no baseline before the first
+        # successful main-branch run, and a missing baseline must not block the PR.
         continue-on-error: true
 
+      # NOTE: run_eval MUST be invoked as a module, not as a script. It uses relative
+      # imports (`from .adapters...`), and the package directory name contains a hyphen,
+      # so `python .../run_eval.py` fails with
+      #   ImportError: attempted relative import with no known parent package
+      # PYTHONPATH makes the hyphenated package importable from the repo root.
+      # This step previously had continue-on-error: true, so it failed on every run
+      # since it was added and nobody saw it. See NIGHT_RUN_LEDGER.md W3.
       - name: Run Agent-Vuln-Bench
         run: |
           mkdir -p results
@@ -178,21 +177,26 @@ jobs:
             echo "Using baseline from previous run"
             BASELINE_ARG="--baseline results/baseline.json"
           fi
-          python tests/benchmark/agent-vuln-bench/harness/run_eval.py \
+          PYTHONPATH=tests/benchmark python -m "agent-vuln-bench.harness.run_eval" \
             --tool agent-audit \
             --dataset all \
             --output results/avb_results.json \
             --report results/avb_report.md \
             $BASELINE_ARG
-        continue-on-error: true
+          test -s results/avb_results.json \
+            || { echo "::error::run_eval produced no results/avb_results.json"; exit 1; }
 
       - name: Generate baseline (main branch only)
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         run: |
+          # results.json (per-sample), NOT avb_results.json (aggregate CI metrics).
+          # The aggregate file has no samples[], so it yields passing_samples: [] and a
+          # baseline that can never detect a regression. See NIGHT_RUN_LEDGER.md W4.
           python tests/benchmark/scripts/save_avb_baseline.py \
-            --eval-results results/avb_results.json \
+            --eval-results results/results.json \
             --output results/baseline.json
-        continue-on-error: true
+          test -s results/baseline.json \
+            || { echo "::error::baseline.json was not generated"; exit 1; }
 
       - name: Upload AVB Results
         uses: actions/upload-artifact@v4
@@ -206,7 +210,6 @@ jobs:
         with:
           name: avb-baseline
           path: results/baseline.json
-        continue-on-error: true
 
   quality-gate:
     name: Quality Gate Check (v2)
@@ -229,12 +232,30 @@ jobs:
       - name: Install dependencies
         run: pip install pyyaml
 
+      # quality_gate_check.py documents its own exit contract: 0 = pass,
+      # 1 = blocking failure, 2 = warning. Honour it here rather than blanket-masking
+      # the step with continue-on-error, which made the "Quality Gate" job incapable
+      # of ever failing. Thresholds live in tests/benchmark/gates.yaml, the single
+      # source of truth as of 2026-08-11.
+      #
+      # This job checks every layer, and both artifacts it needs are downloaded above.
+      # Note that `actions/checkout` also brings the committed results/layer1.json into
+      # the tree; if the artifact download ever failed to overwrite it, the gate now
+      # rejects it on provenance rather than gating on a file from another commit
+      # (NIGHT_RUN_LEDGER.md § W38).
       - name: Run Quality Gate (v2)
         run: |
+          set +e
           python tests/benchmark/quality_gate_check.py \
-            --config tests/benchmark/quality_gates_v2.yaml \
+            --config tests/benchmark/gates.yaml \
             --results results/
-        continue-on-error: true
+          rc=$?
+          set -e
+          case "$rc" in
+            0) echo "::notice::Quality gate PASSED" ;;
+            2) echo "::warning::Quality gate returned warnings (exit 2), not blocking" ;;
+            *) echo "::error::Quality gate FAILED (exit $rc)"; exit "$rc" ;;
+          esac
 
   compare-tools:
     name: Multi-Tool Comparison (Optional)
@@ -254,10 +275,13 @@ jobs:
           # Install optional tools for comparison (continue on error)
           pip install bandit semgrep || true
 
+      # Module form, as above. continue-on-error is retained here on purpose: this job
+      # is workflow_dispatch/schedule only and depends on third-party tools (bandit,
+      # semgrep) that are installed best-effort. It gates nothing.
       - name: Run Multi-Tool Evaluation
         run: |
           mkdir -p results
-          python tests/benchmark/agent-vuln-bench/harness/run_eval.py \
+          PYTHONPATH=tests/benchmark python -m "agent-vuln-bench.harness.run_eval" \
             --tool all \
             --dataset all \
             --output results/ \

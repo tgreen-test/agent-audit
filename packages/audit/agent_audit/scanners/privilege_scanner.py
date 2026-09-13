@@ -37,6 +37,31 @@ from agent_audit.scanners.base import BaseScanner, ScanResult
 logger = logging.getLogger(__name__)
 
 
+# A comment-only line in a JavaScript/TypeScript source.
+_JS_COMMENT_LINE_RE = re.compile(r"^\s*(?://|/\*|\*)")
+
+# A method or function declaration: it names the operation, it does not perform
+# it. Deliberately narrow — balanced parens are not checked here because this
+# path only ever tests the leading token, and the caller additionally requires
+# no `=` before the call.
+_JS_DECLARATION_RE = re.compile(
+    r"^(?:export\s+)?(?:declare\s+)?"
+    r"(?:abstract\s+|override\s+|async\s+|static\s+|readonly\s+"
+    r"|private\s+|public\s+|protected\s+|function\s+)*"
+    r"[A-Za-z_$][\w$]*\s*\([^;=]*\)\s*(?::\s*[^={]+)?\s*\{?\s*;?\s*$"
+)
+
+# Launchers whose entire purpose is to confine the child process. AGENT-047 is
+# "Subprocess Execution Without Sandbox"; reporting the sandbox itself under
+# that title inverts the finding. Matched only as a quoted program argument, so
+# a mention in prose or a variable named `bwrapPath` does not suppress anything.
+_SANDBOX_LAUNCHER_RE = re.compile(
+    r"""['"`](?:/[\w./-]*/)?"""
+    r"(?:bwrap|bubblewrap|sandbox-exec|firejail|landlock-launcher|nsjail|minijail)"
+    r"""['"`]\s*,"""
+)
+
+
 @dataclass
 class PrivilegeFinding:
     """Internal finding from privilege scanner before conversion to Finding."""
@@ -149,6 +174,24 @@ class PrivilegeScanner(BaseScanner):
     BROWSER_READONLY_PATTERNS: Set[str] = {
         'screenshot', 'pdf', 'title', 'url', 'content', 'textContent',
     }
+
+    # `page.evaluate(() => { ... })` passes a function literal, which is
+    # compiled from this source file and carries no untrusted input. The rule is
+    # "Browser Automation Without Sandbox"; a literal callback neither weakens a
+    # sandbox nor introduces attacker-controlled script. What the rule is for is
+    # `page.evaluate(userScript)` and `page.evaluate(`...${value}`)`, plus the
+    # explicit sandbox-weakening flags, all of which still match.
+    #
+    # Scoped to `page.evaluate` alone, deliberately. addScriptTag and
+    # exposeFunction take an options object whose *content* is the dangerous
+    # part, so "the argument is an object literal" would suppress exactly the
+    # shape that matters there. --no-sandbox, --disable-web-security,
+    # setBypassCSP(true) and the devtools socket are untouched: they say
+    # "without sandbox" outright.
+    BROWSER_FUNCTION_LITERAL_ARG: re.Pattern = re.compile(
+        r"page\.evaluate\s*\(\s*(?:async\s+)?(?:function\b|\(|[A-Za-z_$][\w$]*\s*=>)",
+        re.IGNORECASE,
+    )
 
     # AGENT-046: Credential store access patterns
     CREDENTIAL_STORE_PATTERNS: List[tuple] = [
@@ -589,6 +632,12 @@ class PrivilegeScanner(BaseScanner):
         for line_num, line in enumerate(lines, start=1):
             line_lower = line.lower()
 
+            # A page.evaluate whose argument is a function literal is compiled
+            # from this file; there is no injected script and no weakened
+            # sandbox. See BROWSER_FUNCTION_LITERAL_ARG.
+            if self.BROWSER_FUNCTION_LITERAL_ARG.search(line):
+                continue
+
             # Check for dangerous patterns
             for pattern in self.BROWSER_DANGEROUS_PATTERNS:
                 if pattern.search(line):
@@ -832,6 +881,23 @@ class PrivilegeScanner(BaseScanner):
                 pattern.search(line) for pattern in self.SUBPROCESS_IMPORT_ONLY_JS
             )
             if is_import_only:
+                continue
+
+            # A comment-only line and a method declaration both name the
+            # operation without performing it. The TypeScript scanner learned
+            # this in the same run; this path had no such filter at all, so
+            # `/** Executable to spawn ... */` and `async fork(request) {` were
+            # reported as subprocess execution.
+            if _JS_COMMENT_LINE_RE.match(line):
+                continue
+            if _JS_DECLARATION_RE.match(line.strip()) and "=" not in line.split("(")[0]:
+                continue
+
+            # A launcher whose whole purpose is to confine the child is not
+            # "execution without sandbox". bwrap, sandbox-exec, firejail and the
+            # Landlock launcher were being reported as the very thing they
+            # implement.
+            if _SANDBOX_LAUNCHER_RE.search(line):
                 continue
 
             for pattern in self.SUBPROCESS_DANGEROUS_JS:

@@ -113,3 +113,40 @@ class TestReportCommand:
         result = runner.invoke(cli, ["report", "--help"])
         assert result.exit_code == 0
         assert "PDF audit report" in result.output
+
+    def test_missing_reportlab_names_the_extra(self, scan_json: str, monkeypatch):
+        """The install instruction must survive Rich, not be eaten as a style tag.
+
+        `reportlab` is only needed at generate time, so the `except ImportError` guard around
+        the `ReportGenerator` import never runs and the message the user actually sees is
+        `generator.py`'s "Install with: pip install agent-audit[report]", interpolated into a
+        `console.print`. Rich parsed `[report]` as markup and rendered nothing for it, so the
+        instruction read `pip install agent-audit` — which does not install reportlab. The
+        extra is the entire content of the instruction, so it is what this asserts.
+
+        RUN 11 checked this path by reading the code and recorded it as handled. It was not.
+        """
+        import sys
+
+        class _BlockReportlab:
+            def find_spec(self, name, path=None, target=None):
+                if name == "reportlab" or name.startswith("reportlab."):
+                    raise ImportError("reportlab is not installed (simulated)")
+                return None
+
+        monkeypatch.setattr(sys, "meta_path", [_BlockReportlab(), *sys.meta_path])
+        # Both, and in this order. `generator.HAS_REPORTLAB` is decided once at import time,
+        # so blocking the finder alone changes nothing for a module another test in this file
+        # has already imported — the reason this test passed alone and failed in the file.
+        for mod in [
+            m for m in list(sys.modules)
+            if m.startswith("reportlab") or m.startswith("agent_audit.report")
+        ]:
+            monkeypatch.delitem(sys.modules, mod)
+
+        result = CliRunner().invoke(cli, ["report", scan_json])
+
+        assert result.exit_code == 1
+        assert "agent-audit[report]" in result.output, (
+            "the extra was dropped from the install instruction: " + repr(result.output)
+        )

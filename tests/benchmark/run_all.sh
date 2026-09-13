@@ -33,7 +33,7 @@ echo ""
 # Quality Gate
 echo ">>> [3/3] Running Quality Gate Check..."
 python "$ROOT/tests/benchmark/quality_gate_check.py" \
-    --config "$ROOT/tests/benchmark/quality_gates_v2.yaml" \
+    --config "$ROOT/tests/benchmark/gates.yaml" \
     --results "$RESULTS_DIR"
 GATE_EXIT=$?
 echo ""
