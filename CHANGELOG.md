@@ -169,13 +169,23 @@ eighty-one-sample labelled corpus and says nothing about either feature.
 - **SkillScanner** (`scanners/skill_scanner.py`, twenty-eight tests) analyses `SKILL.md` files
   on every scan, no flag required. It emits a `SKILL-000` / `SKILL-010` / `SKILL-020`
   namespace kept deliberately outside the advertised `AGENT-*` set and outside
-  `RULE_CWE_MAPPING`, so the published count of sixty-six is unaffected by it. Behavioural
-  findings are tier-ceilinged in `rules/skill_rule_context.py` — `SKILL-010` ≤ WARN,
-  `SKILL-020` ≤ INFO — so **SkillScanner cannot fail a build**. Use it to find Skills worth a
-  human read; a quiet result is not evidence a Skill is safe. The cross-lingual fairness
-  evaluation it exists for is pre-registered in `docs/skillscanner/eval/PROTOCOL.md` and is
-  unfinished: no precision or recall figure for it is published here, because none has been
-  measured.
+  `RULE_CWE_MAPPING`, so the published count of sixty-six is unaffected by it. That namespace
+  is tier-ceilinged in `rules/skill_rule_context.py` — `SKILL-010` ≤ WARN, `SKILL-000` and
+  `SKILL-020` ≤ INFO, the first checked exhaustively across [0.0, 1.0] — so **no `SKILL-*`
+  finding can fail a build**. Use them to find Skills worth a human read; a quiet result is not
+  evidence a Skill is safe. The cross-lingual fairness evaluation it exists for is
+  pre-registered in `docs/skillscanner/eval/PROTOCOL.md` and is unfinished: no precision or
+  recall figure for it is published here, because none has been measured.
+- **SkillScanner's Layer 2 *can* fail a build, and that is a behaviour change.** Fenced
+  `python` and `shell` blocks inside a `SKILL.md` are routed through the existing Python and
+  privilege scanners and their findings remapped onto the `SKILL.md` line. Those are ordinary
+  `AGENT-*` findings keeping ordinary tiering — the ceiling above is explicitly scoped to the
+  `SKILL-*` namespace (`skill_rule_context.py`: *"Existing AGENT-\* code-level rules surfaced
+  via Layer 2 keep their existing tiering logic untouched"*). Measured on
+  `tests/fixtures/skills/eval_python`, a Skill whose example block calls `eval()` on a tool
+  argument emits **`AGENT-001` at BLOCK (1.00) and `AGENT-034` at BLOCK (0.95)**. A repository with
+  code inside its `SKILL.md` files can therefore start failing a BLOCK-gated CI job that
+  passed under 0.19.2.
 - **`SKILL-010` can call the Claude API during an ordinary scan.** `get_default_judge()`
   returns `SemanticJudge` when the `anthropic` SDK is importable *and* `ANTHROPIC_API_KEY` is
   set, and that backend sends each `SKILL.md` `description` to `claude-sonnet-4-6`. With no key

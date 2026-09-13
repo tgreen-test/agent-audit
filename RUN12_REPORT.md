@@ -17,8 +17,14 @@ was not installed — and one open question per decision. All four are closed:
 | `"withdrawn in v0.19.3"` on eight surfaces | corrected to `v0.20.0`; fifteen edits across ten files, and `tests/test_published_versions.py` now fails the suite if any published page names a release that does not exist |
 | the flaky wall-clock test | **untouched.** A tolerance is a threshold. The preflight already handles it: if it is the only extra failure, it re-runs it in isolation twice and says out loud that it is a stopwatch |
 
-**One new defect, and it is the interesting part of the run.** RUN 11 checked the
-missing-`reportlab` path by reading the code and recorded it as handled. Executed, it was not:
+**Two claims in this release were checked by reading and were wrong.** One was RUN 11's, one was
+this run's own first draft, and both were caught the same way — by executing the thing instead of
+reading about it. The second is in § 3.1: a release-note bullet said *"SkillScanner cannot fail a
+build"*, and SkillScanner emits BLOCK-tier `AGENT-001` on a fixture in this repository. The
+first:
+
+RUN 11 checked the missing-`reportlab` path by reading the code and recorded it as handled.
+Executed, it was not:
 `agent-audit report` without the extra printed *"Install with: pip install agent-audit"* —
 Rich parsed the `[report]` in the interpolated exception as a style tag and rendered nothing
 for it, so the instruction named the package without the extra that carries the dependency.
@@ -64,13 +70,27 @@ categories (forty-six from the builtin YAML, and those forty-six already cover a
 other twenty cannot lower it). Nothing to cut. No precision, recall or count is printed in a
 report at all.
 
-**Three facts about the preview features that a user needs and no document carried:**
+**Four facts about the preview features that a user needs and no document carried:**
 `langdetect` is a new *required* dependency (six unconditional `Requires-Dist` in 0.19.2, seven
-in 0.20.0, read from the wheel metadata); `agent-audit report` needs the `[report]` extra; and
+in 0.20.0, read from the wheel metadata); `agent-audit report` needs the `[report]` extra;
 `SKILL-010` sends each `SKILL.md` `description` to `claude-sonnet-4-6` whenever the `anthropic`
 SDK is importable **and** `ANTHROPIC_API_KEY` is set — measured both ways without issuing a
-request (`NullJudge` without the key, `SemanticJudge` with it). There is no flag to disable it.
-All three are now in both release documents.
+request (`NullJudge` without the key, `SemanticJudge` with it), and there is no flag to disable
+it; and **SkillScanner can fail a BLOCK-gated CI job**, which is a behaviour change.
+
+That last one began as the opposite claim. The first draft of the release-note bullet said
+*"SkillScanner cannot fail a build"*, lifted from the Phase 1 commit message's *"behavioral
+findings cannot gate CI"* — a true sentence about a different set of rules. The tier ceiling in
+`rules/skill_rule_context.py` is scoped to the `SKILL-*` namespace and says so in its own
+docstring; Layer 2 extracts fenced `python`/`shell` blocks from a `SKILL.md`, runs them through
+the existing scanners, and those findings keep ordinary tiering. Measured on
+`tests/fixtures/skills/eval_python`: **`AGENT-001` at BLOCK 1.00 and `AGENT-034` at BLOCK
+0.95**, both remapped onto the `SKILL.md` line. A repository with code inside its `SKILL.md`
+files can therefore start failing a job that passed under 0.19.2. Both documents now say so.
+The half of the claim that was true is pinned by a test that sweeps [0.0, 1.0]; the half that
+was false was pinned by nothing, which is why reading the commit message was not enough.
+
+All four are now in both release documents.
 
 ### 3.2 W57 — the instance was already fixed, so the work was the class
 

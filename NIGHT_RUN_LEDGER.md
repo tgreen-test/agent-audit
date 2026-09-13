@@ -6796,7 +6796,7 @@ AFTER   $ bash scripts/release_v0200.sh --dry-run          (same tree, uncommitt
 ```
 
 The twine problem is gone and the only remaining one is this run's own edits, which is the
-preflight doing its job. § 11 below is the run after the commit, and it is the one that counts.
+preflight doing its job. § 11 is the run after the commit, and it is the one that counts.
 
 ---
 
@@ -6839,12 +6839,36 @@ tracked. That was the thing worth checking about a chore commit whose subject li
 
 ### 1.2 The preview paragraph
 
-`RELEASE_NOTES_v0.20.0.md` gains a five-bullet block and `CHANGELOG.md` an
-`### Added — shipping as preview` section. Both say the same four things: SkillScanner runs on
-every scan and **cannot fail a build** (tier ceiling: `SKILL-010` ≤ WARN, `SKILL-020` ≤ INFO);
-its namespace is deliberately outside the advertised `AGENT-*` set, so the count of 66 is
-unaffected; `agent-audit report` needs `pip install "agent-audit[report]"`; and `langdetect` is
-a new **required** dependency. Each of those is measured below rather than described.
+`RELEASE_NOTES_v0.20.0.md` gains a six-bullet block and `CHANGELOG.md` an
+`### Added — shipping as preview` section. Both say the same things: no `SKILL-*` finding can
+fail a build (tier ceiling: `SKILL-010` ≤ WARN, `SKILL-000` and `SKILL-020` ≤ INFO), but
+SkillScanner's Layer 2 **can**; its namespace is deliberately outside the advertised `AGENT-*`
+set, so the count of 66 is unaffected; `agent-audit report` needs
+`pip install "agent-audit[report]"`; and `langdetect` is a new **required** dependency. Each of
+those is measured below rather than described.
+
+**The first draft of that bullet was wrong, and it is worth recording how.** It said
+*"SkillScanner cannot fail a build"*, taken from the Phase 1 commit message's *"behavioral
+findings cannot gate CI"* — which is true and is not the same sentence. Checking it against
+`rules/skill_rule_context.py` found the scope stated in the module's own docstring: *"Existing
+AGENT-\* code-level rules surfaced via Layer 2 keep their existing tiering logic untouched."*
+Layer 2 extracts fenced `python` / `shell` blocks from a `SKILL.md`, runs them through the
+existing scanners and remaps the findings onto the `SKILL.md` line, and those keep ordinary
+tiers. Measured rather than reasoned about:
+
+```
+$ python3 -c "…SkillScanner().scan_and_convert(Path('tests/fixtures/skills/eval_python'))"
+AGENT-001    tier=BLOCK      conf=1.00  tests/fixtures/skills/eval_python/SKILL.md:12
+AGENT-034    tier=BLOCK      conf=0.95  tests/fixtures/skills/eval_python/SKILL.md:12
+```
+
+Two BLOCK findings from a Skill whose example block calls `eval()` on a tool argument. So a
+repository with code inside its `SKILL.md` files can start failing a BLOCK-gated CI job that
+passed under 0.19.2 — which is a more useful thing to tell an upgrading user than the reassurance
+the first draft offered, and the opposite of it. Both documents now carry it as its own bullet.
+`SKILL-010`'s own ceiling is checked exhaustively across [0.0, 1.0] by
+`test_skill010_can_never_be_block`, so the half that was true is pinned by a test; the half that
+was false was pinned by nothing, because it was a sentence about a different set of rules.
 
 ### 1.3 The numeric-claim audit — one claim, and it reproduces
 
@@ -7266,3 +7290,58 @@ One guard denial, not bypassed: `git tag -l` and `git merge-base` are read-only 
 matches `tag` and `merge` as verbs. Rewritten as `git for-each-ref` and `git branch --contains`.
 The release script's own use of `git merge-base --is-ancestor` was left as it is — a human runs
 that file.
+
+## 11. The preflight, after the commit — the run that counts
+
+`58f16ea`, clean tree, the same command as § 1's before-and-after:
+
+```
+$ bash scripts/release_v0200.sh --dry-run
+--- preflight verdict
+    OK    every check passed. 58f16ea73e1bbe73d47e990579bb68b57c67fd55 is releasable.
+```
+
+Every section, for the record:
+
+```
+1.1   OK  on fix/py314-blocker; working tree clean
+1.2   OK  version 0.20.0 in all three files; both distribution surfaces say 66 rules;
+      OK  classifiers cover 3.9 through 3.14
+1.3   OK  advertised rules = 66
+1.4   OK  1929 tests accounted for (1924 passed, 1 failed, 4 skipped)
+      OK  tests/test_corpus_label_rules.py is red, as it is committed to be
+      OK  suite: 1 failed, 1924 passed, 4 skipped
+1.5   OK  TP 199 / FP 90 / FN 37; P 68.86% / R 84.32% / F1 75.81%
+1.6   OK  quality gate exit 0
+1.7   OK  AVB recall 100.0%, precision 88.0%
+1.8   OK  guard self-test: passed=11 failed=0
+1.9   NOTE ./run_eval.sh does not exist — UNVERIFIED, unchanged since RUN10
+1.10  OK  wheel sha256 matches the audited build
+      OK  sdist sha256 matches the audited build
+      OK  artifacts clean: identical package content, no local evaluation data,
+          rule count and entry point present (99 package files each, 0 forbidden components)
+1.11  OK  twine: /Users/heady/.venvs/rel/bin/twine   twine version 7.0.0
+      OK  twine check passes on both artifacts
+1.12  OK  remote-tracking ref agrees with the remote; tag v0.20.0 absent here and there
+1.12b OK  push.followTags is unset
+      OK  release_v0200.sh and RELEASE_CHECKLIST.md name every ref they publish
+1.13  OK  TestPyPI 404, PyPI 404 — neither index has 0.20.0
+```
+
+Three `NOTE` lines remain and all three are informational by design: the ten untracked
+working-tree files, `./run_eval.sh` not existing (`DECISIONS.md` item 52), and the seven
+pre-existing commits that stage 3 publishes — which now have a release note and a CHANGELOG
+entry describing them, so the prompt is a confirmation rather than a question.
+
+The stage-3 and stage-4 plan, verbatim, which is the W57 proof:
+
+```
+    +  git push origin master
+    +  git push origin refs/tags/v0.20.0
+```
+
+**Addendum, after that run.** Four documents were then corrected for the overstated
+`cannot fail a build` claim in § 1.2 — `RELEASE_NOTES_v0.20.0.md`, `CHANGELOG.md`, this ledger
+and `RUN12_REPORT.md`. No file under `packages/` changed, so both artifact hashes still hold
+(`git status --short -- packages/` is empty and `shasum` re-confirms `0f38b00a…` / `dd0e21dd…`).
+The dry run was re-run after committing those corrections and reports the same verdict.

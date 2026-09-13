@@ -106,14 +106,23 @@ been measured on a graded corpus the way the core scanner has. Every figure in t
 P 68.86% / R 84.32% / F1 0.7581, and the sixty-six rules behind it — describes `AGENT-*` rules
 on the eighty-one-sample labelled corpus. It says nothing about either of these.
 
-* **SkillScanner** analyses `SKILL.md` files and runs on every scan, no flag. It emits a
-  separate `SKILL-000` / `SKILL-010` / `SKILL-020` namespace, deliberately outside the
-  advertised `AGENT-*` set, and every one of its behavioural findings is tier-ceilinged —
-  `SKILL-010` cannot exceed WARN, `SKILL-020` cannot exceed INFO — so **it cannot fail your
-  build**. Rely on it to point at Skills worth a human read; do not read a quiet
-  SkillScanner as evidence a Skill is safe. Its cross-lingual fairness evaluation is
-  pre-registered in `docs/skillscanner/eval/PROTOCOL.md` and is not finished, so there is no
-  precision or recall figure for it and this release publishes none.
+* **SkillScanner** analyses `SKILL.md` files and runs on every scan, no flag. Its own
+  `SKILL-000` / `SKILL-010` / `SKILL-020` namespace sits deliberately outside the advertised
+  `AGENT-*` set and is tier-ceilinged — `SKILL-010` cannot exceed WARN, `SKILL-000` and
+  `SKILL-020` cannot exceed INFO — so **no `SKILL-*` finding can fail your build**. Rely on
+  those to point at Skills worth a human read; do not read a quiet SkillScanner as evidence a
+  Skill is safe. Its cross-lingual fairness evaluation is pre-registered in
+  `docs/skillscanner/eval/PROTOCOL.md` and is not finished, so there is no precision or recall
+  figure for it and this release publishes none.
+* **One way SkillScanner *can* fail your build, and it is new behaviour.** It also extracts
+  fenced `python` and `shell` blocks from a `SKILL.md` and routes them through the existing
+  Python and privilege scanners, remapping the findings back onto the `SKILL.md` line. Those
+  are ordinary `AGENT-*` findings and keep ordinary tiering: a Skill whose example block
+  calls `eval()` on a tool argument produces **BLOCK-tier `AGENT-001` and `AGENT-034`**,
+  measured on `tests/fixtures/skills/eval_python`. If you gate CI on BLOCK findings and your
+  repository contains `SKILL.md` files with code in them, this release can start failing
+  builds that passed under 0.19.2. That is the scanner working; it is not a `SKILL-*` finding
+  and the ceiling does not apply to it.
 * **One thing to check before you upgrade.** `SKILL-010`'s judge calls the Claude API. It is
   off unless *both* the `anthropic` SDK is installed and `ANTHROPIC_API_KEY` is set in the
   environment, in which case a plain `agent-audit scan` sends the `description` field of each
