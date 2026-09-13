@@ -68,6 +68,11 @@ PUBLISHED_SURFACES = (
     # missed when `packages/audit/pyproject.toml` was corrected from 53 to 66 — the two
     # distribution surfaces sit in the same directory and only one of them was guarded.
     "packages/audit/README.md",
+    # The GitHub release body. Added 2026-09-12 (RUN11) when it was written: it states the
+    # count on the page an upgrading user reads first, which is the definition of a
+    # published surface. Listing it here rather than in DRAFT_SURFACES is deliberate — it
+    # is not a draft, it is the release.
+    "RELEASE_NOTES_v0.20.0.md",
 )
 
 # Outreach drafts. Guarded only once tracked — see the module docstring and

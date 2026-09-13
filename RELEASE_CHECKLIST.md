@@ -24,8 +24,8 @@
 > | **A** | **Establish whether any external material is already submitted, on arXiv, or presented** | **answered for the paper.** It was on arXiv; Heady has corrected `paper/main.tex` and re-uploaded. Still unanswered for the deck and `docs/cais-2026/` |
 > | **B** | **Correct the external surfaces** — ~~`paper/main.tex:325` + `main.pdf`~~ (done by Heady), `agent-audit-slides.html`, `docs/cais-2026/` (5 files) | **two of three remain.** Located and itemised with line numbers in `RUN10_REPORT.md` § 2. Out of scope in RUN 11; nothing outside the repo was read or edited |
 > | **C** | **Look at `openclaw-skill/`** — not scanned (skipped as not-a-paper-repo), but checklist § 2.7 names the ClawHub listing as an outreach destination | **not done** |
-> | 6 | merge, tag, publish | **not done** — the guard blocks all of it, correctly |
-> | 7 | the issue replies | **not done.** Five bodies ready in `ISSUE_REPLIES.md`; #10 closes as fixed, #12 as won't-fix, #11 stays open |
+> | 6 | merge, tag, publish | **not done, and now staged.** `scripts/release_v0200.sh` does all six steps behind a preflight and a per-stage confirmation; `--dry-run` was run and its preflight passes except for `twine`, which is not installed. The guard blocks every mutating step for an automated session, correctly |
+> | 7 | the issue replies | **not done.** Five bodies ready in `ISSUE_REPLIES.md`, re-confirmed current in RUN 11; #10 and #12 close on posting, #8 and #11 stay open, #5 is deferred with labels |
 >
 > **Do not start B before A.** `METRICS_RETRACTION.md` § 5: nothing new is published on top of
 > a surface that still carries a retracted figure — and a v2 with a change note is a different
@@ -41,7 +41,7 @@
 > § 4.
 >
 > Steps 1–5 below are kept as the record of what was done and why. Current measured values:
-> **TP 199 / FP 90 / FN 37, P 0.688581 / R 0.843220 / F1 0.758095**; suite **1,904 passed, 1
+> **TP 199 / FP 90 / FN 37, P 0.688581 / R 0.843220 / F1 0.758095**; suite **1,905 passed, 1
 > failed by design, 4 skipped**.
 
 The branch is `fix/py314-blocker`. Nothing has been pushed, merged, tagged or published.
@@ -173,7 +173,16 @@ them is a publishing decision.
 
 ### 4a. The rule count: 66
 
-`docs/RULES.md:1419` already says 66 and is correct. Everything below does not.
+> **Applied. This table is now a record, not a work list.** Every one of the locations below
+> was corrected in the RUN10/RUN11 passes and `tests/test_published_rule_count.py` guards all
+> nineteen whole-set counts — measured 2026-09-12, all nineteen read 66. Do **not** paste the
+> right-hand column onto a surface without checking it first: this table is exactly the shape
+> of document that `METRICS_RETRACTION.md` § 3a turned out to be, a list of replacement values
+> that went stale while the surfaces it described were corrected. One row here had already
+> gone stale that way and is marked.
+
+`docs/RULES.md:1419` already says 66 and is correct. Everything below did not, when this
+table was written.
 
 | file:line | as written | replace with |
 |---|---|---|
@@ -186,7 +195,7 @@ them is a publishing decision.
 | `README_CN.md:266` | `72 条规则覆盖 …全部 10 类` | `66 条规则覆盖 …全部 10 类` |
 | `docs/index.html:7` | `<meta name="description" … 49 rules mapped to OWASP Agentic Top 10.">` | `… 66 rules mapped to OWASP Agentic Top 10.">` |
 | `docs/index.html:10` | `<meta property="og:description" … 49 rules, OWASP Agentic Top 10 coverage …` | `… 66 rules, OWASP Agentic Top 10 coverage …` |
-| `docs/index.html:896` | `v0.16.0 — 49 rules · 10/10 OWASP coverage · 1,142 tests passing` | `v0.20.0 — 66 rules · 10/10 OWASP coverage · 1,796 tests passing` |
+| `docs/index.html:896` | `v0.16.0 — 49 rules · 10/10 OWASP coverage · 1,142 tests passing` | **stale prescription — the file now reads** `v0.20.0 — 66 rules · 10/10 OWASP coverage · 1,905 tests`, which is the measured count; 1,796 was the count when this row was written |
 | `docs/index.html:1190` | `49 rules · dedup · confidence tiers` | `66 rules · dedup · confidence tiers` |
 | `docs/index.html:1207` | `49 detection rules mapped to every category` | `66 detection rules mapped to every category` |
 | `docs/ARCHITECTURE.md:74` | `# Rule reference (40 rules)` | `# Rule reference (66 rules)` |
@@ -287,7 +296,10 @@ $ agent-audit scan tests/differential_corpus
 
 ## 6. Merge, tag, publish
 
-> **9 commits** are on the branch since `48c1a89` (six when this section was written).
+> **Count them, do not read a count.** This line has said six and then nine, and each
+> correction to it was itself a commit that made it wrong again — it was 9 at `7ddf826`,
+> 10 at `0e5dfcf`, 11 at `a7854bd`. The range is what is stable:
+> `git rev-list --count 48c1a89..HEAD`.
 > Review them as a unit with `git log --oneline 48c1a89..HEAD` — one applies
 > `finalize_run7.sh`, one fixes the quality gate, one fixes two issues, one corrects the
 > published claims, and the rest are documentation and claim guards. The last, `7ddf826`,
@@ -297,14 +309,34 @@ $ agent-audit scan tests/differential_corpus
 > description, and four scanner fixes with their tests.
 
 
+**Run `scripts/release_v0200.sh` rather than these commands.** It stages the same six steps
+behind a preflight that re-runs the whole verification set, a before/after per step, and a
+per-stage confirmation saying whether that step can be undone — and it puts a TestPyPI upload
+and a clean-venv install back out of it *before* the PyPI upload, which is the one step that
+can never be taken back.
+
+```bash
+scripts/release_v0200.sh --dry-run    # the preflight runs for real; nothing else does
+scripts/release_v0200.sh              # then stage by stage, each one asks
+```
+
+The block below is what it automates, kept for reference. **Two differences, both deliberate:**
+
+* `--tags` publishes *every* local tag. One local tag is not on the remote —
+  `skillscanner-core-frozen`, a freeze marker on unreleased work — and `--tags` would push it
+  alongside the release. The script pushes `refs/tags/v0.20.0` and nothing else.
+* the upload below goes straight to the permanent index with no rehearsal.
+
 ```bash
 git checkout master
 git merge --no-ff fix/py314-blocker
 git tag -a v0.20.0 -m "v0.20.0 — corrections: six rules withdrawn, metrics retracted, four reachability fixes"
-git push origin master --tags
+git push origin master
+git push origin refs/tags/v0.20.0
 
 cd packages/audit
-twine upload dist/agent_audit-0.20.0*
+twine upload --repository testpypi dist/agent_audit-0.20.0*   # rehearsal
+twine upload dist/agent_audit-0.20.0*                         # permanent
 ```
 
 ---
@@ -315,11 +347,15 @@ twine upload dist/agent_audit-0.20.0*
 output behind each verdict. **Drafts only — nothing was posted; the guard blocks `gh` writes
 and that is correct for an unattended run.**
 
+**`ISSUE_REPLIES.md` supersedes this table and `ISSUE_TRIAGE.md` where they disagree.** It
+is the later document, its bodies are measured at `bea9901`, and no scanner or rule code has
+changed since — `git diff bea9901..HEAD -- packages/ rules/` is one line of README text.
+
 | # | action |
 |---|---|
 | #12 | close as **won't fix, documented**, with the measurement |
-| #10 | reply, **leave open** — reproduces at HEAD, unchanged |
-| #8 | reply, **leave open** — one of four claims fixed; partial credit is not a closure |
+| #10 | reply, then **close as fixed**. This row used to read *leave open — reproduces at HEAD*; that was written before `9b366fc` and is wrong. Re-measured at `a7854bd` on the reporter's shapes: `target_agent.execute(task)` produces **nothing**, and both true positives in `tp_control.py` still fire |
+| #8 | reply, **leave open** — two of four claims fixed; partial credit is not a closure |
 | #11 | reply, **leave open** — blocked, and its premise is gone |
 | #5 | label `enhancement` / `needs-design`, **leave open** with the deferral reason |
 

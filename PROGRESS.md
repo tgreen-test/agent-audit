@@ -1,17 +1,43 @@
 # PROGRESS
 
-**Session 11 state: COMPLETE. W48–W51 all done.** Read `RUN10_REPORT.md` first (one page),
-then § 6 — **seven decisions, all yours, with the first gating the rest.**
+**RUN 11 state: COMPLETE. W52–W55 all done. The release is staged and waiting for you.**
 
-Nothing pushed, merged, tagged or published. No file outside this repository was edited.
+Nothing pushed, merged, tagged or published. No file outside this repository was read or
+edited.
+
+## The release: what you run
+
+```bash
+python3 -m venv ~/.venvs/rel && ~/.venvs/rel/bin/pip install twine   # the one missing tool
+PATH="$HOME/.venvs/rel/bin:$PATH" scripts/release_v0200.sh --dry-run # preflight for real
+PATH="$HOME/.venvs/rel/bin:$PATH" scripts/release_v0200.sh           # then stage by stage
+```
+
+Six stages, each behind a confirmation that says whether it can be undone: preflight (read
+only) → merge → push `master` → tag and push the tag → **TestPyPI, then install back out of
+it** → PyPI. The rehearsal is deliberately before the permanent step, because PyPI never
+allows re-uploading a version number and a wrong 0.20.0 could only be answered with 0.20.1.
+`--dry-run` prints every command and runs only the preflight.
+
+**Its preflight passes on everything except `twine`, which is not installed.** Verified by
+running it: `RUN11_REPORT.md` § 3, full output in `NIGHT_RUN_LEDGER.md` § W53.
+
+**Read this before stage 3.** Local `master` is 7 commits ahead of `origin/master` — the
+SkillScanner Phase 1–2A work and the PDF report generator, 48 files, whose merge commit says
+*(WIP, pre-0.20.0)*. They are already inside the branch, so the release contains them either
+way and parts of them are in the wheel; the push is when they become public. The script lists
+them and stops. Decide before you answer that prompt.
+
+Then: the GitHub release from the tag with `RELEASE_NOTES_v0.20.0.md` as the body, and the
+five bodies in `ISSUE_REPLIES.md` — #10 and #12 close on posting, #8 and #11 stay open, #5
+keeps its labels.
 
 ## Start here
 
-1. **`RUN10_REPORT.md` § 1** — two sentences on whether v0.20.0 can ship. It cannot yet, and
-   the reason changed this run.
-2. **`RUN10_REPORT.md` § 2** — the external hits, grouped by document.
-3. **`EXTERNAL_CLAIMS_CHECKLIST.md` § 4** — rewritten. It used to certify the scanner; it now
-   records that the scanner was broken and what the fixed run found.
+1. **`RUN11_REPORT.md` § 1** — two sentences on whether v0.20.0 should ship.
+2. **`RUN11_REPORT.md` § 4** — `NEEDS-HEADY`, ranked.
+3. **`RUN10_REPORT.md` § 6** — the external surfaces, still open and still outside this
+   repository: the slide deck and `docs/cais-2026/`.
 
 ## The one thing to read if you read nothing else
 
@@ -70,8 +96,8 @@ surface.
 |---|---|
 | Layer 1 | **TP 199 / FP 90 / FN 37**, P 68.86% / R 84.32% / F1 0.7581 — unchanged; no detection code touched |
 | `quality_gate_check.py` | **exit 0** — 0 failures, 0 warnings, 0 skipped |
-| full suite | **1,904 passed, 1 failed, 4 skipped** (`pytest tests/ packages/audit/tests/`), 1,909 collected |
-| `tests/` alone | **1,872 passed, 1 failed, 4 skipped** |
+| full suite | **1,905 passed, 1 failed, 4 skipped** (`pytest tests/ packages/audit/tests/`), 1,910 collected |
+| `tests/` alone | **1,873 passed, 1 failed, 4 skipped** |
 | the one failure | `tests/test_corpus_label_rules.py`, committed red on purpose |
 | AVB, all three tools | agent-audit R 95.24 / P 86.96 / F1 0.9091 · Bandit R 26.19 / P 100 / F1 0.4151 · Semgrep R 23.81 / P 100 / F1 0.3846 |
 | guard self-test | 11/11 |
@@ -119,6 +145,40 @@ sign.
 tests moved 1,895 → 1,904. Corrected on every current-state surface, and 1,895 added to the
 scanner's stale-count pattern so the next one is caught rather than discovered.
 
+## RUN 11 (2026-09-12) — W53–W55, the release staged
+
+`scripts/release_v0200.sh`, `RELEASE_NOTES_v0.20.0.md`, `RUN11_REPORT.md`, and the eleven-run
+table in `NIGHT_RUN_LEDGER.md` § W55. Evidence for all of it is § W53–W55 of the ledger.
+
+**The script's own preflight found four things, none of which was in any document.**
+
+1. **`twine` is not installed** — the one thing standing between here and stage 5.
+2. **A flaky test.** `performance_test.py::TestThroughput::test_consistent_performance` asserts
+   three wall-clock timings stay within 50% of their average on a scan that takes 0.06s. It
+   failed 1 of 4 whole-suite runs today and passed 10 of 10 on its own. The suite check now
+   compares the *failure set* and re-runs that one test rather than either ignoring a red
+   suite or refusing to release over a stopwatch. **The tolerance was not changed** — that is
+   a threshold.
+3. **Local `master` is 7 commits ahead of `origin/master`** (SkillScanner + PDF report, marked
+   WIP), so the push publishes 64 commits, not 57. Already inside the branch, so it ships
+   either way; the push is when it becomes public.
+4. **`git push origin master --tags`, the command in the checklist, would also publish
+   `skillscanner-core-frozen`** — the one local tag not on the remote. The script pushes the
+   release tag only.
+
+**Three documents would have shipped wrong, all three now corrected with paired evidence:**
+`CHANGELOG.md` said `AGENT-041` still over-triggers on *any* `.execute()` receiver — measured
+0 findings on all three shapes it names, and it sits thirty lines under the fix that made it
+false, on the page that closes issue #10; the same entry published `1796 passed / 1 failed /
+3 skipped` for a release containing 1,905; and `RELEASE_CHECKLIST.md` carried a stale
+prescription (`1,796 tests` onto a surface already reading the measured count), a commit count that drifted
+inside its own correction for the third time, and a § 7 row saying #10 stays open four lines
+below a header saying it closes.
+
+**`ISSUE_REPLIES.md` is confirmed current** — `git diff bea9901..HEAD -- packages/ rules/` is
+one line of README text, so no measurement in it has moved, and #10 was re-run at HEAD on the
+reporter's shapes rather than trusted.
+
 ## Still open
 
 **Yours, and blocking — the full table is `RUN10_REPORT.md` § 6:**
@@ -140,6 +200,11 @@ scanner's stale-count pattern so the next one is caught rather than discovered.
 matches**, and `paper/skillsworkshop/` (the SkillScanner camera-ready and poster) is clean.
 And `main.tex:401`'s "100\% recall on injection/RCE and MCP" is **true** — re-measured at
 v0.20.0, Set A 19/19, Set B 9/9 — so it must **not** be retracted with the rest.
+
+**New from W53–W55, ranked, all in `RUN11_REPORT.md` § 4:** install `twine`; decide whether the
+7 WIP commits go public with the release; the flaky wall-clock test; `"withdrawn in v0.19.3"`
+on eight surfaces naming a version that was never published; and `CAPABILITY_BOUNDARIES.md`
+§ 3 counting seven instances of the defect shape when two more have been identified since.
 
 **Carried, not blocking:** `DECISIONS.md` items 35, 36, 38, 39 rows 2–4, 40, 41, 43, 46.
 New this run: 47–52. `NEXT_ROUND.md` is v0.21.0 and needs no decision to start.

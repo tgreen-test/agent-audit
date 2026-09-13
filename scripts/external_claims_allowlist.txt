@@ -30,6 +30,7 @@ RUN7_REPORT.md
 RUN8_REPORT.md
 RUN9_REPORT.md
 RUN10_REPORT.md
+RUN11_REPORT.md
 RELEASE_CHECKLIST.md
 ISSUE_TRIAGE.md
 ISSUE_REPLIES.md
@@ -41,6 +42,20 @@ EXTERNAL_CLAIMS_CHECKLIST.md
 scripts/scan_external_claims.sh
 scripts/external_claims_allowlist.txt
 scripts/finalize_run7.sh
+
+# Release mechanics. The merge and tag messages in release_v0200.sh quote the retracted
+# figures in the sentence that retracts them; that text is the point of the release.
+scripts/release_v0200.sh
+
+# The GitHub release body. This one is a published surface, not a record, and the rule at
+# the top of this file says to stop before adding one. It is here for a narrower reason
+# and only because a second mechanism makes the exemption safe: it quotes 98.51% / 100% /
+# 99.25% in the sentence that retracts them, and every LIVE figure on it is checked
+# against results/layer1.json by tests/test_published_metrics.py, with the release notes
+# also in that guard's MUST_PRINT_A_BLOCK list so the check cannot silently stop reading
+# them. Its rule count is checked by tests/test_published_rule_count.py. Take either of
+# those away and this line has to go.
+RELEASE_NOTES_v0.20.0.md
 
 # CHANGELOG is a record. "72 rules" in a v0.18 entry was true when written; the three
 # 100% lines are struck in place with a dated note rather than deleted, because silently

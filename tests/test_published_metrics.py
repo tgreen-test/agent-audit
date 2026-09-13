@@ -81,6 +81,12 @@ GUARDED_SURFACES = (
     "docs/COMPETITIVE-COMPARISON.md",
     "docs/BENCHMARK-RESULTS.md",
     "docs/decisions/METRICS_RETRACTION.md",
+    # The GitHub release body. Added 2026-09-12 (RUN11): it prints the Layer 1 measurement
+    # as the current one, under the command that produces it, on the page an upgrading user
+    # reads first. It also quotes the retracted 98.51%/100%/99.25% in order to withdraw
+    # them, which is why it is on the claims scanner's allowlist — this guard is what makes
+    # that exemption safe, by relating the live block to results/layer1.json.
+    "RELEASE_NOTES_v0.20.0.md",
 )
 
 # Surfaces that must yield at least one checked block. If one stops matching, this guard
@@ -90,6 +96,7 @@ MUST_PRINT_A_BLOCK = (
     "CAPABILITY_BOUNDARIES.md",
     "docs/F1_REPRODUCTION.md",
     "docs/decisions/METRICS_RETRACTION.md",
+    "RELEASE_NOTES_v0.20.0.md",
 )
 
 # What ties a block to the Layer 1 measurement. The block body, or the few lines above the

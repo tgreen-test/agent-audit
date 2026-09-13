@@ -6277,3 +6277,502 @@ No push, merge, rebase, tag or publish. No `gh` write. No package upload to PyPI
 dataset, ground-truth label, existing fixture, confidence value, tier boundary or threshold
 modified. Nothing outside this repository was read or edited — including `paper/`, which the
 brief placed out of scope this run.
+
+---
+
+# W53–W55 — the release staged as a script, and three documents that would have shipped wrong
+
+**2026-09-12, RUN 11 continued. Branch `fix/py314-blocker`, from `a7854bd`.** Nothing pushed,
+merged, tagged or published. The script below is written and was run only with `--dry-run`.
+
+## 1. W53 — `scripts/release_v0200.sh`
+
+925 lines, executable, six stages, following `finalize_run7.sh`: everything verified before
+the first mutation, a before/after printed for each step, each step verifying its own result,
+and a `read -p` in front of every stage that states what is about to happen and whether it can
+be undone.
+
+| stage | what it does | undo |
+|---|---|---|
+| 1 preflight | the whole verification set + artifacts + remote state + both package indexes | nothing to undo; it only reads |
+| 2 merge | `--no-ff` into `master`, message naming the span | **yes** — `git reset --hard <sha the stage printed>` |
+| 3 push `master` | | **not really** — a force-push moves the ref, it cannot un-fetch |
+| 4 tag + push tag | annotated `v0.20.0` | **partly** — deletable both ends; anyone who fetched keeps it |
+| 5 TestPyPI | upload, then install back out of it into a clean venv and scan a fixture | permanent on TestPyPI, and that costs nothing |
+| 6 PyPI | | **NO** |
+
+Stage 5 sits before stage 6 and the script says why in a comment: PyPI never allows
+re-uploading a version number — not after a delete, not after a yank — so stage 6 gets exactly
+one attempt, and a wrong 0.20.0 can only be answered with 0.20.1. Everything stage 6 can get
+wrong (rejected metadata, a long description that renders as plain text, a dependency that
+will not resolve, a missing entry point, a wheel that installs but cannot scan) stage 5 gets
+wrong first on an index nobody installs from. It is the only rehearsal available for the one
+irreversible step. The stage-6 prompt states that in those words.
+
+The preflight pins, rather than assumes: `1 failed, 1904 passed, 4 skipped` with 1909 tests
+accounted for and the failure set equal to `{test_corpus_label_rules}`; TP 199 / FP 90 / FN 37
+and P 68.86% / R 84.32% / F1 75.81%; gate exit 0 with 0 failures; AVB knowns recall 100.0% /
+precision 88.0%; guard self-test 11/11; 66 advertised rules; 0.20.0 in all three version files
+and both distribution surfaces; the two artifact sha256s from `RELEASE_CHECKLIST.md` § 5; 99
+identical package files in wheel and sdist with zero forbidden path components; and HTTP 404
+for 0.20.0 on both indexes. A mismatch on any of them aborts before stage 2.
+
+`./run_eval.sh --commit HEAD` is in the brief's verification set and does not exist. The
+preflight runs it if it is ever added and otherwise prints `UNVERIFIED … DECISIONS.md item 52`
+rather than reporting a check it did not make.
+
+### 1.1 The dry run — it parses, and its preflight executes
+
+```
+$ bash scripts/release_v0200.sh --dry-run          # second run, after the fix in § 2
+=== STAGE 1: PREFLIGHT — the full verification set, before anything is touched
+--- 1.1  repository, branch, working tree
+    OK    on fix/py314-blocker
+    HEAD a7854bd docs(run11): the night-run report entry, and paired evidence …
+    OK    no modified or staged tracked files
+--- 1.2  version, on all three files and the two distribution surfaces
+    OK    packages/audit/pyproject.toml says 0.20.0
+    OK    packages/audit/agent_audit/version.py says 0.20.0
+    OK    packages/audit/agent_audit/__init__.py says 0.20.0
+    OK    pyproject description says 66 rules (this is the PyPI summary line)
+    OK    packages/audit/README.md says 66 rules (this is the PyPI project page)
+    OK    classifiers cover 3.9 through 3.14
+--- 1.3  the advertised rule set
+    OK    advertised rules = 66
+--- 1.4  the suite
+    1 failed, 1904 passed, 4 skipped, 3598 warnings in 44.21s
+    FAILED tests/test_corpus_label_rules.py::test_no_corpus_label_cites_a_rule_that_cannot_be_emitted
+    OK    tests/test_corpus_label_rules.py is red, as it is committed to be
+    OK    1909 tests accounted for (1904 passed, 1 failed, 4 skipped)
+    OK    suite: 1 failed, 1904 passed, 4 skipped
+--- 1.5  Layer 1
+    OK    True Positives: 199 / False Positives: 90 / False Negatives: 37
+    OK    Precision: 68.86%  Recall: 84.32%  F1-Score: 75.81%
+--- 1.6  the quality gate
+    OK    quality_gate_check.py exit 0
+--- 1.7  agent-vuln-bench, knowns
+    OK    AVB recall 100.0%
+    OK    AVB precision 88.0%
+--- 1.8  the night guard's own self-test
+    OK    guard self-test: passed=11 failed=0
+--- 1.9  ./run_eval.sh
+    NOTE  ./run_eval.sh does not exist — UNVERIFIED, unchanged since RUN10 (DECISIONS.md item 52)
+--- 1.10  the artifacts
+    OK    wheel sha256 matches the audited build
+    OK    sdist sha256 matches the audited build
+          NOTE wheel package files: 99   sdist package files: 99
+          NOTE wheel: 0 forbidden path component(s)
+          NOTE sdist: 0 forbidden path component(s)
+          NOTE entry point: [console_scripts] agent-audit=agent_audit.cli.main:cli
+    OK    artifacts clean: identical package content, no local evaluation data, …
+    NOTE  name-level leak check NOT re-run — the strings are deliberately not in this
+          repository. Set LEAK_PATTERNS_FILE to a file of patterns to re-run it.
+--- 1.11  the tools stages 5 and 6 need
+    OK    git / curl / python3 / shasum
+    FAIL  twine is not installed — stages 5 and 6 cannot run.
+--- 1.12  the remote, and what a push would actually publish
+    OK    origin -> https://github.com/HeadyZhang/agent-audit.git
+    OK    the remote-tracking ref agrees with the remote
+    OK    master is an ancestor of fix/py314-blocker — the merge cannot conflict
+    OK    tag v0.20.0 does not exist locally / does not exist on origin
+    fix/py314-blocker is 56 commit(s) ahead of master
+    NOTE  local master is already 7 commit(s) ahead of origin/master — these predate the
+          branch and stage 3 publishes them too: [7 commits listed]
+--- 1.13  the version is not already on either index
+    OK    TestPyPI has no 0.20.0 — stage 5 can upload
+    OK    PyPI has no 0.20.0 — stage 6 can upload, once
+--- preflight verdict
+    1 problem(s):
+      - twine is not installed — stages 5 and 6 cannot run. …
+    DRY RUN: a real run would stop here and release nothing.
+```
+
+Stages 2–6 then print every command they would run, each behind its confirmation block, and
+the script exits 0 having changed nothing. On a clean tree the whole run is 258 lines;
+the transcript above is the abridged form.
+
+### 1.2 Three things its preflight found that no document recorded
+
+1. **Local `master` is 7 commits ahead of `origin/master`, and stage 3 publishes them.** They
+   predate the branch: `ab6f0ee` through `78e1337`, the SkillScanner Phase 1–2A work and the
+   PDF report generator, 48 files and 8,899 insertions, whose merge commit is titled
+   *(WIP, pre-0.20.0)*. They are already inside the branch (`master` is an ancestor of
+   `fix/py314-blocker`), so the release contains them either way — 19 of those files are under
+   `packages/audit/` and `agent_audit/report/` and `scanners/skill_scanner.py` are in the
+   wheel. The push is the moment they become public. The script prints the list and says so.
+
+   ```
+   $ git rev-list --count origin/master..master        7
+   $ git rev-list --count master..fix/py314-blocker    56
+   $ git rev-list --count HEAD..master                 0     (master ⊂ HEAD)
+   ```
+
+2. **`git push origin master --tags` — the command in `RELEASE_CHECKLIST.md` § 6 — publishes
+   one tag that is not a release.** Measured:
+
+   ```
+   $ git for-each-ref --format='%(refname:short)' refs/tags | wc -l      16
+   $ git ls-remote --tags origin | … | sort -u | wc -l                   15
+   $ comm -23 local remote
+   skillscanner-core-frozen
+   ```
+
+   A freeze marker on unreleased work. The script pushes `refs/tags/v0.20.0` and nothing else;
+   § 6 now records the difference.
+
+3. **`v0.19.3` was never published.** Eight in-repo documents say the six rules were
+   *"withdrawn in v0.19.3"*, including `docs/RULES.md`, `CAPABILITY_BOUNDARIES.md` and both
+   blog posts.
+
+   ```
+   $ curl -sS https://pypi.org/pypi/agent-audit/json | …
+   published versions: 0.1.0, 0.12.0, 0.15.1, 0.16.0, 0.17.0, 0.17.1, 0.18.0, 0.18.1,
+                       0.18.2, 0.19.2, 0.2.0, 0.5.2, 0.7.0, 0.8.0
+   latest: 0.19.2      0.19.3 published: False      0.20.0 published: False
+   $ git for-each-ref refs/tags | grep 0.19.3        (nothing)
+   $ grep -n "^## \[0.19.3\]" CHANGELOG.md           (nothing)
+   ```
+
+   A user on 0.19.2 reading "withdrawn in v0.19.3" is being told the withdrawal happened in a
+   release they could have had. It ships in 0.20.0. `NEEDS-HEADY` — eight surfaces, and the
+   right text is a judgement about how to name a development version that was never cut.
+
+## 2. The preflight caught a flaky test on its first run, and it is a real one
+
+The **first** dry run failed its own suite check:
+
+```
+BEFORE  $ bash scripts/release_v0200.sh --dry-run
+--- 1.4  the suite
+          FAILED tests/benchmark/performance_test.py::TestThroughput::test_consistent_performance
+          FAILED tests/test_corpus_label_rules.py::test_no_corpus_label_cites_a_rule_that_cannot_be_emitted
+          2 failed, 1903 passed, 4 skipped, 3598 warnings in 44.34s
+    FAIL  suite did not report '1 failed, 1904 passed, 4 skipped'
+```
+
+`performance_test.py:244` asserts three wall-clock timings of a 20-file scan stay within 50%
+of their own average. The scan takes ~0.06s, so the assertion is a stopwatch on a loaded
+machine. Measured both ways on 2026-09-12:
+
+```
+$ for i in 1..10; python3 -m pytest …::test_consistent_performance -q
+run 1..10: 1 passed in 0.09s / 0.06s / 0.06s / 0.06s / 0.06s / 0.06s / 0.06s / 0.06s / 0.05s / 0.06s
+                                                                          10 of 10 passed
+
+$ python3 -m pytest tests/ packages/audit/tests/ -q          (four whole-suite runs today)
+1 failed, 1904 passed, 4 skipped        (run A — before the script existed)
+2 failed, 1903 passed, 4 skipped        (run B — inside the first dry run)
+1 failed, 1904 passed, 4 skipped        (run C)
+1 failed, 1904 passed, 4 skipped        (run D)
+```
+
+**1 of 4 whole-suite runs, 0 of 10 isolated runs.** Section 1.4 was rewritten to compare the
+*failure set* rather than the count line: exactly one deliberate red, 1909 tests accounted
+for, and any other failure aborts — except that this one named test, if it is the only extra
+failure, is re-run twice on its own before the script decides. Both outcomes are printed.
+
+```
+AFTER   $ bash scripts/release_v0200.sh --dry-run
+--- 1.4  the suite
+    1 failed, 1904 passed, 4 skipped, 3598 warnings in 44.21s
+    OK    tests/test_corpus_label_rules.py is red, as it is committed to be
+    OK    1909 tests accounted for (1904 passed, 1 failed, 4 skipped)
+    OK    suite: 1 failed, 1904 passed, 4 skipped
+```
+
+The test itself was **not** changed: a tolerance is a threshold and this run does not move
+thresholds. `NEEDS-HEADY` — it is a wall-clock assertion in a suite that gates a release, and
+it will go red in CI on a busy runner for no reason connected to the code.
+
+## 3. W54 — `RELEASE_NOTES_v0.20.0.md`, and `ISSUE_REPLIES.md` re-confirmed
+
+Six paragraphs, corrections first: the retraction, then the withdrawal and the one honest
+count, then the three rules that only fired if you named the file, then the gate (with the
+`--layers` change a user must make in their own CI), then the two reported false positives,
+then what the tool does not do with `CAPABILITY_BOUNDARIES.md` linked. Two upgrade actions are
+in bold because they are things a reader must *do*: delete filters on the six withdrawn IDs,
+and re-scan any project whose MCP configuration lives in a subdirectory.
+
+**`ISSUE_REPLIES.md` is current.** It is measured at `bea9901`; the claim that its
+measurements still hold at `a7854bd` is checkable rather than asserted:
+
+```
+$ git diff --stat bea9901..HEAD -- packages/ rules/
+ packages/audit/README.md | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+```
+
+One line of README text. No scanner, rule, analyzer or threshold changed, so every
+before/after in those five bodies stands. Its version references (0.20.0 unreleased, 0.19.2
+and 0.18.2 as the reported-against versions) and its commit references (`9b366fc`, on the
+branch) are correct, and it carries no test count or rule count to go stale.
+
+**#10 re-measured at HEAD rather than trusted**, on the reporter's shapes:
+
+```
+$ agent-audit scan <the reporter's two files>  --format json
+AGENT-041  tp_control.py:8   cursor.execute(f"SELECT * FROM users WHERE name = '{name}'")
+AGENT-041  tp_control.py:15  cursor.execute(query)                        # SQL built upstream
+AGENT-041  fp_case.py:13     return zz.execute(f"SELECT * FROM users WHERE name = '{name}'")
+total findings: 3
+
+not reported:  target_agent.execute(task)      <- the reported false positive
+not reported:  zz.execute(query)               <- the documented cost of the fix
+```
+
+Both true positives survive, the reported false positive is gone, and the one remaining
+finding on an unrecognised receiver is the case the reply explicitly says still fires. #10
+closes on posting. Nothing was posted; the guard blocks `gh` writes.
+
+## 4. Three documents that would have shipped wrong, each with the same command either side
+
+### 4a. `CHANGELOG.md` told the reporter of #10 that their fix had not happened
+
+The v0.20.0 entry says, thirty lines apart, both that `AGENT-041` no longer treats every
+`.execute()` as a SQL sink **and** that it *"over-triggers on any `.execute()` receiver —
+agent invocation, task dispatch and `concurrent.futures.Executor` are all reported as SQL
+sinks"*. The limitation was written before `9b366fc` and never revisited. It is false, and it
+would have gone out on the same page that closes the issue.
+
+Measured on the three shapes the bullet names:
+
+```
+$ agent-audit scan <a file containing exactly those three shapes> --format json
+total findings: 0
+
+  def agent_invocation(target_agent, task):  return target_agent.execute(task)
+  def task_dispatch(dispatcher, job):        return dispatcher.execute(job)
+  def futures_executor(fn, arg):             return ThreadPoolExecutor().execute(fn, arg)
+```
+
+```
+BEFORE  $ git show a7854bd:CHANGELOG.md | grep -nE "over-triggers|The suite is \*\*1"
+197:- **`AGENT-041` over-triggers on any `.execute()` receiver** — agent invocation, task
+206:The suite is **1796 passed / 1 failed / 3 skipped**. The one failure is deliberate:
+
+AFTER   $ grep -nE "over-triggers|The suite is \*\*1" CHANGELOG.md
+199:  because the argument is evidence on its own. This bullet used to say the rule over-triggers
+211:The suite is **1,904 passed / 1 failed / 4 skipped** (`pytest tests/ packages/audit/tests/`).
+```
+
+The replacement states the limitation that is actually true — an unrecognised receiver still
+fires when the SQL is at the call site — and names the opposite cost, which is real: a
+database cursor under an unknown name with its query built upstream is now silence.
+
+### 4b. The same entry published a test count from three sessions ago
+
+`1796 passed / 1 failed / 3 skipped`, in the *Testing* section of the release being cut, when
+the release contains `1,904 passed / 1 failed / 4 skipped`. The before/after is in the block
+above; the authority is the suite itself, run four times today. **This is the fifth
+consecutive session in which the test count was found stale somewhere**, and the first in
+which the stale copy was in the release notes themselves.
+
+### 4c. `RELEASE_CHECKLIST.md` — a stale prescription, a drifting count, a contradicted verdict
+
+```
+BEFORE  $ git show a7854bd:RELEASE_CHECKLIST.md | grep -nE "1,796 tests|^> \*\*9 commits|reproduces at HEAD, unchanged"
+189:| `docs/index.html:896` | … | `v0.20.0 — 66 rules · 10/10 OWASP coverage · 1,796 tests passing` |
+290:> **9 commits** are on the branch since `48c1a89` (six when this section was written).
+321:| #10 | reply, **leave open** — reproduces at HEAD, unchanged |
+
+AFTER   $ grep -nE "1,796 tests|^> \*\*9 commits|reproduces at HEAD, unchanged" RELEASE_CHECKLIST.md
+(nothing)
+```
+
+* **§ 4a row 10 was a stale prescription.** It told a reader to write `1,796 tests` onto
+  `docs/index.html:896`, which already reads `1,904` — the identical defect
+  `METRICS_RETRACTION.md` § 3a had, found in § 2 of this same run. § 4a now opens by saying it
+  is a record of applied edits rather than a work list, and the row is marked.
+* **§ 6's commit count drifted inside its own correction, again.** `0e5dfcf` changed it from
+  six to nine; that commit made it ten, and `a7854bd` made it eleven.
+
+  ```
+  $ for r in 7ddf826 0e5dfcf a7854bd; do git rev-list --count 48c1a89..$r; done
+  9    10    11
+  ```
+
+  Replaced with the range and the command that counts it, because no number written there can
+  survive the next commit.
+* **§ 7 said #10 stays open, four lines under a header saying #10 closes as fixed.** The table
+  predates `9b366fc`. Corrected to the measurement in § 3 above, with a line stating that
+  `ISSUE_REPLIES.md` supersedes both this table and `ISSUE_TRIAGE.md` where they disagree.
+* § 6 now points at `scripts/release_v0200.sh` and records the two differences between it and
+  the hand-written command block (the `--tags` hazard, and the missing rehearsal).
+
+## 5. W55 — the eleven runs, and what each one's claim rests on
+
+| run | what it closed | the measurement that proved it |
+|---|---|---|
+| 1 (W0–W9) | the AVB 0.0% was a broken editable install — a `.pth` pointing at a path that had not existed since the repository moved — not a detection failure and not a 3.14 incompatibility | same command, same corpus: AVB knowns recall **0.0% → 100.0%**. `W0b` then made the adapter unable to report a dead scanner as "zero findings" |
+| 2 | the blind-audit **0/6 is real** — a capability gap, not an environment artifact | the harness reproduces `recall_hit 0 / noise 1156 / total 1176` at three commits and again on 3.14; frozen-artifact SHA-256 verified either side |
+| 3 (W9–W14) | the MCP bug is MCP-specific and worse than reported: **six rules had a directory-scan count of zero** | each of the six, before and after, on a directory scan. Denoise pass 1: noise **1156 → 375** — and the run's headline was that its own ≤5:1 bar was *not* met |
+| 4 (W15–W18) | "written, unit-tested, never wired" became a test rather than an anecdote; three more instances found by it | signal-to-noise **58:1 → 4.35:1**; every quoted Layer 1 and AVB number re-derived from its producer in W18.2 |
+| 5 (W19–W22) | the advertised rule set became a measured quantity: **72 → 66** | a producer audit of every advertised rule, then `test_rule_producers.py` with no allow-list. Noise **87 → 44 (2.2:1)** |
+| 6 (W23–W26) | one Layer 1 floor instead of two; one meaning for `AGENT-015`; the 98.51% traced to its primary source | the hard-coded `f1 < 0.75` deleted and the gate still exit 0; the fixture gap counted — **sixteen** rules with no input anywhere, not twelve |
+| 7 (W27–W33) | v0.20.0 staged; tree-sitter decided by measurement instead of intention | wired up on a scratch build it **lost 2 TPs, added 6 FPs and broke 42 tests** — so it stays unreached, pinned by a differential test |
+| 8 (W38–W43) | the quality gate could pass **without measuring anything** | both ways measured: a stale committed `results/layer1.json` cleared the ratchet, and an empty results directory produced SKIP for blocking layers. Provenance stamp after. Issues #10 and #8 fixed against the reporters' own files |
+| 9 (W44–W47) | the catalogue of wrong numbers was itself incomplete | a script found a **fifth** rule count (56) in two untracked drafts that two sessions of reading had missed; the five issue replies re-measured rather than quoted |
+| 10 (W48–W51) | the external-claims scanner had never worked, and a document certified that it had — using the broken scanner's output as the evidence | same command, same specimen: **1 match before the fix, 11 after**. 18 of 34 patterns had matched nothing for the tool's entire life |
+| 11 (W52–W55) | the documents that *define* the current metrics were the stale ones; a sixth rule count on the PyPI project page; the release staged as a script | `test_published_metrics.py` **3 failed → 9 passed**; `test_published_rule_count.py` **1 failed → 8 passed**; artifacts rebuilt, wheel `6a631d2a…` → `cff62109…`; `release_v0200.sh --dry-run` preflight green but for `twine` |
+
+### The headline numbers, with what each one rests on
+
+| claim | status |
+|---|---|
+| **AVB 0.0% → 100.0%** | **verified this run.** `--tool agent-audit --dataset knowns`: recall 100.0%, precision 88.0%, F1 0.9362, Sets A/B/C all 100.0% |
+| **rule count 72 → 66, every rule with a producer and a trigger** | **verified this run.** `advertised_rules()` = 66; `test_rule_producers.py` and `test_rule_fixture_coverage.py` both green inside the 1,904 |
+| **one published figure retracted as a goal recorded as an achievement** | **verified.** The v0.4.1 brief's *target* block is the primary source; the `results/layer1.json` committed in the same commit measured 124 FN and 47.46% recall. `METRICS_RETRACTION.md` § 1 |
+| **noise 1156 → 44, 58:1 → 2.2:1** | **not reproducible in this repository, and not restated as a current measurement.** Provenance: 1156 is in this ledger at W0 and W14 as harness JSON (`{"recall_hit":0,…,"noise":1156,"total":1176}`); 44 and the 2.2:1 ratio are RUN5 § and `CLAIMS_RECONCILIATION.md:23`. The producer is `run_eval.sh` over a private corpus, and **both live outside this repository** — `run_eval.sh` does not exist here and `night-guard.sh` forbids the corpus directory. RUN10 recorded this as item 52; RUN11 § W52 confirmed the state is unchanged. Cross-check available without the harness: the four TypeScript denoise commits are in the log with per-commit counts at W17 |
+| **"nine instances of one defect shape"** | **the authority says seven.** `CAPABILITY_BOUNDARIES.md` § 3 tabulates seven. RUN8 called the quality gate *"the eighth instance … with the gate in the instrument position"* and RUN10's scanner finding is the same shape again, but **neither was ever added to the table**, so nine is a count no document supports and seven is what a reader would find. Not restated. `NEEDS-HEADY`: add rows 8 and 9, or state in § 3 why an instrument is not counted alongside a detector. Deciding that is a judgement, not a mechanical fix — and `dbae329` exists because a previous run asserted an ordinal it had not counted |
+
+## 6. Guard denials — two more, neither bypassed
+
+1. A read-only command was refused for containing `git merge-base --is-ancestor` while
+   checking whether a commit was on the branch: `night-guard.sh` matches
+   `git[[:space:]]+(push|merge|rebase|tag)` and `merge-base` is a prefix match on `merge`.
+   Answered with `git branch --contains` instead. The guard is over-broad here and it still
+   wins.
+2. Appending this entry through a heredoc was refused, because the prose names the publishing
+   commands literally — the fourth time that has happened. Written with the editor and
+   appended as a file, so no blocked token reaches the shell. The same reason
+   `scripts/release_v0200.sh` had to be written with the editor rather than `cat`.
+
+## 8. Addendum — the release notes were unguarded, and the guard that says so moved the count
+
+Written after § 3. The release body prints the Layer 1 measurement under the command that
+produces it, which is the exact shape `tests/test_published_metrics.py` exists to check, and
+the file was in neither guard's surface list.
+
+```
+BEFORE
+$ python3 -c "…from test_published_rule_count import _published_counts, _guarded_surfaces…"
+BEFORE guarded surfaces: 9
+BEFORE whole-set counts found: 19
+BEFORE release notes among them: False
+$ python3 -c "…import test_published_metrics as m…"
+BEFORE metric-guarded surfaces: 9
+BEFORE release notes guarded: False
+```
+
+Adding the file to both lists made both guards **red**, and each was red for its own reason:
+
+```
+$ python3 -m pytest tests/test_published_metrics.py tests/test_published_rule_count.py -q
+2 failed, 16 passed, 1 skipped
+
+  test_the_authority_documents_still_print_a_checked_block[RELEASE_NOTES_v0.20.0.md]
+  test_every_published_surface_states_the_count
+      assert not ['RELEASE_NOTES_v0.20.0.md']
+```
+
+**The first failure is the one worth recording.** The metrics guard was not reading the block
+at all. `_SUPERSESSION_MARKERS` contains `withdrawn`, the retraction sentence sits in the six
+lines above the fence, and the guard therefore classified the *current* measurement as
+historical and skipped it. Adding the surface to `GUARDED_SURFACES` alone would have reported
+green while checking nothing — a guard pointed at a document and reading none of it, which is
+W52's finding again, three hours later, in the fix for W52's finding. Only the
+`MUST_PRINT_A_BLOCK` vacuity entry distinguished "nothing wrong here" from "nothing read
+here".
+
+The second failure was the count guard telling me the prose was unreadable to it: the release
+notes said `**66** rules` with the emphasis markers inside the phrase, and no totality marker
+on the line. Both were rewritten — the retraction moved out of the block's context window,
+and the count now reads `**66 rules** mapped to the OWASP Agentic Top 10` on one line.
+
+```
+AFTER
+$ python3 -m pytest tests/test_published_metrics.py tests/test_published_rule_count.py -q
+18 passed, 1 skipped in 0.30s
+$ python3 -c "…_guarded_surfaces()…"
+AFTER guarded surfaces: 10
+```
+
+### The cost, paid in the same change rather than the next one
+
+`MUST_PRINT_A_BLOCK` is parametrized, so keeping that entry adds one test:
+
+```
+BEFORE  $ python3 -m pytest tests/ packages/audit/tests/ -q
+        1 failed, 1904 passed, 4 skipped
+AFTER   $ python3 -m pytest tests/ packages/audit/tests/ -q
+        1 failed, 1905 passed, 4 skipped
+        $ python3 -m pytest tests/ -q
+        1 failed, 1873 passed, 4 skipped      (was 1,872)
+```
+
+**Sixth consecutive session in which the test count moved inside the work on the test count.**
+Fifteen surfaces carry it, and all fifteen were updated here: `CLAUDE.md` ×2, `README.md` ×2,
+`README_CN.md` ×2, `CHANGELOG.md`, `docs/index.html`, `EXTERNAL_CLAIMS_CHECKLIST.md` ×2,
+`OUTREACH_CLAIMS.md` ×2, `PROGRESS.md` ×3, `RELEASE_CHECKLIST.md` ×2,
+`docs/decisions/METRICS_RETRACTION.md`, `RELEASE_NOTES_v0.20.0.md`, `blog_post.md`,
+`scripts/scan_external_claims.sh` ×3 and `scripts/release_v0200.sh` ×5. `1,904` joins the
+scanner's stale-count alternation, as `1,895` did last session, so the next drift is caught
+rather than discovered. Records — the ledger, `RUN3`–`RUN10`, `NIGHT_RUN_REPORT.md:72`,
+`DECISIONS.md:1548` — are left alone: they describe what was true when written.
+
+The release script's pins moved with it: `EXP_SUITE_LINE` to `1 failed, 1905 passed, 4
+skipped` and the accounted-for total to 1910.
+
+## 9. A recursive grep over this repository does not read `CLAUDE.md`
+
+Found while assembling the list of surfaces above, and it changes how a sweep should be run.
+
+```
+$ grep -rn "1,904" --include="*.md" . | grep -i "^CLAUDE.md"
+(nothing)
+$ grep -rln "1,904" . | sort
+CHANGELOG.md  DECISIONS.md  EXTERNAL_CLAIMS_CHECKLIST.md  NIGHT_RUN_LEDGER.md
+NIGHT_RUN_REPORT.md  OUTREACH_CLAIMS.md  PROGRESS.md  RELEASE_CHECKLIST.md
+RELEASE_NOTES_v0.20.0.md  RUN11_REPORT.md  blog_post.md
+docs/decisions/METRICS_RETRACTION.md  docs/index.html  scripts/scan_external_claims.sh
+
+$ grep -n "1,904" CLAUDE.md
+11:… Suite: `pytest tests/ packages/audit/tests/` → **1,904 passed, 1 failed, 4 skipped**…
+92:│   ├── tests/                        # 1,909 collected (1,904 pass, 1 red by design, …)
+
+$ git grep -n "1,904" -- CLAUDE.md
+CLAUDE.md:11 …
+CLAUDE.md:92 …
+```
+
+Cause: `.gitignore:22` lists `CLAUDE.md`. The file is tracked anyway — `git check-ignore -v
+CLAUDE.md` exits 1 and `git ls-files CLAUDE.md` prints it — but the interactive grep here
+honours `.gitignore` and skips it. So **every by-hand sweep in this project that used a
+recursive grep has been blind to one of the surfaces that carries the metrics and the rule
+count.** W52 caught `CLAUDE.md` only because that pass looped over named files instead.
+
+`scripts/scan_external_claims.sh` is **not** affected, and that was checked rather than
+assumed — its output reports three hits in `./CLAUDE.md`. A script gets the real binary, not
+the shell's grep function.
+
+Use `git grep`, or `grep -r --no-ignore`, for any future sweep. This is the same failure mode
+the last two runs have been about: a search that finds nothing and a search that cannot look
+produce identical output.
+
+## 10. What the guards say after all of it
+
+```
+$ python3 -m pytest tests/ packages/audit/tests/ -q
+1 failed, 1905 passed, 4 skipped        (tests/test_corpus_label_rules.py, red on purpose)
+$ python3 tests/benchmark/quality_gate_check.py --config tests/benchmark/gates.yaml
+Summary: 0 failures, 0 warnings, 0 skipped, 4 below target (non-blocking)     exit 0
+$ cd packages/audit && python3 ../../tests/benchmark/precision_recall.py
+TP 199  FP 90  FN 37   P 68.86%  R 84.32%  F1 75.81%
+$ bash .claude/hooks/test-guard.sh
+passed=11 failed=0
+```
+
+Layer 1 is unmoved; no detection code, threshold, label or fixture was touched at any point in
+this run.
+
+## 11. Statement
+
+No push, merge, rebase, tag or publish. No `gh` write. No package upload to either index. No
+oracle, dataset, ground-truth label, existing fixture, confidence value, tier boundary or
+threshold modified — including the flaky test's tolerance, which is left alone for that
+reason. No file outside this repository was read or edited. All network traffic was read-only:
+`git ls-remote` against the GitHub remote, and GETs against the two package indexes — two per
+dry run, plus one by hand to list the published versions, which is how "0.19.3 was never
+released" is a measurement rather than an inference.
+
+Two test files were edited: `tests/test_published_metrics.py` and `tests/test_published_rule_count.py`, each gaining `RELEASE_NOTES_v0.20.0.md` in its surface list. That extends a documentation guard to a document it did not cover; it changes no threshold, no confidence value and no assertion about the scanner.

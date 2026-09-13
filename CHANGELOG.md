@@ -194,17 +194,22 @@ Read it before treating a clean report as an assurance.
   pin (`tree-sitter = "^0.22.0"` against `^0.23.0` grammars) cannot work in any case.
   `tests/test_treesitter_differential.py` now blocks anyone enabling it without re-measuring.
 - **Shell scripts are not read.** No scanner opens a `.sh` file.
-- **`AGENT-041` over-triggers on any `.execute()` receiver** — agent invocation, task
-  dispatch and `concurrent.futures.Executor` are all reported as SQL sinks. Open, reproduced,
-  see `ISSUE_TRIAGE.md`.
+- **`AGENT-041` still fires on an unrecognised receiver when the SQL is at the call site.**
+  `zz.execute(f"SELECT * FROM users WHERE name = '{name}'")` is a finding whatever `zz` is,
+  because the argument is evidence on its own. This bullet used to say the rule over-triggers
+  on *any* `.execute()` receiver; that was written before the receiver fix above and is no
+  longer true — `target_agent.execute(task)`, `dispatcher.execute(job)` and
+  `executor.execute(fn, arg)` produce **0 findings** at this release, measured. The cost is
+  now the opposite one: a real database cursor under a name the vocabulary does not know,
+  with its query built upstream, is silence. Both directions are in `ISSUE_REPLIES.md` § 1.
 - **Configuration-derived values are treated as user input.** There is no provenance model
   separating configuration and internal computation from untrusted input, which is the root of
   several reported false positives. Open.
 
 ### Testing
 
-The suite is **1796 passed / 1 failed / 3 skipped**. The one failure is deliberate:
-`tests/test_corpus_label_rules.py` fails because three ground-truth labels still cite a rule
+The suite is **1,905 passed / 1 failed / 4 skipped** (`pytest tests/ packages/audit/tests/`).
+The one failure is deliberate: `tests/test_corpus_label_rules.py` fails because three ground-truth labels still cite a rule
 no code path can emit. It is committed red because ground truth is not the scanner author's to
 edit and a guard that passes while the defect is present is what this project keeps
 rediscovering.
