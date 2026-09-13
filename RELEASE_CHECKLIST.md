@@ -287,10 +287,13 @@ $ agent-audit scan tests/differential_corpus
 
 ## 6. Merge, tag, publish
 
-> Six commits are on the branch since `48c1a89`. Review them as a unit with
-> `git log --oneline 48c1a89..HEAD` — one applies `finalize_run7.sh`, one fixes the quality
-> gate, one fixes two issues, one corrects the published claims, and the last two are
-> documentation. `git diff 48c1a89..HEAD -- packages/` is version bumps, the PyPI
+> **9 commits** are on the branch since `48c1a89` (six when this section was written).
+> Review them as a unit with `git log --oneline 48c1a89..HEAD` — one applies
+> `finalize_run7.sh`, one fixes the quality gate, one fixes two issues, one corrects the
+> published claims, and the rest are documentation and claim guards. The last, `7ddf826`,
+> is the pre-release audit: it corrects the three documents that define the current metrics,
+> fixes a sixth rule count on the PyPI project page, and adds
+> `tests/test_published_metrics.py`. `git diff 48c1a89..HEAD -- packages/` is version bumps, the PyPI
 > description, and four scanner fixes with their tests.
 
 
