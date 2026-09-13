@@ -383,7 +383,7 @@ All commands are run from the repository root.
 | `README.md:233`, `README_CN.md:214` | comparison table row: 82.63 / 73.58 / 0.778 | 84.32 / 68.86 / 0.7581 | same |
 | `docs/index.html:927` | headline tile "0.778" | 0.7581 | same |
 | `docs/index.html:1076` | comparison table cell 0.778 | 0.7581 | same |
-| `CLAUDE.md` metrics line | P 73.58 / R 82.63 / F1 0.778, TP 195 / FP 70 / FN 41, "1542 collected" | P 68.86 / R 84.32 / F1 0.7581, TP 199 / FP 90 / FN 37; suite **1,905 passed / 1 failed / 4 skipped** | `python3 tests/benchmark/precision_recall.py` and `python3 -m pytest tests/ -q` |
+| `CLAUDE.md` metrics line | P 73.58 / R 82.63 / F1 0.778, TP 195 / FP 70 / FN 41, "1542 collected" | P 68.86 / R 84.32 / F1 0.7581, TP 199 / FP 90 / FN 37; suite **1,924 passed / 1 failed / 4 skipped** | `python3 tests/benchmark/precision_recall.py` and `python3 -m pytest tests/ -q` |
 | `packages/audit/pyproject.toml:4` | "53 rules" | **66** | `python3 -c "import sys;sys.path.insert(0,'tests');from test_rule_producers import advertised_rules;print(len(advertised_rules()))"` |
 | AVB figures | R 100.0 / P 88.0 / F1 0.9362 | unchanged and unaffected — measured against an explicit oracle | — |
 

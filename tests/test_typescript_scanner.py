@@ -1,6 +1,6 @@
 """Tests for TypeScript/JavaScript security scanner.
 
-**AGENT-034 is gated on a tool boundary from v0.19.3.** The rule is published as
+**AGENT-034 is gated on a tool boundary from v0.20.0.** The rule is published as
 "Tool Function Without Input Validation" and the Python scanner has always gated it
 on `is_tool_entry_point()`; this scanner emitted the same rule ID with no such gate
 until `analysis/ts_tool_boundary_detector.py` was wired in. See

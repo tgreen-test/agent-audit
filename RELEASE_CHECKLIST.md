@@ -1,8 +1,26 @@
 # v0.20.0 release checklist
 
+> **Status, 2026-09-13 (RUN 12). The preflight passes clean — `scripts/release_v0200.sh
+> --dry-run` reports 0 problems, where RUN 11 left 1. Steps 1–5 are DONE and re-verified.
+> What remains is two edits outside this repository, then steps 6–7, and nothing in this
+> repository is waiting on a decision.**
+>
+> **What RUN 12 closed.** The three things RUN 11's preflight surfaced that no document
+> recorded, all three decided by Heady and implemented here: the seven pre-existing commits
+> ship **labelled preview** (`CHANGELOG.md` and `RELEASE_NOTES_v0.20.0.md` now name
+> SkillScanner, `agent-audit report` and the new required `langdetect` dependency); the push
+> publishes **one ref per step**, with § 1.12b now enforcing that as a class — see the ref
+> audit in § 6; and `"withdrawn in v0.19.3"` — a version that was never released — is
+> corrected to v0.20.0 on every surface, with `tests/test_published_versions.py` failing the
+> suite if a published page ever names a release that does not exist. `twine` is installed.
+>
+> **One thing RUN 12 found by executing a path RUN 11 read:** `agent-audit report` without
+> the `[report]` extra printed *"Install with: pip install agent-audit"*, because Rich ate the
+> `[report]` as a style tag. Fixed and pinned; the artifacts were rebuilt, so § 5's hashes
+> moved again.
+>
 > **Status, 2026-09-12 (RUN 11). Steps 1–5 are DONE and re-verified; the artifacts were
-> rebuilt this run because one of them was wrong. What remains is two edits outside this
-> repository, then steps 6–7.**
+> rebuilt this run because one of them was wrong.**
 >
 > **Blocker A is answered for the paper.** Heady corrected `paper/main.tex` and re-uploaded
 > the arXiv paper. That closes row B's paper item and removes the ordering constraint that
@@ -24,7 +42,7 @@
 > | **A** | **Establish whether any external material is already submitted, on arXiv, or presented** | **answered for the paper.** It was on arXiv; Heady has corrected `paper/main.tex` and re-uploaded. Still unanswered for the deck and `docs/cais-2026/` |
 > | **B** | **Correct the external surfaces** — ~~`paper/main.tex:325` + `main.pdf`~~ (done by Heady), `agent-audit-slides.html`, `docs/cais-2026/` (5 files) | **two of three remain.** Located and itemised with line numbers in `RUN10_REPORT.md` § 2. Out of scope in RUN 11; nothing outside the repo was read or edited |
 > | **C** | **Look at `openclaw-skill/`** — not scanned (skipped as not-a-paper-repo), but checklist § 2.7 names the ClawHub listing as an outreach destination | **not done** |
-> | 6 | merge, tag, publish | **not done, and now staged.** `scripts/release_v0200.sh` does all six steps behind a preflight and a per-stage confirmation; `--dry-run` was run and its preflight passes except for `twine`, which is not installed. The guard blocks every mutating step for an automated session, correctly |
+> | 6 | merge, tag, publish | **not done, and now staged, with a preflight that passes clean.** `scripts/release_v0200.sh` does all six steps behind a preflight and a per-stage confirmation. `twine` 7.0.0 is installed in `~/.venvs/rel`, where § 1.11 now looks for it (`TWINE_BIN` overrides), and `twine check` **PASSES** on both artifacts. `--dry-run` reports **0 problems**. The guard blocks every mutating step for an automated session, correctly — a human runs it |
 > | 7 | the issue replies | **not done.** Five bodies ready in `ISSUE_REPLIES.md`, re-confirmed current in RUN 11; #10 and #12 close on posting, #8 and #11 stay open, #5 is deferred with labels |
 >
 > **Do not start B before A.** `METRICS_RETRACTION.md` § 5: nothing new is published on top of
@@ -41,7 +59,7 @@
 > § 4.
 >
 > Steps 1–5 below are kept as the record of what was done and why. Current measured values:
-> **TP 199 / FP 90 / FN 37, P 0.688581 / R 0.843220 / F1 0.758095**; suite **1,905 passed, 1
+> **TP 199 / FP 90 / FN 37, P 0.688581 / R 0.843220 / F1 0.758095**; suite **1,924 passed, 1
 > failed by design, 4 skipped**.
 
 The branch is `fix/py314-blocker`. Nothing has been pushed, merged, tagged or published.
@@ -195,7 +213,7 @@ table was written.
 | `README_CN.md:266` | `72 条规则覆盖 …全部 10 类` | `66 条规则覆盖 …全部 10 类` |
 | `docs/index.html:7` | `<meta name="description" … 49 rules mapped to OWASP Agentic Top 10.">` | `… 66 rules mapped to OWASP Agentic Top 10.">` |
 | `docs/index.html:10` | `<meta property="og:description" … 49 rules, OWASP Agentic Top 10 coverage …` | `… 66 rules, OWASP Agentic Top 10 coverage …` |
-| `docs/index.html:896` | `v0.16.0 — 49 rules · 10/10 OWASP coverage · 1,142 tests passing` | **stale prescription — the file now reads** `v0.20.0 — 66 rules · 10/10 OWASP coverage · 1,905 tests`, which is the measured count; 1,796 was the count when this row was written |
+| `docs/index.html:896` | `v0.16.0 — 49 rules · 10/10 OWASP coverage · 1,142 tests passing` | **stale prescription — the file now reads** `v0.20.0 — 66 rules · 10/10 OWASP coverage · 1,924 tests`, which is the measured count; 1,796 was the count when this row was written |
 | `docs/index.html:1190` | `49 rules · dedup · confidence tiers` | `66 rules · dedup · confidence tiers` |
 | `docs/index.html:1207` | `49 detection rules mapped to every category` | `66 detection rules mapped to every category` |
 | `docs/ARCHITECTURE.md:74` | `# Rule reference (40 rules)` | `# Rule reference (66 rules)` |
@@ -246,15 +264,28 @@ rm -rf dist/agent_audit-0.20.0*
 python3 -m build          # needs `pip install build` in a venv; poetry-core does the rest
 ```
 
-Artifacts, rebuilt and verified 2026-09-12 (RUN11). **Identified by hash, not size** — the
+Artifacts, rebuilt and verified 2026-09-13 (RUN12). **Identified by hash, not size** — the
 sizes this section used to record (357,007 / 307,519, "98 package files") matched no build
 that was ever on disk here, so the verification record described something other than the
 artifacts it sat next to:
 
 ```
-sha256  cff621095734b38358d80d3f98f42e7437ff95426dd3ba0c2d93d452cd5a5ee1  agent_audit-0.20.0-py3-none-any.whl
-sha256  9649f1f1b83e487e3ac10c08e5d610384176e55f6a66b5e26551b92eafeb0e8a  agent_audit-0.20.0.tar.gz
+sha256  0f38b00ad570ccbbfac761bbc2751217b1f7bb79df6d53dfc1747179da7d63e7  agent_audit-0.20.0-py3-none-any.whl
+sha256  dd0e21dd545a8228121fc32b9e1ce590d519db6cf00bcc4e495a53850b8b577d  agent_audit-0.20.0.tar.gz
 ```
+
+Verified on the rebuilt pair: **99 package files** in each and the two file sets identical;
+**0** forbidden path components; `Version: 0.20.0`; **2** occurrences of "66 rules" in the long
+description; **7** unconditional `Requires-Dist` entries (0.19.2 had six — `langdetect` is the
+seventh); `twine check` **PASSED** on both. The RUN11 pair — wheel
+`cff62109…5ee1`, sdist `9649f1f1…0e8a` — is superseded and must not be uploaded: it predates
+the `report.py` markup fix and still carries `# v0.19.3:` in `rules/engine.py`.
+
+**RUN12's rebuild was required too.** Two package files changed: `rules/engine.py` (the
+withdrawal comment said v0.19.3, a release that does not exist) and
+`cli/commands/report.py` (the missing-`reportlab` message named the package without the
+extra). Both ship inside the wheel, so the artifacts audited in RUN11 were no longer the
+artifacts this tree describes.
 
 **The rebuild was required, not cosmetic.** `packages/audit/README.md` is the `readme` in
 `packages/audit/pyproject.toml`, so it is the wheel's long description and the PyPI project
@@ -322,10 +353,23 @@ scripts/release_v0200.sh              # then stage by stage, each one asks
 
 The block below is what it automates, kept for reference. **Two differences, both deliberate:**
 
-* `--tags` publishes *every* local tag. One local tag is not on the remote —
-  `skillscanner-core-frozen`, a freeze marker on unreleased work — and `--tags` would push it
-  alongside the release. The script pushes `refs/tags/v0.20.0` and nothing else.
+* `--tags` publishes *every* local tag, and one local tag is not on the remote:
+  `skillscanner-core-frozen`, a freeze marker on unreleased work. Both the block below and the
+  script name one ref per step — `master`, then `refs/tags/v0.20.0` — and nothing else.
 * the upload below goes straight to the permanent index with no rehearsal.
+
+**The ref audit, RUN 12 — the class rather than the instance.** Naming one ref per step fixes
+the form of the command. It does not fix the two ways a ref gets published that nobody named,
+so preflight § 1.12b now checks both and enumerates what is at stake. Measured on
+2026-09-13:
+
+| what | measured |
+|---|---|
+| local tags / tags on `origin` | **16 / 15** |
+| the difference | **`skillscanner-core-frozen`** — annotated, and **reachable from `master`**, because it points at `05c3f98`, one of the seven pre-existing commits |
+| `push.followTags` | **unset.** Were it set, naming `master` alone would publish every annotated tag reachable from it — which is exactly the one tag above. § 1.12b fails the preflight if it is ever enabled |
+| bulk-ref forms (`--tags`, `--follow-tags`, `--mirror`, `--all`) in the script or this file | **none.** § 1.12b greps both files for a publish or fetch carrying one and fails on a hit, so the property is enforced rather than remembered |
+| local branches / branches on `origin` | **8 / 4.** Not on the remote: `feature/skillscanner`, `feature/skillscanner-dist`, `feature/skillscanner-eval`, `release/v0.19.2`, and `fix/py314-blocker` itself. Stage 3 sends `master`; these stay local. `feature/compliance-report` exists at both ends and differs — `dee76ce` here, `fc92f6c` there — and is not this release's business either way |
 
 ```bash
 git checkout master

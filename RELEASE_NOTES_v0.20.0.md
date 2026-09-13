@@ -98,9 +98,45 @@ separating configuration from untrusted input. That document also carries the bl
 result: on a real codebase, with 0 files skipped and 0 parse failures, recall on 6 real
 defects was **0**. Read it before treating a clean report as an assurance.
 
+**Shipping as preview — SkillScanner and the PDF report.** This release publishes two
+features that were merged before the branch and that no previous release note mentioned. They
+are labelled preview because of what has *not* been done to them, not because of what has:
+both carry tests (twenty-eight for SkillScanner, thirty-three for the report), and neither has
+been measured on a graded corpus the way the core scanner has. Every figure in this document —
+P 68.86% / R 84.32% / F1 0.7581, and the sixty-six rules behind it — describes `AGENT-*` rules
+on the eighty-one-sample labelled corpus. It says nothing about either of these.
+
+* **SkillScanner** analyses `SKILL.md` files and runs on every scan, no flag. It emits a
+  separate `SKILL-000` / `SKILL-010` / `SKILL-020` namespace, deliberately outside the
+  advertised `AGENT-*` set, and every one of its behavioural findings is tier-ceilinged —
+  `SKILL-010` cannot exceed WARN, `SKILL-020` cannot exceed INFO — so **it cannot fail your
+  build**. Rely on it to point at Skills worth a human read; do not read a quiet
+  SkillScanner as evidence a Skill is safe. Its cross-lingual fairness evaluation is
+  pre-registered in `docs/skillscanner/eval/PROTOCOL.md` and is not finished, so there is no
+  precision or recall figure for it and this release publishes none.
+* **One thing to check before you upgrade.** `SKILL-010`'s judge calls the Claude API. It is
+  off unless *both* the `anthropic` SDK is installed and `ANTHROPIC_API_KEY` is set in the
+  environment, in which case a plain `agent-audit scan` sends the `description` field of each
+  `SKILL.md` it finds to `claude-sonnet-4-6`. There is no flag to turn that off, and with no
+  key it never happens — `get_default_judge()` returns `NullJudge` and nothing leaves the
+  machine. If the code you scan is confidential and that variable is set in your CI, unset it
+  for the scan step.
+* **`agent-audit report <scan.json> -o <out.pdf>`** turns `--format json` output into a PDF.
+  It needs `pip install "agent-audit[report]"`; without the extra the command exits 1 and now
+  says so with the extra in it, which it did not before this release — Rich was reading
+  `[report]` as a style tag and printing `pip install agent-audit`, an instruction that does
+  not install the dependency. One claim is hardcoded into every PDF it writes, in *Standards
+  Alignment*: 10/10 coverage of the OWASP ASI Top 10. That one reproduces — the advertised set
+  spans all ten ASI categories — and the check is in `NIGHT_RUN_LEDGER.md` § W56. No
+  precision, recall or count figure is printed in a report.
+* **`langdetect` is a new required dependency**, not optional: `0.19.2` shipped six, this
+  ships seven. `pip install --upgrade agent-audit` pulls it. The other two additions are
+  extras and are only installed if you ask: `[report]` (reportlab, matplotlib) and `[judge]`
+  (the `anthropic` SDK).
+
 ---
 
-Full detail in [`CHANGELOG.md`](CHANGELOG.md). The suite is 1,905 passed / 1 failed / 4
+Full detail in [`CHANGELOG.md`](CHANGELOG.md). The suite is 1,924 passed / 1 failed / 4
 skipped, and the one failure is committed red on purpose: three ground-truth labels still
 cite a rule no code path can emit, and a guard that passes while the defect is present is
 exactly what this release is about.

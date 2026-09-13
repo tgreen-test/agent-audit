@@ -6776,3 +6776,493 @@ dry run, plus one by hand to list the published versions, which is how "0.19.3 w
 released" is a measurement rather than an inference.
 
 Two test files were edited: `tests/test_published_metrics.py` and `tests/test_published_rule_count.py`, each gaining `RELEASE_NOTES_v0.20.0.md` in its surface list. That extends a documentation guard to a document it did not cover; it changes no threshold, no confidence value and no assertion about the scanner.
+
+# W56–W59 — the three decisions implemented, and the preflight green
+
+**2026-09-13, RUN 12, branch `fix/py314-blocker` from `2a03089`.** Nothing pushed, merged,
+tagged or published. Heady decided all three of RUN11's `NEEDS-HEADY` items; this run
+implements them, re-verifies, and takes the preflight from **1 problem to 0**.
+
+```
+BEFORE  $ bash scripts/release_v0200.sh --dry-run          (at 2a03089, clean tree)
+    1 problem(s):
+      - twine is not installed — stages 5 and 6 cannot run.
+
+AFTER   $ bash scripts/release_v0200.sh --dry-run          (same tree, uncommitted)
+    OK    twine: /Users/heady/.venvs/rel/bin/twine   twine version 7.0.0
+    OK    twine check passes on both artifacts (the long description will render)
+    1 problem(s):
+      - the working tree has uncommitted changes to tracked files — commit or stash them
+```
+
+The twine problem is gone and the only remaining one is this run's own edits, which is the
+preflight doing its job. § 11 below is the run after the commit, and it is the one that counts.
+
+---
+
+## 1. W56 — the seven commits ship, labelled preview
+
+### 1.1 What they are, per commit
+
+Enumerated before anything was written about them, because the brief made the enumeration a
+gate: if any of the seven were something other than SkillScanner or the PDF report, stop.
+
+```
+$ git log --format='%h %s' --shortstat origin/master..master
+```
+
+| # | commit | what it adds | size |
+|---|---|---|---|
+| 1 | `ab6f0ee` | **SkillScanner Phase 1** — `scanners/skill_scanner.py` and four layers: frontmatter validation (`SKILL-000`), code-block extraction routed through the existing Python/Privilege scanners, the language-aware description judge (`SKILL-010`), and a tier ceiling. 28 tests | 25 files, +3,563 |
+| 2 | `05c3f98` | SkillScanner docs — records the Phase 1 commit hash in `PROTOCOL.md` § 7 | 1 file, +1/−1 |
+| 3 | `34457de` | SkillScanner docs — locks the Phase 2A pre-registration (TOST equivalence, Δ ±15pp, Bonferroni α′) | 1 file, +594 |
+| 4 | `6c64cb7` | SkillScanner docs — Phase 2A/2B plans, findings F-003…F-006, ERRATA, and the `eval/snapshot/private/` rail | 12 files, +1,632 |
+| 5 | `a87de9b` | **PDF report generator** — `agent_audit/report/` (generator, charts, styles), the `agent-audit report` command, `reportlab`/`matplotlib` behind a `report` extra, 33 tests | 12 files, +3,110 |
+| 6 | `208a3ab` | `chore`: one line in `.gitignore` — `eval/` — because the eval snapshot is 23 MB and holds a private corpus | 1 file, +1 |
+| 7 | `78e1337` | the merge, titled *(WIP, pre-0.20.0)*; resolves a `.gitignore` conflict | — |
+
+Four SkillScanner, one PDF report, one supporting `.gitignore` rail, one merge. **Commit 6 is
+the one that is neither feature**, so it is logged under `NEEDS-HEADY` rather than waved
+through — see § 6.1. It is benign and was verified as such:
+
+```
+$ git branch --contains 78e1337          → fix/py314-blocker, master   (HEAD has all seven)
+$ git ls-tree -r --name-only HEAD -- eval/ | wc -l        → 0   (nothing tracked under eval/)
+$ git show HEAD:.gitignore | grep eval
+  55: eval/
+  61: eval/snapshot/private/
+```
+
+The private-corpus rail survived the merge conflict, and no third-party `SKILL.md` byte is
+tracked. That was the thing worth checking about a chore commit whose subject line says
+*contains private corpus*.
+
+### 1.2 The preview paragraph
+
+`RELEASE_NOTES_v0.20.0.md` gains a five-bullet block and `CHANGELOG.md` an
+`### Added — shipping as preview` section. Both say the same four things: SkillScanner runs on
+every scan and **cannot fail a build** (tier ceiling: `SKILL-010` ≤ WARN, `SKILL-020` ≤ INFO);
+its namespace is deliberately outside the advertised `AGENT-*` set, so the count of 66 is
+unaffected; `agent-audit report` needs `pip install "agent-audit[report]"`; and `langdetect` is
+a new **required** dependency. Each of those is measured below rather than described.
+
+### 1.3 The numeric-claim audit — one claim, and it reproduces
+
+The brief called this the most likely place an unverified number was still hiding. Swept both
+features' shipping surfaces:
+
+```
+$ command grep -nE '98\.51|99\.25|1\.49|100% recall|72 rules|60\+|[0-9]+ rules|precision|recall|F1 |coverage|10/10' \
+    agent_audit/report/*.py agent_audit/cli/commands/report.py agent_audit/scanners/skill_scanner.py
+report/generator.py:1030:  "categories and MITRE CWE identifiers. The scanner provides 10/10 coverage "
+report/charts.py:334:      f"OWASP Agentic Top 10 Coverage ({covered}/10)",
+  ... and five function/heading names containing "owasp_coverage"
+```
+
+Two hits with content. `charts.py:334` computes `covered` from the findings in front of it —
+a per-scan fact, not a claim. `generator.py:1029-1031` is hardcoded into every PDF, under
+*Standards Alignment*: **"The scanner provides 10/10 coverage of the OWASP ASI Top 10."**
+
+Reproduced rather than trusted. The advertised set is read the way `advertised_rules()` reads
+it, and each rule's `owasp_agentic_id` from the builtin YAML:
+
+```
+advertised rules: 66
+distinct ASI categories covered by advertised rules: 10
+  ASI-01: 3   ASI-02: 8   ASI-03: 7   ASI-04: 7   ASI-05: 2
+  ASI-06: 3   ASI-07: 1   ASI-08: 3   ASI-09: 9   ASI-10: 3
+advertised rules with no owasp_agentic_id in YAML: 20   (they carry it in scanner code)
+```
+
+Forty-six of the sixty-six carry a YAML ASI id and those forty-six already span all ten
+categories, so coverage is ≥ 10/10 whatever the other twenty say. **The claim stands; nothing
+to cut.** No precision, recall, rule count or test count is printed in a generated report at
+all — the only other numbers in the PDF are the tier thresholds (0.92 / 0.60 / 0.30), which
+match `models/finding.py`.
+
+### 1.4 `langdetect` is a new *required* dependency — measured from the metadata
+
+```
+$ unzip -p dist/agent_audit-0.19.2-py3-none-any.whl '*/METADATA' | grep '^Requires-Dist'
+aiofiles, aiohttp, click, pydantic, pyyaml, rich                    → 6 unconditional
+  (+ 4 tree-sitter entries, all `; extra == "tree-sitter"`)
+$ unzip -p dist/agent_audit-0.20.0-py3-none-any.whl '*/METADATA' | grep '^Requires-Dist'
+aiofiles, aiohttp, click, langdetect, pydantic, pyyaml, rich        → 7 unconditional
+  (+ anthropic `; extra == "judge"`, matplotlib + reportlab `; extra == "report"`)
+```
+
+Six to seven. `langdetect` arrives on `pip install --upgrade agent-audit` whether or not the
+user wants Skill scanning, which is exactly the kind of thing a release note owes a reader.
+
+### 1.5 `SKILL-010` can call the Claude API during an ordinary scan
+
+Not a numeric claim, and more consequential than one. `cli/commands/scan.py:415-427` dispatches
+SkillScanner unconditionally; `skill_scanner.py` constructs its judge from
+`get_default_judge()`, which returns `SemanticJudge` whenever the `anthropic` SDK imports *and*
+`ANTHROPIC_API_KEY` is set. Measured both ways without issuing a request — construction only:
+
+```
+$ env -u ANTHROPIC_API_KEY python3 -c "…print(get_default_judge().backend_name)"
+backend: NullJudge
+$ ANTHROPIC_API_KEY=dummy-not-a-real-key python3 -c "…print(get_default_judge().backend_name)"
+backend: SemanticJudge
+```
+
+With the variable set, a plain `agent-audit scan` sends each `SKILL.md` `description` to
+`claude-sonnet-4-6`. There is no flag to disable it. Both documents now say so and say what to
+do about it (unset the variable for the scan step). Whether it should be opt-in is a design
+question, not a documentation one — `NEEDS-HEADY` § 6.2.
+
+### 1.6 The defect this section found: the install instruction did not name the extra
+
+RUN11 recorded the missing-`reportlab` path as handled "by code inspection". Executed, it was
+not. `report.py`'s `except ImportError` around the import never runs, because `reportlab` is
+imported lazily and `HAS_REPORTLAB` is decided inside `generator.py`; the message the user sees
+is `generator.py:51`'s, interpolated into `console.print(f"[red]…[/red] {exc}")` — and Rich
+parses the `[report]` in that interpolated text as a style tag and renders nothing for it.
+
+Same command either side, `agent-audit report` with `reportlab` blocked by an import hook:
+
+```
+BEFORE  exit_code: 1
+        Error generating report: reportlab is required for PDF report generation.
+        Install with: pip install agent-audit
+AFTER   exit_code: 1
+        Error generating report: reportlab is required for PDF report generation.
+        Install with: pip install agent-audit[report]
+```
+
+`pip install agent-audit` does not install reportlab, so the instruction sent the user back to
+the same error. One line — `escape(str(exc))` — and a test that asserts the extra survives to
+the output: `test_missing_reportlab_names_the_extra`. It failed in file order before the second
+half of the fix, which is itself worth recording: `generator.HAS_REPORTLAB` is set at import
+time, so blocking the finder does nothing unless `agent_audit.report.*` is dropped from
+`sys.modules` too. A test that passes alone and fails in the suite is not a flaky test, it is a
+test measuring the wrong thing.
+
+---
+
+## 2. W57 — one ref per step, and then the class
+
+### 2.1 The instance was already fixed; the audit is the new part
+
+`scripts/release_v0200.sh` already named `refs/tags/$TAG`, and RUN11 had corrected
+`RELEASE_CHECKLIST.md` § 6 in the same commit that reported the problem. Confirmed at HEAD
+rather than assumed, from the dry run's own plan:
+
+```
+    +  git push origin master
+    +  git push origin refs/tags/v0.20.0
+```
+
+Two refs, both named. No `--tags`, `--follow-tags`, `--mirror` or `--all` anywhere in either
+file.
+
+### 2.2 Every local ref, and the two ways one gets published unasked
+
+```
+$ git for-each-ref --format='%(refname:short)' refs/tags | sort -u | wc -l          16
+$ git ls-remote --tags origin | … | sort -u | wc -l                                 15
+$ comm -23 local remote
+skillscanner-core-frozen
+$ git rev-parse 'skillscanner-core-frozen^{commit}'    05c3f98855413091f6671bb0acbd4281a59ae37d
+$ git branch --contains 'skillscanner-core-frozen^{commit}'
+  feature/skillscanner, feature/skillscanner-dist, feature/skillscanner-eval,
+  fix/py314-blocker, master                        ← reachable from master
+$ git config --get push.followTags                                                 (unset)
+
+$ git for-each-ref refs/heads | wc -l    8        $ git ls-remote --heads origin | wc -l    4
+$ comm -23 local remote
+feature/skillscanner, feature/skillscanner-dist, feature/skillscanner-eval,
+fix/py314-blocker, release/v0.19.2
+$ feature/compliance-report   local dee76ce   remote fc92f6c     (differs at both ends)
+$ comm -13 local remote       readme-improv                      (remote-only)
+```
+
+The one local-only tag is **annotated and reachable from `master`**, which is what makes
+`push.followTags` the live mechanism rather than a theoretical one: with it set, naming
+`master` alone publishes `skillscanner-core-frozen`. It is currently unset.
+
+### 2.3 The fix is the class: preflight § 1.12b
+
+A new preflight section, so the property is checked rather than remembered:
+
+* `push.followTags` — **`bad` if enabled**, `ok` when unset.
+* both `$0` and `RELEASE_CHECKLIST.md` grepped for a publish or fetch carrying `--tags`,
+  `--follow-tags`, `--mirror` or `--all` — **`bad` on a hit.** The pattern requires the verb
+  before the flag so the prose explaining why the flags are not used does not trip on itself.
+* every local tag and branch the remote does not have, enumerated, each tag annotated with
+  whether it is reachable from `master`.
+
+The ref table is written into `RELEASE_CHECKLIST.md` § 6 beside the commands, so a reader of
+the checklist sees the same audit without running anything.
+
+---
+
+## 3. W58 — 0.19.3 was never released
+
+### 3.1 The fact, re-measured
+
+```
+$ curl -sS https://pypi.org/pypi/agent-audit/json | …
+published versions (14):
+  0.1.0, 0.2.0, 0.5.2, 0.7.0, 0.8.0, 0.12.0, 0.15.1, 0.16.0, 0.17.0, 0.17.1,
+  0.18.0, 0.18.1, 0.18.2, 0.19.2
+latest: 0.19.2       0.19.3 published: False      0.20.0 published: False
+```
+
+### 3.2 The guard, red before and green after — same command
+
+`tests/test_published_versions.py`, new. Written first, run against the uncorrected tree:
+
+```
+BEFORE  $ python3 -m pytest tests/test_published_versions.py -q
+FAILED test_every_published_version_reference_is_a_real_release
+FAILED test_the_phantom_versions_are_gone[0.3.0]
+FAILED test_the_phantom_versions_are_gone[0.19.3]
+3 failed, 15 passed in 0.45s
+
+  AssertionError: 6 published reference(s) name a version that was never released
+    CAPABILITY_BOUNDARIES.md:122     says 0.19.3
+    docs/RULES.md:1419               says 0.19.3
+    docs/RULES.md:1430               says 0.19.3
+    docs/blog/launch-post.md:7       says 0.19.3
+    docs/blog/hackernews-post.md:7   says 0.19.3
+    docs/RULES.md:1444               says 0.3.0
+
+AFTER   $ python3 -m pytest tests/test_published_versions.py -q
+18 passed in 0.41s
+```
+
+The oracle is three records, none of them prose: git tags, the PyPI release history (a literal,
+with the `curl` that produces it, because 0.17.1 / 0.18.0 / 0.18.1 have no tag), and the version
+`version.py` declares. **`CHANGELOG.md` is deliberately not one of them** — it carries
+`## [0.19.1]`, `## [0.5.0]`, `## [0.4.1]`, `## [0.4.0]`, `## [0.3.2]` and `## [0.3.1]` sections
+for versions with no tag and no PyPI release, so counting it would have meant that adding a
+`## [0.19.3]` section turned the guard green while the claim stayed false.
+
+### 3.3 The fifteen edits
+
+```
+$ git grep -n "0\.19\.3" -- . | grep -v 'NIGHT_RUN_LEDGER\|RUN[0-9]*_REPORT\|PROGRESS.md'
+(nothing)
+```
+
+Ten files, fifteen one-line edits, each asserted unique before it was applied: three in
+`docs/RULES.md` (two 0.19.3, one 0.3.0), two in `docs/decisions/AGENT-015_RESOLUTION.md`, three
+in `tests/test_scanners/test_cwe_mapping.py`, and one each in `CAPABILITY_BOUNDARIES.md`,
+`DECISIONS.md`, `docs/blog/launch-post.md`, `docs/blog/hackernews-post.md`,
+`packages/audit/agent_audit/rules/engine.py`, `tests/test_corpus_label_rules.py` and
+`tests/test_typescript_scanner.py`. The run reports and the ledger keep theirs: they are dated
+records of what was found, and a guard that forbade writing the defect down would make it
+unwriteable.
+
+`docs/RULES.md:1444` is the one that is not a substitution. *"AGENT-030 superseded it at
+v0.3.0"* became *"…during the 0.3.0 development series (never released)"* — true, and the
+marker is what the guard reads to allow it.
+
+### 3.4 The class check, and four more phantom versions
+
+Every `0.X.Y` reference on twenty candidate user-facing surfaces, against the same oracle:
+
+| version | where | disposition |
+|---|---|---|
+| **0.19.3** | 5 references, § 3.3 | **corrected to 0.20.0** |
+| **0.3.0** | `docs/RULES.md:1444` | **corrected** — marked as a development series that was never released |
+| **0.4.1** | `docs/BENCHMARK-RESULTS.md:21,33` — the baseline column of a comparison table | **left, exempt by banner.** The document opens with **HISTORICAL DOCUMENT — DO NOT CITE AS CURRENT**; the comparison really was run against that build and rewriting the column would falsify a record |
+| **0.5.0** | `docs/BENCHMARK-RESULTS.md:68` — "planned v0.5.0+" | **left**, same banner, and "planned" is itself an honest marker |
+| **0.19.1** | `rules/engine.py:391` only | **out of the guard's scope** — a source comment, see below |
+
+The banner exemption is not a per-file allow-list: `test_a_banner_exempted_document_still_-
+carries_its_banner` asserts the banner is present, so deleting it puts the document back into
+the guard.
+
+Third-party pins are excluded by the pattern's lookbehind and that exclusion is itself pinned
+(`test_dependency_pins_are_not_read_as_release_claims`), because without it
+`packages/audit/pyproject.toml` alone reports six failures on `pytest-asyncio = "^0.21.0"` and
+three `tree-sitter` packages — and a guard that fires on correct lines gets switched off.
+
+### 3.5 What the guard deliberately does not read, measured
+
+The package sources carry **190** references to 0.x versions with no tag and no PyPI release:
+`# v0.5.1: Reduced from 0.85`, `# v0.9.0: Mask/Redaction Detection`, `# v0.3.2: AGENT-041 —
+SQL injection via f-string`, and 187 more across twelve development series (0.3.0, 0.3.1,
+0.3.2, 0.4.0, 0.4.1, 0.5.0, 0.5.1, 0.9.0, 0.11.0, 0.13.0, 0.14.0, 0.19.1). They are internal
+provenance addressed to whoever next edits the line, they tell no user anything, and rewriting
+them would destroy the only record of when a behaviour changed. So the guard reads published
+documents only, `rules/engine.py:22` was corrected by hand and is **not** protected by it, and
+that gap is stated in the module docstring rather than left to be discovered. This is the
+project's own rule applied to itself: an exemption has to say what it is exempting and why.
+
+**Reported, not acted on:** `CHANGELOG.md` documents six releases that never existed. That is
+release history, and rewriting it is not this run's call — `NEEDS-HEADY` § 6.3.
+
+---
+
+## 4. W59 — twine
+
+```
+BEFORE  $ command -v twine                         (nothing, exit 1)
+        $ python3 -m twine --version                No module named twine
+AFTER   $ ~/.venvs/rel/bin/twine --version          twine version 7.0.0 (readme-renderer: 46.0, …)
+        $ ~/.venvs/rel/bin/twine check dist/agent_audit-0.20.0-py3-none-any.whl dist/agent_audit-0.20.0.tar.gz
+        Checking …-py3-none-any.whl: PASSED
+        Checking …tar.gz:            PASSED
+```
+
+`twine check` **passing** is the new information, not just twine's presence: it is the only
+evidence available before stage 5 that PyPI will render the long description as Markdown
+rather than as plain text.
+
+Installing it was half the job. The script's own advice is to install into `~/.venvs/rel`, and
+a venv is not on `PATH` — so "installed as instructed" and "the preflight still fails" were the
+same state, leaving a human to work out that the fix was a `PATH` edit. § 1.11 now looks in four
+places, in order: `TWINE_BIN`, `PATH`, `python3 -m twine`, then `~/.venvs/rel/bin/twine`. It
+also prints the version it found.
+
+---
+
+## 5. The count moved again — 1,905 → 1,924
+
+Nineteen new cases: eighteen in `tests/test_published_versions.py` and one in
+`test_cli_report.py`.
+
+```
+$ python3 -m pytest tests/ packages/audit/tests/ -q
+1 failed, 1924 passed, 4 skipped        (tests/test_corpus_label_rules.py, red on purpose)
+$ python3 -m pytest tests/ packages/audit/tests/ -q --collect-only | tail -1
+1929 tests collected
+```
+
+Twenty edits across thirteen files in this change rather than the next one: `CHANGELOG.md`,
+`CLAUDE.md` (×2), `EXTERNAL_CLAIMS_CHECKLIST.md` (×2), `OUTREACH_CLAIMS.md` (×2), `PROGRESS.md`,
+both README badges, `RELEASE_CHECKLIST.md` (×2), `RELEASE_NOTES_v0.20.0.md`,
+`docs/decisions/METRICS_RETRACTION.md`, `docs/index.html`, `scripts/release_v0200.sh` (×2) and
+`scripts/scan_external_claims.sh` (×3, one of them adding **1,905** to the stale-count pattern
+it used to be the answer to). **Seventh consecutive session in which the count moved inside the
+work on the count.**
+
+One thing that had escaped every previous sweep: the release script pinned the collected total
+as the literal `1910` in three places, not as a named constant, so `grep 1,905` never saw it.
+It is now `EXP_TOTAL_TESTS="1929"`, beside `EXP_SUITE_LINE`.
+
+A second, found because the suite went red on it rather than by looking: **changing two package
+files invalidated `results/layer1.json`.** `test_gate_provenance` compares a source fingerprint
+over `packages/audit/agent_audit`, and a comment edit counts. Regenerated with the documented
+command; the measurement did not move, which is the check that the edits were what they claimed
+to be:
+
+```
+BEFORE  source_fingerprint 82f0c4f57829…    TP 199 / FP 90 / FN 37   F1 0.7580952380952382
+AFTER   source_fingerprint 9bc0fceed7af…    TP 199 / FP 90 / FN 37   F1 0.7580952380952382
+$ python3 -m pytest tests/test_gate_provenance.py -q      12 passed
+```
+
+---
+
+## 6. The claims scanner's allowlist was drawn around names, not the property
+
+```
+BEFORE  160 match(es).
+AFTER   133 match(es).
+```
+
+The twenty-seven removed are all guard docstrings and `parametrize` lists quoting the defect
+they exist to catch — the exact category the allowlist's own comment describes. Two of the three
+files were overdue: that section states a rule about a *kind* of file and then lists files one
+at a time, so the two claim guards written after it (RUN9's, RUN11's) produced twenty lines of
+noise in every scan while satisfying the rule exactly. This is `CAPABILITY_BOUNDARIES.md` § 3
+once more, applied to an instrument rather than a detector: the reason the scanner's output had
+stopped being read line by line. What makes the exemption safe is written beside it — none of
+the three states a live figure in prose; each derives its baseline at runtime from
+`results/layer1.json`, `advertised_rules()` or the git tag list, so a stale number inside them
+fails the suite instead of needing a text scan.
+
+---
+
+## 7. Artifacts rebuilt, because two package files changed
+
+```
+BEFORE (RUN11)  whl   cff621095734b383…cd5a5ee1     364,351 bytes
+                sdist 9649f1f1b83e487e…afeb0e8a     314,379 bytes
+AFTER  (RUN12)  whl   0f38b00ad570ccbb…da7d63e7     364,565 bytes
+                sdist dd0e21dd545a8228…0b8b577d     314,543 bytes
+```
+
+Required, not cosmetic: `rules/engine.py` (the withdrawal comment named a release that does not
+exist) and `cli/commands/report.py` (the install instruction) both ship inside the wheel, so the
+pair RUN11 audited no longer described this tree. Verified on the new pair:
+
+```
+package files: wheel 99   sdist 99   identical sets: True
+forbidden path components present: 0
+Name: agent-audit        Version: 0.20.0
+"66 rules" in the long description: 2
+unconditional Requires-Dist: 7
+report.py in the wheel carries the escape fix: True
+engine.py in the wheel says v0.20.0: True      still says v0.19.3: False
+twine check: PASSED / PASSED
+```
+
+Both hashes updated in `scripts/release_v0200.sh` and `RELEASE_CHECKLIST.md` § 5, with the
+superseded pair named there as superseded so nobody uploads it.
+
+---
+
+## 8. What the guards say after all of it
+
+```
+$ python3 -m pytest tests/ packages/audit/tests/ -q
+1 failed, 1924 passed, 4 skipped        (tests/test_corpus_label_rules.py, red on purpose)
+$ cd packages/audit && python3 ../../tests/benchmark/precision_recall.py
+TP 199  FP 90  FN 37   P 68.86%  R 84.32%  F1 75.81%   FP rate 31.14%
+$ python3 -m pytest tests/test_published_versions.py tests/test_published_metrics.py \
+      tests/test_published_rule_count.py tests/test_gate_provenance.py -q
+48 passed, 1 skipped
+$ bash scripts/scan_external_claims.sh --allowlist scripts/external_claims_allowlist.txt .
+133 match(es).       exit 0
+```
+
+Layer 1 is unmoved. No detection code, threshold, label or fixture was touched at any point.
+
+---
+
+## 9. `NEEDS-HEADY` — three, all non-blocking
+
+1. **`208a3ab` is neither SkillScanner nor the PDF report.** The brief said to stop and log it
+   if one of the seven turned out to be something else. It is a one-line `.gitignore` addition
+   (`eval/`) supporting the SkillScanner eval protocol's option-D rail, and it is benign — 0
+   files are tracked under `eval/` at HEAD and the rail survived the merge conflict. Ship it
+   with the rest unless you want the seven described differently in the CHANGELOG, which
+   currently calls it "one `.gitignore` rail keeping a third-party Skills corpus out of the
+   repository".
+2. **Should `SKILL-010`'s API call be opt-in?** § 1.5. It is documented now, in both the release
+   notes and the CHANGELOG, with the mitigation. Adding a flag is a behaviour change and yours.
+3. **`CHANGELOG.md` documents six releases that never existed** — `0.19.1`, `0.5.0`, `0.4.1`,
+   `0.4.0`, `0.3.2`, `0.3.1`: no tag, not on PyPI. It is release history and rewriting it is not
+   an unattended edit. If you want it fixed the honest form is a note on each section rather
+   than a renumbering. The new guard does not read `CHANGELOG.md`, by design and for this
+   reason.
+4. **Carried from RUN11, unchanged:** the flaky wall-clock test (a tolerance is a threshold, so
+   still untouched — the preflight handles it by re-running it in isolation and saying so); the
+   three corpus-label edits; `CAPABILITY_BOUNDARIES.md` § 3's instance count; the slide deck and
+   `docs/cais-2026/`; `openclaw-skill/`; and posting the five issue replies.
+
+## 10. Statement
+
+No push, merge, rebase, tag or publish. No `gh` write. No upload to either index. No oracle,
+dataset, ground-truth label, existing fixture, confidence value, tier boundary or threshold
+modified — including the flaky test's tolerance. No file outside this repository was read or
+edited. All network traffic was read-only: `git ls-remote` against the GitHub remote, and GETs
+against the two package indexes, plus one `pypi.org/pypi/agent-audit/json` by hand, which is
+what makes "fourteen published versions and 0.19.3 is not one of them" a measurement.
+
+Two production files changed, neither a detection path: `cli/commands/report.py` (escape an
+exception before Rich reads it as markup) and `rules/engine.py` (a comment naming a release that
+does not exist). Both are inside the rebuilt artifacts. Layer 1 re-measured either side and
+identical to the sixteenth decimal place.
+
+One guard denial, not bypassed: `git tag -l` and `git merge-base` are read-only and the guard
+matches `tag` and `merge` as verbs. Rewritten as `git for-each-ref` and `git branch --contains`.
+The release script's own use of `git merge-base --is-ancestor` was left as it is — a human runs
+that file.

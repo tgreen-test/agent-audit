@@ -155,8 +155,54 @@ benchmark or CI gate could have distinguished them.
 
 Read it before treating a clean report as an assurance.
 
+### Added — shipping as preview: SkillScanner and the PDF report
+
+Seven commits merged before this branch (`ab6f0ee`..`78e1337`, the merge titled *WIP,
+pre-0.20.0*) were already inside the release artifacts and named in no release note: four for
+SkillScanner (one of code, three of protocol and findings documents), one for the PDF report
+generator, one `.gitignore` rail keeping a third-party Skills corpus out of the repository, and
+the merge. They ship, and they ship labelled **preview** — the label is about what has not been
+done to them. Both carry tests; neither has been measured on a graded corpus. Every figure this
+release publishes — P 68.86% / R 84.32% / F1 0.7581 — is `AGENT-*` rules against the
+eighty-one-sample labelled corpus and says nothing about either feature.
+
+- **SkillScanner** (`scanners/skill_scanner.py`, twenty-eight tests) analyses `SKILL.md` files
+  on every scan, no flag required. It emits a `SKILL-000` / `SKILL-010` / `SKILL-020`
+  namespace kept deliberately outside the advertised `AGENT-*` set and outside
+  `RULE_CWE_MAPPING`, so the published count of sixty-six is unaffected by it. Behavioural
+  findings are tier-ceilinged in `rules/skill_rule_context.py` — `SKILL-010` ≤ WARN,
+  `SKILL-020` ≤ INFO — so **SkillScanner cannot fail a build**. Use it to find Skills worth a
+  human read; a quiet result is not evidence a Skill is safe. The cross-lingual fairness
+  evaluation it exists for is pre-registered in `docs/skillscanner/eval/PROTOCOL.md` and is
+  unfinished: no precision or recall figure for it is published here, because none has been
+  measured.
+- **`SKILL-010` can call the Claude API during an ordinary scan.** `get_default_judge()`
+  returns `SemanticJudge` when the `anthropic` SDK is importable *and* `ANTHROPIC_API_KEY` is
+  set, and that backend sends each `SKILL.md` `description` to `claude-sonnet-4-6`. With no key
+  it returns `NullJudge` and makes no call. Measured both ways, without issuing a request:
+  `backend: NullJudge` with the variable unset, `backend: SemanticJudge` with it set. There is
+  no flag to disable it; unset the variable for the scan step if the scanned code is
+  confidential.
+- **`agent-audit report <scan.json> -o <out.pdf>`** renders `--format json` output as a PDF
+  (`agent_audit/report/`, thirty-three tests), behind `pip install "agent-audit[report]"`. The
+  only claim hardcoded into a generated report is *Standards Alignment*: 10/10 coverage of the
+  OWASP ASI Top 10. It reproduces — the advertised set spans all ten ASI categories, checked
+  against the YAML `owasp_agentic_id` of every advertised rule — and no precision, recall or
+  rule count is printed in a report at all.
+- **`langdetect` is a new *required* runtime dependency.** Measured from the wheel metadata:
+  `0.19.2` declared six unconditional `Requires-Dist` entries, `0.20.0` declares seven.
+  `reportlab`/`matplotlib` (`[report]`) and `anthropic` (`[judge]`) are extras and are not
+  installed unless asked for.
+
 ### Fixed
 
+- **The missing-`reportlab` message told the user to install the wrong thing.** `agent-audit
+  report` without the extra printed *"Install with: pip install agent-audit"* — Rich parsed the
+  `[report]` in the interpolated exception text as a style tag and rendered nothing for it, so
+  the instruction named the package without the extra that carries the dependency. Escaped, and
+  pinned by `tests/test_report/test_cli_report.py::test_missing_reportlab_names_the_extra`,
+  which asserts the extra survives to the output. Found by executing the path; the previous
+  review read the code and recorded it as handled.
 - **MCP configuration discovery did not recurse.** It used a non-recursive `iterdir()` over
   the scan root where nine other scanners use `rglob`, so **six MCP rules had a
   directory-scan count of exactly zero** — they fired when a config file was named
@@ -208,7 +254,7 @@ Read it before treating a clean report as an assurance.
 
 ### Testing
 
-The suite is **1,905 passed / 1 failed / 4 skipped** (`pytest tests/ packages/audit/tests/`).
+The suite is **1,924 passed / 1 failed / 4 skipped** (`pytest tests/ packages/audit/tests/`).
 The one failure is deliberate: `tests/test_corpus_label_rules.py` fails because three ground-truth labels still cite a rule
 no code path can emit. It is committed red because ground truth is not the scanner author's to
 edit and a guard that passes while the defect is present is what this project keeps

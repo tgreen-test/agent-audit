@@ -103,7 +103,7 @@ covered by that:
 * **The rendered Pages site, if it is served from a branch or a build that has not been
   redeployed.** Corrected source and stale HTML look identical from inside the repository.
   Check the live URL, not the file.
-* **Badge images.** `img.shields.io/badge/tests-1905...` renders whatever the URL says, and
+* **Badge images.** `img.shields.io/badge/tests-1924...` renders whatever the URL says, and
   the URL is in the markdown — so a corrected file is a corrected badge. But a badge whose
   URL points at a *service* (coverage, CI) reflects the last run, not the file.
 * **The repository's social preview card and the GitHub "About" description**, both of which
@@ -189,7 +189,7 @@ number was:
 |---|---|---|
 | Layer 1 | **P 68.86% / R 84.32% / F1 0.7581**, TP 199 / FP 90 / FN 37, over 238 labels in 81 files | `cd packages/audit && python3 ../../tests/benchmark/precision_recall.py` |
 | rules | **66** | `python3 -c "import sys;sys.path.insert(0,'tests');from test_rule_producers import advertised_rules;print(len(advertised_rules()))"` |
-| tests | **1,905 passing**, 1 red on purpose, 4 skipped | `python3 -m pytest tests/ packages/audit/tests/ -q` |
+| tests | **1,924 passing**, 1 red on purpose, 4 skipped | `python3 -m pytest tests/ packages/audit/tests/ -q` |
 | AVB `knowns` | **R 100.0% / P 88.0% / F1 0.9362** — unaffected, measured against an explicit oracle | `cd tests/benchmark && python3 -m "agent-vuln-bench.harness.run_eval" --tool agent-audit --dataset knowns` |
 | version | **0.20.0** | `python3 -c "import agent_audit;print(agent_audit.__version__)"` |
 

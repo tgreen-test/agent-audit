@@ -11,7 +11,7 @@
 
 One identifier carries three incompatible meanings. **Published**, AGENT-015 is an MCP
 rule, "Untrusted MCP Server Source". **Implemented**, it is nothing: no code path in the
-package could construct it at any commit, and v0.19.3 withdrew it as a duplicate of
+package could construct it at any commit, and v0.20.0 withdraws it as a duplicate of
 AGENT-030 — same severity, same CWE-494, same ASI-04 category, same detection content.
 **Labelled**, it is a third thing again: five corpus labels for `npm install`,
 `curl | bash`, `git clone` + exec, install-from-remote-requirements and PyPI
@@ -275,7 +275,7 @@ script exit = 1
 
 It is committed failing. That is deliberate: the labels cannot be edited by the scanner
 author, and a guard that passes while the defect is present is the thing this project keeps
-finding. `tests/test_rule_producers.py` did the same on the rule side in v0.19.3 — it failed
+finding. `tests/test_rule_producers.py` did the same on the rule side in v0.20.0 — it failed
 on HEAD, named six rules, and the rules came out of the published list. This is the corpus
 half of that check, and it is the one that would have caught AGENT-015 before the identifier
 reached a published rule list, a published coverage figure and 238 labels at once.

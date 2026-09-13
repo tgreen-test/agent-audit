@@ -31,6 +31,7 @@ RUN8_REPORT.md
 RUN9_REPORT.md
 RUN10_REPORT.md
 RUN11_REPORT.md
+RUN12_REPORT.md
 RELEASE_CHECKLIST.md
 ISSUE_TRIAGE.md
 ISSUE_REPLIES.md
@@ -85,11 +86,24 @@ tests/benchmark/v0.14
 # Source comments and test docstrings that record the defect they guard against. These
 # quote a superseded measurement in order to explain why the guard exists; rewriting them
 # would erase the reason.
+#
+# The last three were added 2026-09-13 (RUN12) and two of them were overdue: this section
+# states a rule about a *kind* of file, and then listed files one at a time, so the two
+# claim guards written after it (RUN9, RUN11) produced 20 lines of noise in every scan while
+# satisfying the rule exactly. That is this project's recurring shape — an exemption drawn
+# around names instead of around the property — and it is the reason the scanner's own output
+# had stopped being read line by line. What makes the exemption safe for these three is that
+# none of them states a live figure in prose: each derives its baseline at runtime from
+# results/layer1.json, advertised_rules(), or the git tag list, so a stale number inside them
+# fails the suite rather than needing a text scan to find.
 tests/benchmark/precision_recall.py
 tests/test_gate_provenance.py
 tests/test_layer1_gate_singleton.py
 tests/test_unsubstantiated_metrics.py
 tests/README.md
+tests/test_published_metrics.py
+tests/test_published_rule_count.py
+tests/test_published_versions.py
 
 # A separate research line (SkillScanner). Its Wilson CIs are its own, not agent-audit's.
 docs/skillscanner/

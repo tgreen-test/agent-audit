@@ -1,6 +1,7 @@
 # PROGRESS
 
-**RUN 11 state: COMPLETE. W52–W55 all done. The release is staged and waiting for you.**
+**RUN 12 state: COMPLETE. W56–W59 all done. The preflight passes clean — 0 problems — and
+nothing in this repository is waiting on a decision. The release is one command away.**
 
 Nothing pushed, merged, tagged or published. No file outside this repository was read or
 edited.
@@ -8,10 +9,12 @@ edited.
 ## The release: what you run
 
 ```bash
-python3 -m venv ~/.venvs/rel && ~/.venvs/rel/bin/pip install twine   # the one missing tool
-PATH="$HOME/.venvs/rel/bin:$PATH" scripts/release_v0200.sh --dry-run # preflight for real
-PATH="$HOME/.venvs/rel/bin:$PATH" scripts/release_v0200.sh           # then stage by stage
+scripts/release_v0200.sh --dry-run    # preflight runs for real; expect "every check passed"
+scripts/release_v0200.sh              # then stage by stage, each one asks
 ```
+
+`twine` 7.0.0 is already installed in `~/.venvs/rel` and § 1.11 looks there, so no `PATH`
+prefix is needed (`TWINE_BIN=/path/to/twine` overrides if you keep it elsewhere).
 
 Six stages, each behind a confirmation that says whether it can be undone: preflight (read
 only) → merge → push `master` → tag and push the tag → **TestPyPI, then install back out of
@@ -19,14 +22,20 @@ it** → PyPI. The rehearsal is deliberately before the permanent step, because 
 allows re-uploading a version number and a wrong 0.20.0 could only be answered with 0.20.1.
 `--dry-run` prints every command and runs only the preflight.
 
-**Its preflight passes on everything except `twine`, which is not installed.** Verified by
-running it: `RUN11_REPORT.md` § 3, full output in `NIGHT_RUN_LEDGER.md` § W53.
+**Its preflight passes on everything.** Verified by running it: `RUN12_REPORT.md` § 2, full
+output in `NIGHT_RUN_LEDGER.md` § W56–W59. `twine check` passes on both artifacts, which is the
+only evidence available before stage 5 that PyPI will render the long description rather than
+print it as plain text.
 
-**Read this before stage 3.** Local `master` is 7 commits ahead of `origin/master` — the
-SkillScanner Phase 1–2A work and the PDF report generator, 48 files, whose merge commit says
-*(WIP, pre-0.20.0)*. They are already inside the branch, so the release contains them either
-way and parts of them are in the wheel; the push is when they become public. The script lists
-them and stops. Decide before you answer that prompt.
+**The 7 pre-existing commits are decided and documented.** Local `master` is 7 commits ahead of
+`origin/master`: SkillScanner Phase 1 and its three protocol/findings commits, the PDF report
+generator, a `.gitignore` rail, and the merge. They ship **labelled preview** — named in
+`CHANGELOG.md` and in `RELEASE_NOTES_v0.20.0.md`, with what to rely on them for and what not.
+The preflight still lists them at stage 3 and still stops; the list is now expected rather than
+a surprise. Three facts a reader of that prompt should have: `langdetect` is a new *required*
+dependency, `agent-audit report` needs `pip install "agent-audit[report]"`, and `SKILL-010`
+sends `SKILL.md` descriptions to the Claude API if `ANTHROPIC_API_KEY` is set in the
+environment.
 
 Then: the GitHub release from the tag with `RELEASE_NOTES_v0.20.0.md` as the body, and the
 five bodies in `ISSUE_REPLIES.md` — #10 and #12 close on posting, #8 and #11 stay open, #5
@@ -34,9 +43,12 @@ keeps its labels.
 
 ## Start here
 
-1. **`RUN11_REPORT.md` § 1** — two sentences on whether v0.20.0 should ship.
-2. **`RUN11_REPORT.md` § 4** — `NEEDS-HEADY`, ranked.
-3. **`RUN10_REPORT.md` § 6** — the external surfaces, still open and still outside this
+1. **`RUN12_REPORT.md` § 1** — what the three decisions turned into, and the one defect found
+   by executing a path a previous run only read.
+2. **`RUN12_REPORT.md` § 4** — `NEEDS-HEADY`: three new, none blocking.
+3. **`RUN11_REPORT.md` § 4** — the carried items, still accurate except for the three now
+   closed.
+4. **`RUN10_REPORT.md` § 6** — the external surfaces, still open and still outside this
    repository: the slide deck and `docs/cais-2026/`.
 
 ## The one thing to read if you read nothing else
@@ -88,7 +100,8 @@ surface.
 
 ## Current commit
 
-`fix/py314-blocker`, working tree ahead of `dbae329`. Nothing committed by this run.
+`fix/py314-blocker`. RUN 12 committed on top of `2a03089`; the working tree is clean, which the
+preflight requires. RUN 9's section above was written when its work was uncommitted.
 
 ## Invariants at the end of the run
 
@@ -96,7 +109,7 @@ surface.
 |---|---|
 | Layer 1 | **TP 199 / FP 90 / FN 37**, P 68.86% / R 84.32% / F1 0.7581 — unchanged; no detection code touched |
 | `quality_gate_check.py` | **exit 0** — 0 failures, 0 warnings, 0 skipped |
-| full suite | **1,905 passed, 1 failed, 4 skipped** (`pytest tests/ packages/audit/tests/`), 1,910 collected |
+| full suite | **1,924 passed, 1 failed, 4 skipped** (`pytest tests/ packages/audit/tests/`), 1,929 collected |
 | `tests/` alone | **1,873 passed, 1 failed, 4 skipped** |
 | the one failure | `tests/test_corpus_label_rules.py`, committed red on purpose |
 | AVB, all three tools | agent-audit R 95.24 / P 86.96 / F1 0.9091 · Bandit R 26.19 / P 100 / F1 0.4151 · Semgrep R 23.81 / P 100 / F1 0.3846 |
@@ -205,6 +218,17 @@ v0.20.0, Set A 19/19, Set B 9/9 — so it must **not** be retracted with the res
 7 WIP commits go public with the release; the flaky wall-clock test; `"withdrawn in v0.19.3"`
 on eight surfaces naming a version that was never published; and `CAPABILITY_BOUNDARIES.md`
 § 3 counting seven instances of the defect shape when two more have been identified since.
+
+**Three of those five are closed by W56–W59 (RUN 12).** `twine` is installed and § 1.11 finds
+it in the venv; the 7 commits ship labelled preview in both release documents; and the
+`v0.19.3` references are corrected to `v0.20.0` with `tests/test_published_versions.py` failing
+the suite if any published page ever names a release that does not exist. The two that remain
+are unchanged and both are Heady's by their nature: the flaky test's tolerance is a threshold,
+and `CAPABILITY_BOUNDARIES.md` § 3's instance count is a judgement about whether an instrument
+is counted beside a detector. New from RUN 12, none blocking: whether `SKILL-010`'s API call
+should be opt-in; that `CHANGELOG.md` documents six releases that never existed; and that one of
+the seven commits (`208a3ab`) is a `.gitignore` rail rather than either feature — verified
+benign, logged because the brief said to log it.
 
 **Carried, not blocking:** `DECISIONS.md` items 35, 36, 38, 39 rows 2–4, 40, 41, 43, 46.
 New this run: 47–52. `NEXT_ROUND.md` is v0.21.0 and needs no decision to start.

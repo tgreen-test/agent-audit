@@ -4,7 +4,7 @@
 > longer accurate and are deliberately not edited in place, because the record of what was
 > posted is worth more than a silently-updated page:
 >
-> * the rule count is **66**, not "40+" — six advertised rules were withdrawn in v0.19.3
+> * the rule count is **66**, not "40+" — six advertised rules are withdrawn in v0.20.0
 >   because no code path could emit them;
 > * any precision, recall or F1 figure it cites is superseded by
 >   `docs/decisions/METRICS_RETRACTION.md`. The current measured values, reproducible with

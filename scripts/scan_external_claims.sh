@@ -88,7 +88,7 @@ PATTERNS=(
 # --- rule counts: one set, nine numbers ------------------------------------
 'RULES-N|COUNT|(^|[^0-9])(40|49|52|53|56|63|72|92)[[:space:]]*\+?[[:space:]]*(detection[[:space:]]+)?(rules|Rules|条规则|条检测规则)|66 rules. The one-line check is in the legend printed after a scan'
 # --- test counts -----------------------------------------------------------
-'TESTS-N|COUNT|(1,?14[12]|1,?322|1,?54[12]|1,?748|1,?796|1,?808|1,?88[37]|1,?891|1,?895|1,?904)[[:space:]]*\+?[[:space:]]*(tests?|passing|passed)|1,905 passing (pytest tests/ packages/audit/tests/), 1 red on purpose'
+'TESTS-N|COUNT|(1,?14[12]|1,?322|1,?54[12]|1,?748|1,?796|1,?808|1,?88[37]|1,?891|1,?895|1,?904|1,?905)[[:space:]]*\+?[[:space:]]*(tests?|passing|passed)|1,924 passing (pytest tests/ packages/audit/tests/), 1 red on purpose'
 # --- version -----------------------------------------------------------
 'VER|COUNT|v?0[.,](4[.,]1|5[.,]2|16[.,]0|18[.,]2|19[.,][02])([^0-9]|$)|current version is 0.20.0'
 )
@@ -362,7 +362,7 @@ if [ "$n_hits" -gt 0 ]; then
      cd packages/audit && python3 ../../tests/benchmark/precision_recall.py
    66 rules
      python3 -c "import sys;sys.path.insert(0,'tests');from test_rule_producers import advertised_rules;print(len(advertised_rules()))"
-   1,905 tests passing, 1 red by design
+   1,924 tests passing, 1 red by design
      python3 -m pytest tests/ packages/audit/tests/ -q
    AVB knowns: R 100.0% / P 88.0% / F1 0.9362  (unaffected — measured against an oracle)
      cd tests/benchmark && python3 -m "agent-vuln-bench.harness.run_eval" --tool agent-audit --dataset knowns

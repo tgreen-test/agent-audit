@@ -10,7 +10,7 @@ AGENT-015 is why this file exists. Three documents gave that identifier three
 different meanings at once:
 
 * **published** as "Untrusted MCP Server Source";
-* **implemented** as nothing at all — no producer at any commit, withdrawn in v0.19.3
+* **implemented** as nothing at all — no producer at any commit, withdrawn in v0.20.0
   as a duplicate of AGENT-030;
 * **labelled**, five times, on `npm install`, `curl | bash`, `git clone` + exec,
   install-from-remote-requirements and PyPI typosquatting — not one of which involves

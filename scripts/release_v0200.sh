@@ -62,22 +62,24 @@ SDIST="${DIST_DIR}/agent_audit-${VERSION}.tar.gz"
 # nothing — the count recorded there before RUN11 matched no build that was ever on disk.
 # If either of these mismatches, the artifacts in dist/ are NOT the ones that were audited:
 # rebuild and re-audit, or find out what changed. Do not upload past a hash mismatch.
-WHEEL_SHA256="cff621095734b38358d80d3f98f42e7437ff95426dd3ba0c2d93d452cd5a5ee1"
-SDIST_SHA256="9649f1f1b83e487e3ac10c08e5d610384176e55f6a66b5e26551b92eafeb0e8a"
+WHEEL_SHA256="0f38b00ad570ccbbfac761bbc2751217b1f7bb79df6d53dfc1747179da7d63e7"
+SDIST_SHA256="dd0e21dd545a8228121fc32b9e1ce590d519db6cf00bcc4e495a53850b8b577d"
 
 # --- what the verification set must produce ----------------------------------
 #
 # Measured on 2026-09-12 on this branch and recorded in NIGHT_RUN_LEDGER.md § W52 and § W53
 # — deliberately not stamped with a commit sha, because the commit that records a pin is the
 # commit that changes it. The suite pin moved 1,904 -> 1,905 when the release notes joined
-# tests/test_published_metrics.py's MUST_PRINT_A_BLOCK list. These are
+# tests/test_published_metrics.py's MUST_PRINT_A_BLOCK list, and 1,905 -> 1,924 in RUN12:
+# eighteen cases in tests/test_published_versions.py and one in test_cli_report.py. These are
 # pins, not guesses: the script aborts if the tree in front of it produces anything else.
 #
 # They go stale on purpose. Add a test and EXP_SUITE_LINE is wrong and this script stops —
 # which is the correct behaviour, because a release script that accepts any number is not
 # verifying anything. Update the pin deliberately, with the measurement beside it.
 
-EXP_SUITE_LINE="1 failed, 1905 passed, 4 skipped"
+EXP_SUITE_LINE="1 failed, 1924 passed, 4 skipped"
+EXP_TOTAL_TESTS="1929"          # passed + failed + skipped; `--collect-only` agrees
 EXP_RED_TEST="tests/test_corpus_label_rules.py"
 EXP_TP="199"
 EXP_FP="90"
@@ -318,7 +320,7 @@ fi
 sect "1.4  the suite"
 
 # The count alone is not the check. What matters is WHICH tests fail, so this compares the
-# failure set: exactly one deliberate red, nothing else, and 1910 tests accounted for.
+# failure set: exactly one deliberate red, nothing else, and $EXP_TOTAL_TESTS accounted for.
 #
 # One exception, named rather than tolerated silently. TestThroughput::test_consistent_-
 # performance asserts three wall-clock timings of a 20-file scan stay within 50% of their
@@ -380,10 +382,10 @@ fi
 num_from() { printf '%s' "$SUITE_TAIL" | grep -oE "[0-9]+ $1" | head -1 | awk '{print $1}' || true; }
 N_PASS="$(num_from passed)"; N_FAIL="$(num_from failed)"; N_SKIP="$(num_from skipped)"
 TOTAL=$(( ${N_PASS:-0} + ${N_FAIL:-0} + ${N_SKIP:-0} ))
-if [ "$TOTAL" -eq 1910 ]; then
-  ok "1910 tests accounted for (${N_PASS:-0} passed, ${N_FAIL:-0} failed, ${N_SKIP:-0} skipped)"
+if [ "$TOTAL" -eq "$EXP_TOTAL_TESTS" ]; then
+  ok "$EXP_TOTAL_TESTS tests accounted for (${N_PASS:-0} passed, ${N_FAIL:-0} failed, ${N_SKIP:-0} skipped)"
 else
-  bad "$TOTAL tests accounted for, expected 1910 — a test was added or removed since this pin was set"
+  bad "$TOTAL tests accounted for, expected $EXP_TOTAL_TESTS — a test was added or removed since this pin was set"
 fi
 
 if printf '%s' "$SUITE_TAIL" | grep -q "$EXP_SUITE_LINE"; then
@@ -558,14 +560,29 @@ for t in git curl python3 shasum; do
   command -v "$t" >/dev/null 2>&1 && ok "$t: $(command -v "$t")" || bad "$t is not on PATH"
 done
 
+# twine, in four places, because this script's own advice is to install it into a venv and a
+# venv is not on PATH — which is the point of a venv. Checking only PATH and the system
+# python3 would have made "install it as instructed" and "the preflight still fails" the same
+# state, and left a human to work out that the fix was a PATH edit. TWINE_BIN wins, for an
+# installation somewhere else entirely.
+RELEASE_VENV_TWINE="$HOME/.venvs/rel/bin/twine"
 TWINE=""
-if command -v twine >/dev/null 2>&1; then
+if [ -n "${TWINE_BIN:-}" ]; then
+  if [ -x "$TWINE_BIN" ]; then
+    TWINE="$TWINE_BIN"
+  else
+    bad "TWINE_BIN=$TWINE_BIN is set but is not an executable file"
+  fi
+elif command -v twine >/dev/null 2>&1; then
   TWINE="twine"
 elif python3 -m twine --version >/dev/null 2>&1; then
   TWINE="python3 -m twine"
+elif [ -x "$RELEASE_VENV_TWINE" ]; then
+  TWINE="$RELEASE_VENV_TWINE"
 fi
 if [ -n "$TWINE" ]; then
-  ok "twine: $TWINE"
+  TWINE_VERSION="$( ($TWINE --version 2>/dev/null || true) | head -1 | awk '{print $1, $2, $3}' || true)"
+  ok "twine: $TWINE   ${TWINE_VERSION:-version unknown}"
   if [ -f "$WHEEL" ] && [ -f "$SDIST" ]; then
     if $TWINE check "$WHEEL" "$SDIST" >/dev/null 2>&1; then
       ok "twine check passes on both artifacts (the long description will render)"
@@ -575,7 +592,7 @@ if [ -n "$TWINE" ]; then
     fi
   fi
 else
-  bad "twine is not installed — stages 5 and 6 cannot run. Install it in a venv (python3 -m venv ~/.venvs/rel && ~/.venvs/rel/bin/pip install twine) and re-run."
+  bad "twine is not installed — stages 5 and 6 cannot run. Install it where this script looks: python3 -m venv ~/.venvs/rel && ~/.venvs/rel/bin/pip install twine (or set TWINE_BIN=/path/to/twine), then re-run."
   TWINE="twine"   # so the dry-run plan below still prints a readable command
 fi
 
@@ -623,6 +640,69 @@ if [ "$PRE_EXISTING" != "0" ] && [ "$PRE_EXISTING" != "?" ]; then
   warn "local $MASTER is already $PRE_EXISTING commit(s) ahead of $REMOTE/$MASTER — these predate the branch and stage 3 publishes them too:"
   git log --oneline "$REMOTE/$MASTER..$MASTER" | sed 's/^/          /'
   warn "read that list. If any of it should not be public, stop now: after stage 3 it is."
+fi
+
+sect "1.12b  every local ref, and whether anything could publish one by accident"
+
+# RUN11 found that RELEASE_CHECKLIST.md § 6 used a bulk-ref form which would have published
+# skillscanner-core-frozen alongside the release. Naming one ref per stage fixes that
+# instance. This section fixes the class: enumerate every local ref the remote does not
+# have, and check the two mechanisms that publish a ref nobody named.
+#
+# Mechanism 1: a bulk-ref flag in this script or the checklist. Self-checked below, because
+# a rule nothing enforces is a rule that comes back.
+# Mechanism 2: push.followTags. With it set, naming one branch publishes every annotated tag
+# reachable from that branch — and skillscanner-core-frozen is annotated and reachable from
+# master, so this is not hypothetical here.
+
+FOLLOW_TAGS="$(git config --get push.followTags 2>/dev/null || true)"
+case "${FOLLOW_TAGS:-unset}" in
+  true|yes|on|1)
+    bad "push.followTags=$FOLLOW_TAGS — pushing $MASTER would ALSO publish every annotated tag reachable from it, which is more than this release names. Unset it (git config --unset push.followTags) and re-run." ;;
+  *)
+    ok "push.followTags is ${FOLLOW_TAGS:-unset} — publishing $MASTER sends no tag as a side effect" ;;
+esac
+
+BULK_REF_FLAGS='(--tags|--follow-tags|--mirror|--all)'
+for f in "$0" RELEASE_CHECKLIST.md; do
+  [ -r "$f" ] || continue
+  # Match the flag only where it is an argument to a ref-publishing command, so the prose
+  # explaining why the flags are not used does not trip the check on itself.
+  if grep -nE "(push|fetch)[^|#]*[[:space:]]${BULK_REF_FLAGS}([[:space:]]|$)" "$f" >/dev/null 2>&1; then
+    bad "$f contains a bulk-ref publish/fetch form; it would send refs this release does not name:"
+    grep -nE "(push|fetch)[^|#]*[[:space:]]${BULK_REF_FLAGS}([[:space:]]|$)" "$f" | sed 's/^/          /'
+  else
+    ok "$f names every ref it publishes — no --tags, --follow-tags, --mirror or --all"
+  fi
+done
+
+LOCAL_TAGS="$(git for-each-ref --format='%(refname:short)' refs/tags | sort -u)"
+REMOTE_TAGS="$( (git ls-remote --tags "$REMOTE" 2>/dev/null || true) | awk '{print $2}' \
+  | sed -e 's|^refs/tags/||' -e 's|\^{}$||' | grep -v '^$' | sort -u)"
+UNPUBLISHED_TAGS="$(comm -23 <(printf '%s\n' "$LOCAL_TAGS") <(printf '%s\n' "$REMOTE_TAGS") | grep -v '^$' || true)"
+if [ -z "$UNPUBLISHED_TAGS" ]; then
+  ok "every local tag is already on $REMOTE — nothing could leak"
+else
+  warn "local tag(s) not on $REMOTE. Stage 4 sends refs/tags/$TAG and nothing else, so these stay local:"
+  printf '%s\n' "$UNPUBLISHED_TAGS" | while IFS= read -r t; do
+    [ -n "$t" ] || continue
+    if git merge-base --is-ancestor "$t^{commit}" "$MASTER" 2>/dev/null; then
+      info "  $t   (reachable from $MASTER — this is the one push.followTags would send)"
+    else
+      info "  $t   (not reachable from $MASTER)"
+    fi
+  done
+fi
+
+LOCAL_BRANCHES="$(git for-each-ref --format='%(refname:short)' refs/heads | sort -u)"
+REMOTE_BRANCHES="$( (git ls-remote --heads "$REMOTE" 2>/dev/null || true) | awk '{print $2}' \
+  | sed 's|^refs/heads/||' | grep -v '^$' | sort -u)"
+UNPUBLISHED_BRANCHES="$(comm -23 <(printf '%s\n' "$LOCAL_BRANCHES") <(printf '%s\n' "$REMOTE_BRANCHES") | grep -v '^$' || true)"
+if [ -z "$UNPUBLISHED_BRANCHES" ]; then
+  ok "every local branch is already on $REMOTE"
+else
+  warn "local branch(es) not on $REMOTE. Stage 3 sends $MASTER and nothing else, so these stay local:"
+  printf '%s\n' "$UNPUBLISHED_BRANCHES" | sed 's/^/            /'
 fi
 
 sect "1.13  the version is not already on either index"

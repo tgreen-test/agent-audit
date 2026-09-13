@@ -19,7 +19,7 @@ from agent_audit.analysis.rule_context_config import get_context_multiplier
 logger = logging.getLogger(__name__)
 
 
-# v0.19.3: Rule IDs withdrawn from the advertised set because nothing in the
+# v0.20.0: Rule IDs withdrawn from the advertised set because nothing in the
 # package can construct them. A rule that never fires and a clean codebase produce
 # identical output, so no test, benchmark or CI gate could ever have caught this;
 # the runtime producer audit in `tests/test_rule_producers.py` is what did.

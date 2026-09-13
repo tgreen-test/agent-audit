@@ -1008,7 +1008,7 @@ the ratchet. Ground truth is yours; I did not touch it.
 ### 36. AGENT-049 is detected and then thrown away — a seventh rule that cannot fire
 
 Found by the new fixture-coverage guard, and it is a different mechanism from the six
-withdrawn in v0.19.3.
+withdrawn in v0.20.0.
 
 `python_scanner._check_unsafe_deserialization` emits an `unsafe_deserialization` pattern on
 `pickle.load` at confidence 0.85 with an ASI-04 id and a written note.

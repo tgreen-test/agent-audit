@@ -1416,7 +1416,7 @@ agent-audit scan . --baseline baseline.json
 
 ---
 
-*66 rules as of v0.19.3. Every rule listed above has a producer in the package and a
+*66 rules as of v0.20.0. Every rule listed above has a producer in the package and a
 runtime test demonstrating it fires; see `tests/test_rule_producers.py`. Six previously
 listed rules were withdrawn — see Withdrawn Rules below.*
 
@@ -1427,7 +1427,7 @@ listed rules were withdrawn — see Withdrawn Rules below.*
 These rule IDs appeared in earlier versions of this document and in
 `RULE_CWE_MAPPING`, and **no code path in the package could construct any of them**.
 They could not fire on any input, at any commit. They were removed from the
-advertised rule set in v0.19.3 rather than left published, and the IDs are retired
+advertised rule set in v0.20.0 rather than left published, and the IDs are retired
 rather than recycled so that a future rule cannot silently reuse an ID that appears
 in published documents and in the labelled corpus.
 
@@ -1441,7 +1441,7 @@ such a block is `RuleEngine.evaluate()`, and nothing in the product calls it.
 | AGENT-003 | Potential Data Exfiltration Chain | No detection of any kind — no pattern type, no YAML block, no constructor. Its definition ("access to both sensitive data and network capability") states no operational threshold. |
 | AGENT-011 | Missing Goal Validation | YAML-only. Absence-of-configuration detection with no agreed definition of what counts as a goal boundary. |
 | AGENT-013 | Long-Lived Credentials | YAML-only, and subsumed by **AGENT-004** (Hardcoded Credentials), which has a producer, a semantic analyzer and corpus labels. |
-| AGENT-015 | Untrusted MCP Server Source | YAML-only, and a duplicate of **AGENT-030** (Unverified MCP Server Source) — same severity, same CWE-494, same ASI-04 category, same detection content. AGENT-030 superseded it at v0.3.0 and this entry was never withdrawn. |
+| AGENT-015 | Untrusted MCP Server Source | YAML-only, and a duplicate of **AGENT-030** (Unverified MCP Server Source) — same severity, same CWE-494, same ASI-04 category, same detection content. AGENT-030 superseded it during the 0.3.0 development series (never released) and this entry was never withdrawn. |
 | AGENT-016 | Unvalidated RAG Data Source | YAML-only. Detection is absence-of-validation around loader calls; what counts as validation is undefined. |
 | AGENT-036 | Tool Output Trusted Without Sanitization | YAML-only. Needs data-flow from a tool return value into prompt construction — a taint-tracker capability, not a pattern. |
 

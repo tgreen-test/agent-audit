@@ -29,7 +29,7 @@ class TestCWEMapping:
     def test_core_rules_have_cwe(self):
         """Core rules AGENT-001 through AGENT-005 must have CWE mapping.
 
-        AGENT-003 is absent: it was withdrawn in v0.19.3 because no code path could
+        AGENT-003 is absent: it was withdrawn in v0.20.0 because no code path could
         construct it. A CWE for a rule that cannot fire is a compliance claim with
         nothing behind it, so the mapping is not the place to keep it alive.
         """
@@ -41,7 +41,7 @@ class TestCWEMapping:
     def test_owasp_agentic_rules_have_cwe(self):
         """OWASP Agentic Top 10 rules must have CWE mapping."""
         owasp_rules = [
-            # ASI-01: Goal Hijack (AGENT-011 withdrawn, v0.19.3)
+            # ASI-01: Goal Hijack (AGENT-011 withdrawn, v0.20.0)
             "AGENT-010",
             # ASI-03: Identity & Privilege (AGENT-013 withdrawn — see AGENT-004)
             "AGENT-014",
@@ -80,7 +80,7 @@ class TestCWEMapping:
 
     def test_tool_misuse_rules_have_cwe(self):
         """Tool misuse rules must have CWE mapping."""
-        # AGENT-036 withdrawn in v0.19.3 — YAML-only detection, no producer
+        # AGENT-036 withdrawn in v0.20.0 — YAML-only detection, no producer
         tool_rules = ["AGENT-034", "AGENT-035", "AGENT-037", "AGENT-038", "AGENT-039"]
 
         missing = [r for r in tool_rules if r not in RULE_CWE_MAPPING]
