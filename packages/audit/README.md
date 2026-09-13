@@ -23,7 +23,7 @@ You likely need this before every merge if agent code can trigger tools, command
 
 Agent Audit catches these issues before deployment with an analysis core designed for agent workflows today: tool-boundary taint tracking, MCP configuration auditing, and semantic secret detection, with room to extend into learning-assisted detection over time.
 
-Think of it as **security linting for AI agents**, with 60+ rules mapped to the [OWASP Agentic Top 10 (2026)](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/). Includes a dedicated **DeFi Agent Security** profile for blockchain interactions.
+Think of it as **security linting for AI agents**, with 66 rules mapped to the [OWASP Agentic Top 10 (2026)](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/). Includes a dedicated **DeFi Agent Security** profile for blockchain interactions.
 
 ---
 

@@ -103,7 +103,7 @@ covered by that:
 * **The rendered Pages site, if it is served from a branch or a build that has not been
   redeployed.** Corrected source and stale HTML look identical from inside the repository.
   Check the live URL, not the file.
-* **Badge images.** `img.shields.io/badge/tests-1891...` renders whatever the URL says, and
+* **Badge images.** `img.shields.io/badge/tests-1904...` renders whatever the URL says, and
   the URL is in the markdown — so a corrected file is a corrected badge. But a badge whose
   URL points at a *service* (coverage, CI) reflects the last run, not the file.
 * **The repository's social preview card and the GitHub "About" description**, both of which
@@ -189,7 +189,7 @@ number was:
 |---|---|---|
 | Layer 1 | **P 68.86% / R 84.32% / F1 0.7581**, TP 199 / FP 90 / FN 37, over 238 labels in 81 files | `cd packages/audit && python3 ../../tests/benchmark/precision_recall.py` |
 | rules | **66** | `python3 -c "import sys;sys.path.insert(0,'tests');from test_rule_producers import advertised_rules;print(len(advertised_rules()))"` |
-| tests | **1,891 passing**, 1 red on purpose, 4 skipped | `python3 -m pytest tests/ packages/audit/tests/ -q` |
+| tests | **1,904 passing**, 1 red on purpose, 4 skipped | `python3 -m pytest tests/ packages/audit/tests/ -q` |
 | AVB `knowns` | **R 100.0% / P 88.0% / F1 0.9362** — unaffected, measured against an explicit oracle | `cd tests/benchmark && python3 -m "agent-vuln-bench.harness.run_eval" --tool agent-audit --dataset knowns` |
 | version | **0.20.0** | `python3 -c "import agent_audit;print(agent_audit.__version__)"` |
 
@@ -206,32 +206,70 @@ opposite direction** (`METRICS_RETRACTION.md` § 3):
 
 ---
 
-## 4. What the in-repo run found, so you know the tool works
+## 4. The tool was broken until 2026-09-10 — read this before trusting an earlier scan
 
-Run at `bea9901`, 2026-08-11, with the allowlist:
+This section previously read *"What the in-repo run found, so you know the tool works"*. It
+did not work, and the way it failed is the reason this document exists.
+
+`scan_external_claims.sh` cut each pattern's regex at its **first** `|`. Any regex using
+alternation was truncated mid-group into an unbalanced parenthesis, `grep -E` rejected it,
+and the error went to `/dev/null` — so it silently matched nothing. **18 of 34 patterns were
+dead**, including every form of *"100% recall"* and *"0 false negatives"* (`R-100`,
+`R-100-alt`, `R-0FN`, `P-100`, `F1-100`, `ARROW`), the `PREC-80` pattern this release was
+written to catch, and all three count patterns (`RULES-N`, `TESTS-N`, `VER`).
+
+Same command, same eight-claim specimen, before and after the fix: **1 match, then 11.**
+
+Fixed in RUN10: split from the right, plus `validate_patterns()`, which runs every regex
+before scanning and exits 2 if any is malformed rather than under-reporting. The header now
+prints `patterns: 34 (all validated)` — and it is **34**, not the 35 stated here, in
+`PROGRESS.md` and in `RUN9_REPORT.md:183`.
+
+**If you ran this script before 2026-09-10, re-run it.** A clean result from the old script
+is not evidence of a clean surface.
+
+### What the fixed run found outside the repository
+
+Scanned, per `docs/overhaul/RUN10_PROMPT.md`: `docs/`, `agent-audit-slides.html`, `paper/`.
+Read-only; nothing outside this repository was edited. Full detail in `RUN10_REPORT.md` § 2
+and the `NIGHT_RUN_LEDGER.md` RUN10 entry.
+
+| destination | what it carries | class |
+|---|---|---|
+| `agent-audit-slides.html` — a public deck | slide "Current Metrics (v0.16.0)": precision 98.51%, **recall 100%**, F1 99.25%, FP rate 1.49%; a closing slide repeating F1 99.25%; "42 synthetic samples, 198 annotations"; "1,142 passing"; "49 Rules" x4; "v0.16.0" x5 | RETRACT + COUNT |
+| `paper/main.tex:325` and `paper/main.pdf` — an ACM `sigconf` paper | "achieves 98.51\% precision at 100\% recall" — in both source and the compiled PDF | RETRACT |
+| `docs/cais-2026/PAPER_DATA_SUMMARY.md` | a column headed **`LaTeX (v0.16.0)`** holding paste-ready `98.51\%`, `100\%`, `99.25\%`, under an explicit recommendation to report the v0.16.0 Layer 1 metrics in the paper | RETRACT — and it is an *instruction*, not just a stale number |
+| `docs/cais-2026/` — 4 more files | `AVB_EVALUATION_REPORT.md`, `EXECUTION_SUMMARY.md`, `AVB_EXPANSION.md`, `SEMGREP_COMPARISON_REPORT.md` | RETRACT |
+| `paper/neurips/trustagentfiles1/audit/COMPREHENSIVE_AUDIT_SUMMARY.md:145` | "Total audited: **63 rules**" | COUNT, now 66 |
+
+**Clean, and both have hard deadlines:**
+
+* `paper/neurips/submission/` — **0 matches.**
+* `paper/skillsworkshop/` (the SkillScanner camera-ready and poster) — only `WILSON` hits,
+  each of them the workshop's own cross-lingual confidence intervals, not the 58.4–91.9
+  interval that travels with the unsubstantiated 80%.
+
+**Two things no command can answer, and they gate the order of work:**
+
+1. **Has any of it been submitted, uploaded to arXiv, or presented?** Nothing on disk says.
+   An arXiv v1 needs a v2 with a change note; a working draft needs an edit. § 2.1.
+2. `main.tex:401`'s *"100\% recall on injection/RCE and MCP"* is **true and must not be
+   retracted with the rest** — it is AVB Set A/Set B against an oracle, re-measured at
+   v0.20.0 this run: Set A 100.0% (19/19), Set B 100.0% (9/9).
+
+### What the in-repo run finds now
 
 ```
 $ ./scripts/scan_external_claims.sh --allowlist scripts/external_claims_allowlist.txt .
-26 match(es)
+ patterns: 34 (all validated)
+ 132 match(es)
 ```
 
-All 26 accounted for, and **one was a real defect nobody had catalogued**:
-
-| where | what | verdict |
-|---|---|---|
-| `docs/COMPETITIVE-COMPARISON.md:9` | F1 0.778 / P 73.58% / R 82.63%, TP 195 / FP 70 / FN 41, and "218 labels" | **uncorrected. Fixed this run.** It is in neither location table — not `CLAIMS_RECONCILIATION.md` § 2, not `METRICS_RETRACTION.md` § 2 — while `docs/F1_REPRODUCTION.md:7` listed it among the files already carrying the corrected headline. One document certified another as corrected; it was not |
-| `README.md:147` | "validated against 18,899 ClawHub skills at 80% precision" | **open, and yours.** `OUTREACH_CLAIMS.md` § 5 item 2 |
-| `docs/F1_REPRODUCTION.md` (8 lines) | its own retraction notes, and the disclosed adjusted-F1 derivation table | correct as-is. Its job is to quote them |
-| `docs/COMPETITIVE-COMPARISON.md:18,22` | the correction note added this run, quoting what it replaced | correct as-is |
-| `blog_post.md`, `twitter_thread.md`, `chinese_summary.md` | the retraction paragraph in each | correct as-is — and deliberately not allowlisted, so that a *reintroduced* figure would still show up |
-
-**The lesson is the one this project keeps relearning, and it is why the script exists rather
-than a checklist.** Twenty-one locations of the 0.778 family were catalogued by hand across
-two documents and two sessions. A twenty-second was found in under a second by a program,
-and it was sitting in a competitive comparison table against two named third-party tools —
-the single worst place in the repository for a stale number to be.
-
----
+`README.md` no longer matches at all — its ClawHub clause was cut in RUN10 (`RUN10_REPORT.md`
+§ 4). The remainder are documents whose job is to quote the figures, plus
+`docs/F1_REPRODUCTION.md` and `docs/COMPETITIVE-COMPARISON.md`, which stay unallowlisted on
+purpose so their correction notes keep showing up. The bulk of the rest is `VER`, which is
+loose by design and mostly matches version strings in source and dated reports.
 
 ## Related
 

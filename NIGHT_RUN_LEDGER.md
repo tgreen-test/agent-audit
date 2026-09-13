@@ -5358,3 +5358,796 @@ one, dropping the protected path from the path list, and writing the heredoc bod
 with the editor rather than through the shell. One further refusal came from the environment
 rather than the hook — decoding the live-C2 base64 string — and its consequence is recorded
 in `OUTREACH_CLAIMS.md` § 1 rather than worked around.
+
+
+---
+
+# RUN 10 — 2026-09-10 — the three release blockers
+
+Branch `fix/py314-blocker`, from `dbae329`. Nothing pushed, merged, tagged or published.
+
+## W48 — the external surface
+
+### The instrument was broken, and that is the finding
+
+Before reporting what the scan found, what the scan **could not** find. RUN9 shipped
+`scripts/scan_external_claims.sh` and `EXTERNAL_CLAIMS_CHECKLIST.md` § 4 certified it with
+*"What the in-repo run found, so you know the tool works"*. It did not work.
+
+The scan loop extracted each pattern's regex with `regex="${rest%%|*}"` — a cut at the
+**first** `|`. Regexes containing alternation were therefore truncated mid-group:
+
+```
+R-100    '(recall|Recall|召回率)[^0-9%]{0,24}(100...)'    ->  '(recall'
+PREC-80  '80[[:space:]]*%[^.]{0,30}(precision|Precision)' ->  '80[[:space:]]*%[^.]{0,30}(precision'
+RULES-N  '(^|[^0-9])(40|49|52|53|56|63|72|92)...'         ->  '(^'
+```
+
+Every one is an unbalanced parenthesis. `grep -E` rejected each with an error, and the
+error went to `/dev/null` — so the pattern silently matched nothing. **18 of 34 patterns
+were dead for the tool's entire life.**
+
+The dead set is not a random 18. It contained every form of the retracted *"100% recall"*
+and *"0 false negatives"* claims (`R-100`, `R-100-alt`, `R-0FN`, `P-100`, `F1-100`,
+`ARROW`), the `PREC-80` pattern this release was written to catch, and all three count
+patterns (`RULES-N`, `TESTS-N`, `VER`).
+
+BEFORE and AFTER, same command, same specimen file containing eight known-bad claims:
+
+```
+$ bash <script as committed at dbae329> $SCRATCH/specimen
+ 1 match(es).
+
+$ ./scripts/scan_external_claims.sh $SCRATCH/specimen
+ patterns: 34 (all validated)
+ 11 match(es).
+```
+
+FIX — `scripts/scan_external_claims.sh`:
+
+* `regex="${rest%|*}"` (split from the right) in the scan loop; `truth="${rest##*|}"` in
+  `--list`, which had the same defect mirrored.
+* `validate_patterns()` runs every regex against empty input before scanning and **exits 2**
+  if any is malformed. grep exits 0/1 on valid patterns and >=2 on a bad one.
+* The header now prints `patterns: N (all validated)`.
+
+The root cause was not the `%%` — it was that a broken pattern and a clean surface produce
+identical output: nothing. The tool now proves its instrument before trusting it.
+
+**The count was also wrong.** The array holds **34** patterns; `PROGRESS.md`,
+`RUN9_REPORT.md:183` and RUN10's own brief all say 35.
+
+### Directories
+
+The RUN10 brief as delivered to this session was **truncated at the directory list**. The
+authoritative copy is `docs/overhaul/RUN10_PROMPT.md`, which was read before scanning
+anything. It forbids `agentpayment-paper/` and `argus-site/`, both of which had been
+provisionally shortlisted from `EXTERNAL_CLAIMS_CHECKLIST.md` § 2 before the real list was
+found. Neither was scanned; only filenames were listed.
+
+SCANNED (authorised): `docs/`, `agent-audit-slides.html`, `paper/`.
+Sibling paper repos on `agent-audit` or the Skills work: **none exist** beyond `paper/`,
+which already contains `neurips/` and `skillsworkshop/`.
+
+NOT SCANNED, forbidden by the brief: `agentpayment-paper/`, `argus-site/`, `defi-shield/`,
+`batch_scan_output/`, `demo/`, `demo-env/`, `triage_data/`.
+
+NOT SCANNED, skipped as ambiguous or not a paper repo, per *"when unsure, skip"*:
+`trustagent_bench/` (78,615 files, a corpus of third-party repos), `openclaw-skill/`,
+`reachout/`, `post/`, `poc/`, `spec/`, `todos/`, `trust-score/`, `framework-scans/`,
+`prompt-package/`, `report_template/`, `erc4337-frontrun-repro/`, `defi-1/`,
+`vulnerable-agent-demo/`, `MetaGPT/`, `OpenHands/`, `everything-claude-code/`,
+`agent-security-suite-2b/`.
+
+No client-bearing path was read. The parent `.gitignore` tripwire was used mechanically —
+a script matched each top-level entry against its patterns **without printing the pattern
+values** — and only `AGENT_PAYMENT_AUDIT_METHODOLOGY.md` is excluded by name.
+
+### Hits, by destination — ALL READ-ONLY, NOTHING EDITED OUTSIDE THE REPOSITORY
+
+**1. `agent-audit-slides.html` — a public deck, and the worst surface found.**
+Slide "Current Metrics (v0.16.0)" carries the complete retracted set:
+
+| line | tag | text | what is true now |
+|---|---|---|---|
+| 950 | P-98.51 RETRACT | `Precision: 98.51% (target: 90%)` | withdrawn; 68.86% measured |
+| 951 | R-100 RETRACT | `Recall: 100% (target: 85%)` | withdrawn; 84.32% measured |
+| 952 | F1-99.25 RETRACT | `F1: 99.25% (target: 0.87)` | withdrawn; 0.7581 measured |
+| 953 | FPR-1.49 RETRACT | `FP Rate: 1.49% (target: <=5%)` | 31.14% measured |
+| 1096 | F1-99.25 RETRACT | `3-layer evaluation: Synthetic (F1 99.25%)` | withdrawn |
+| 901 | GT-198 RETRACT | `42 synthetic samples, 198 annotations` | GT v2.2, 81 files, 238 labels |
+| 961 | TESTS-N COUNT | `Unit Tests: 1,142 passing` | 1,895 |
+| 220, 728, 849, 1105 | RULES-N COUNT | `49 Rules` | 66 |
+| 218, 516, 806, 939, 1059 | VER COUNT | `v0.16.0` | 0.20.0 |
+
+Lines 951, 901, 961, and all four rule-count and five version lines were **invisible to the
+broken tool**. Only 950/952/953 showed on the first pass.
+False positives, for the record: 119, 130, 165 — `rgba(108,99,255,...)` contains `99,25`.
+
+**2. `paper/main.tex:325` and `paper/main.pdf` — an ACM `sigconf` paper, source and build.**
+
+```
+main.tex:325  On synthetic ground-truth fixtures (Layer~1 evaluation), this system
+              achieves 98.51\% precision at 100\% recall.
+main.pdf      (pdftotext, lines 188-189) "...achieves 98.51% precision at 100% recall."
+```
+
+`main.pdf` is dated 2026-03-07, `main.tex` 2026-03-10 — the build is older than the source,
+so the PDF is stale in addition to being wrong. The `100\% recall` half was invisible to the
+broken tool.
+
+**Verified NOT a defect, in the same file:** `main.tex:401` / `main.pdf` line 233 —
+*"achieves 100\% recall on injection/RCE and MCP"*. That is AVB Set A and Set B, measured
+against an explicit oracle, and it was **re-measured this run at v0.20.0 and still holds**:
+Set A 100.0% (19/19), Set B 100.0% (9/9). Do not retract it with the others.
+
+**3. `docs/cais-2026/` — the paper data pack, and the highest-leverage item.**
+
+`PAPER_DATA_SUMMARY.md:106-113` is a table with a column literally headed **`LaTeX
+(v0.16.0)`** holding `98.51\%`, `100\%`, `99.25\%` — paste-ready macros — under the note:
+
+> **Recommend reporting v0.16.0 Layer 1 metrics in the paper** with a note about the
+> expanded ground truth.
+
+This is not a stale figure; it is a **standing instruction to publish the retracted set**,
+and it is the `\newcommand{\ourprecision}{98.51\%}` shape `EXTERNAL_CLAIMS_CHECKLIST.md`
+§ 2.1 warns about. Also: `AVB_EVALUATION_REPORT.md:222,224,225,330`,
+`EXECUTION_SUMMARY.md:32,91,92,113,114,115,123`,
+`AVB_EXPANSION.md:92,108,125,185,200,204`, `SEMGREP_COMPARISON_REPORT.md:104`,
+`PAPER_DATA_SUMMARY.md:157,159`.
+
+**4. `paper/neurips/trustagentfiles1/audit/COMPREHENSIVE_AUDIT_SUMMARY.md:145`** —
+`**Total audited** | **63 rules**`. COUNT; 63 is one of the nine wrong rule counts. Now 66.
+
+### Clean, and worth stating because they are the two with hard deadlines
+
+* **`paper/neurips/submission/`** — **0 matches.** The NeurIPS submission carries none of
+  the retracted figures.
+* **`paper/skillsworkshop/`** (the SkillScanner camera-ready, draft and poster) — the only
+  matches are `WILSON`, and each is the workshop's **own** cross-lingual confidence
+  intervals (`poster.html:522`: `EN [5.3, 7.1] · ZH [14.1, 22.4] · ...`), not the
+  58.4-91.9 interval that travels with the unsubstantiated 80%. Clean.
+
+### Submission status: UNVERIFIED
+
+Nothing on disk says whether `paper/main.pdf` or `docs/cais-2026`'s target was ever
+submitted, uploaded to arXiv, or presented. No command answers it. **NEEDS-HEADY** — the
+remedy differs (arXiv v1 needs a v2 with a change note; a working draft needs an edit) and
+`METRICS_RETRACTION.md` § 4 says the ordering is retract-then-restate.
+
+## W49 — COMPETITIVE-COMPARISON.md
+
+### Per-row provenance of the table as it stood
+
+| row | corpus | samples | measured | version |
+|---|---|---|---|---|
+| agent-audit | GT v2.2 | 81 | 2026-08-11 | 0.20.0 |
+| Bandit | AVB-19 | 19 | 2026-02-19 | 0.15.1/0.16.0 era, Bandit 1.8.6 |
+| Semgrep | AVB-19 | 19 | 2026-02-19 | 0.15.1/0.16.0 era, Semgrep 1.136.0 |
+
+**Option 1 chosen — re-measure all three on one corpus at v0.20.0.** The adapters run.
+
+```
+$ cd tests/benchmark && python3 -m "agent-vuln-bench.harness.run_eval" --tool all \
+      --dataset all --output ../../results/avb_tool_comparison
+                                                    121.93s user 10.08s system 2:25.50 total
+agent-audit:  Recall 95.2% | Precision 87.0% | Set A 100.0% | Set B 100.0% | Set C 85.7%
+bandit:       Recall 26.2% | Precision 100.0% | Set A 57.9% | Set B 0.0% | Set C 0.0%
+semgrep:      Recall 23.8% | Precision 100.0% | Set A 47.4% | Set B 0.0% | Set C 7.1%
+```
+
+22 samples / 42 oracle labels. agent-audit TP 40 / FN 2 / FP 6 (F1 0.9091); Bandit TP 11 /
+FN 31 / FP 0 (F1 0.4151); Semgrep TP 10 / FN 32 / FP 0 (F1 0.3846). Versions: agent-audit
+0.20.0 @ `dbae329`, Bandit 1.8.0, Semgrep 1.99.0, 2026-09-10.
+Committed: `results/avb_tool_comparison_v0.20.0.{json,md}`.
+
+**The baselines beat agent-audit on two of four headline metrics** — precision 100% vs
+86.96%, FPR 0% vs 13.04% — and Bandit is the fastest tool. All three facts are now in the
+table in bold, per *"a comparison table that never loses a row is not a measurement"*.
+
+### Why the previous caveat was itself wrong
+
+The old note said the baselines *"have not been re-run against the 81-sample GT; until they
+are…"*, implying re-running was the missing step. **It is not possible.**
+`tests/benchmark/precision_recall.py:332` requires `e_rule == d_rule` — a detection counts
+only when its rule ID equals the label's. Labels carry `AGENT-0xx`; Bandit emits `B102`,
+Semgrep `python.lang.security.*`. Both would score a structural 0.0 measuring the
+identifier scheme, not the tool. AVB's `matches_oracle(oracle_file, oracle_line,
+line_tolerance)` takes **no rule ID at all**, which is what makes it comparable.
+
+So the fix was to move the comparison to the corpus built for it, and to state in § 2 of the
+document why F1 0.7581 and F1 0.9091 answer different questions and must not share a table.
+
+Three limits are now stated in § 7: 22 samples is small; the corpus was authored by one of
+the tools under test; and the Semgrep row is **not deterministic over time** because the
+adapter runs `--config=auto`, which resolves rules from the registry at scan time.
+
+## W50 — README.md:147
+
+```
+BEFORE  The scanner covers all 10 OWASP Agentic AI threat categories and has been
+        validated against 18,899 ClawHub skills at 80% precision.
+AFTER   The scanner covers all 10 OWASP Agentic AI threat categories, including seven
+        rules written specifically for OpenClaw skills (AGENT-058 to AGENT-064).
+```
+
+**Option 3, cut.** Options 1 and 2 were both checked and are unavailable: no artifact in the
+tree records the scan (a grep for the totals across `*.json`/`*.csv`/`*.yaml` returns
+nothing; no file matches `-iname "*clawhub*"`), and re-running needs a corpus that is not
+here. The data that would date it under option (b) is equally absent. Policy 6: *a number
+that cannot be reproduced gets cut or dated, never hedged.*
+
+**The clause was wrong in a second way nobody had recorded.** The 80% is a **20-sample**
+draw (16/20, 95% Wilson CI 58.4%–91.9%, `OUTREACH_CLAIMS.md` § 3.4). Attaching it to an
+18,899-skill denominator is the one arrangement that makes a wide interval read as a precise
+measurement.
+
+Both halves of the replacement are reproducible:
+
+```
+$ python3 -c "...from test_rule_producers import advertised_rules;print(len(advertised_rules()))"
+66
+$ # AGENT-058..064 present, and 10 distinct OWASP ASI ids across advertised rules
+7   ['AGENT-058','AGENT-059','AGENT-060','AGENT-061','AGENT-062','AGENT-063','AGENT-064']
+10  ASI-01..ASI-10
+```
+
+GUARD — `tests/test_unsubstantiated_metrics.py`, 4 tests. Same shape as
+`test_published_rule_count`: published surfaces + drafts once tracked. Proven to fail:
+
+```
+$ # with README.md:147 temporarily restored to its pre-fix text
+2 failed, 2 passed
+    test_no_unsubstantiated_metric_on_a_published_surface
+    test_readme_states_no_clawhub_validation_metric
+$ # restored to the corrected text
+4 passed
+```
+
+Its own `test_guard_can_actually_fail` caught a real defect in a pattern on first run
+(`1[,.]?492\s*(?:BLOCK|critical)` missed `1,492 were BLOCK-tier`); fixed to allow
+intervening words. `test_true_avb_recall_is_not_flagged` pins the decision **not** to guard
+`100% recall`, because `docs/COMPETITIVE-COMPARISON.md` states it truthfully three times for
+AVB Sets A and B — a guard that fails on true text gets switched off rather than repaired.
+
+## The test count drifted again, and dragged four more surfaces with it
+
+Adding four guard tests moved the suite 1,891 to 1,895, which is the defect RUN9 recorded as
+*"the correction went stale before the session ended"*. Corrected on every current-state
+surface; records (`NIGHT_RUN_LEDGER`, `RUN*_REPORT`, `DECISIONS`) deliberately left alone.
+
+```
+$ python3 -m pytest tests/ packages/audit/tests/ -q   1 failed, 1895 passed, 4 skipped
+$ python3 -m pytest tests/ -q                          1 failed, 1863 passed, 4 skipped
+$ python3 -m pytest tests/ packages/audit/tests/ -q --collect-only   1900 tests collected
+```
+
+CLAUDE.md (x2), README.md badge, README_CN.md badge, EXTERNAL_CLAIMS_CHECKLIST.md (x2),
+scan_external_claims.sh (x2), OUTREACH_CLAIMS.md (x2), blog_post.md.
+
+**Three further stale counts, all found only because the scanner was fixed:**
+
+| where | was | now | why it is a live claim |
+|---|---|---|---|
+| `docs/index.html:896` | `1,887 tests` | `1,895 tests` | hero badge on the published docs site |
+| `README_CN.md:367` | `# 1142 tests` | `# 1,863 passed, 1 failed by design, 4 skipped` | the English twin at `README.md:388` said `1,859`, also stale, now `1,863` |
+| `CLAUDE.md:56` | `RULE_CWE_MAPPING (92 rules)` | `RULE_CWE_MAPPING (86 entries)` | the dict has 86 entries, not 92 |
+
+`docs/BENCHMARK-RESULTS.md:206` (`1142 passed`) was checked and **left alone**: the file
+opens *"HISTORICAL DOCUMENT — DO NOT CITE AS CURRENT"* with a date and version, so its
+number is a correct record. `docs/reports/claude-code-security-audit.md:178` (`63 rules`)
+likewise carries `Argus version: v0.19.0` in its header.
+
+`TESTS-N` in the scan script now also matches `1,891`, so the value this run superseded is
+itself catchable.
+
+## W51 — release evidence
+
+```
+$ python3 -m pytest tests/ -q
+1 failed, 1863 passed, 4 skipped, 3586 warnings in 37.87s
+    FAILED tests/test_corpus_label_rules.py — red on purpose
+
+$ cd packages/audit && python3 ../../tests/benchmark/precision_recall.py --output-json ../../results/layer1.json
+True Positives: 199 / False Positives: 90 / False Negatives: 37
+Precision 68.86%  Recall 84.32%  F1 75.81%  FP Rate 31.14%
+[PASS] Precision >= 66%   [PASS] Recall >= 82%   [PASS] F1 >= 73%
+
+$ python3 tests/benchmark/quality_gate_check.py --config tests/benchmark/gates.yaml
+Summary: 0 failures, 0 warnings, 0 skipped, 4 below target (non-blocking)
+exit 0
+
+$ bash .claude/hooks/test-guard.sh
+== night-guard self-test (11 cases) ==   passed=11 failed=0
+```
+
+`./run_eval.sh --commit HEAD` — **UNVERIFIED.** No such file exists at the repository root;
+it has never been tracked (`git log --all -- run_eval.sh` is empty) and `git ls-files` shows
+0 tracked files under the gitignored benchmark corpus directory, which this run's hard rules
+and `night-guard.sh:8` both forbid touching. The signal-to-noise 2.2:1 figure the brief
+expects therefore has **no evidence produced this run**, and is not restated.
+
+Layer 1 is byte-identical to the established figures: no detection code was touched.
+
+## Guard friction
+
+One denial, not bypassed, plus one on this ledger itself.
+
+1. `cd <parent> && ls -d */ 2>/dev/null` was refused. The mechanism: `night-guard.sh:16`
+   tokenises any command containing a redirect, and the loop `for tok in $(...)` is
+   **unquoted**, so the literal `*/` glob-expanded against the repo's own benchmark corpus
+   directory. A false positive in the guard, resolved by using `find . -maxdepth 1 -type d`
+   instead of a glob.
+2. Appending this ledger entry through a shell heredoc was refused for the same reason — the
+   prose contains both `>` and the protected directory name. Resolved by writing the text
+   with the editor and appending the file, so no protected token ever appears in a command.
+
+Recorded, not worked around; the guard wins.
+
+## RUN 10 — BEFORE/AFTER per corrected surface, same command both sides
+
+Added on the stop-gate's challenge. The prose above records each correction as a was/now
+table; this section runs the **same command** against the committed state (`git show HEAD:…`,
+i.e. `dbae329`) and the working tree, so every claimed edit has paired real output rather
+than a summary of one.
+
+```
+### the ClawHub metric — README.md
+$ git show HEAD:README.md | grep -F "18,899 ClawHub" | head -1
+BEFORE  The scanner covers all 10 OWASP Agentic AI threat categories and has been validated against 18,899 ClawHub skills at 80% precision.
+$ grep -F "18,899 ClawHub" README.md | head -1
+AFTER   (no output — the clause is gone)
+
+### tests badge — README.md
+$ git show HEAD:README.md | grep -F "tests-189" | head -1
+BEFORE  [![Tests](https://img.shields.io/badge/tests-1891%20passed%2C%201%20red%20by%20design-brightgreen)]()
+$ grep -F "tests-189" README.md | head -1
+AFTER   [![Tests](https://img.shields.io/badge/tests-1895%20passed%2C%201%20red%20by%20design-brightgreen)]()
+
+### tests badge — README_CN.md
+$ git show HEAD:README_CN.md | grep -F "tests-189" | head -1
+BEFORE  [![Tests](https://img.shields.io/badge/tests-1891%20passed%2C%201%20red%20by%20design-brightgreen)]()
+$ grep -F "tests-189" README_CN.md | head -1
+AFTER   [![Tests](https://img.shields.io/badge/tests-1895%20passed%2C%201%20red%20by%20design-brightgreen)]()
+
+### dev snippet — README.md
+$ git show HEAD:README.md | grep -F "pytest ../../tests/ -v" | head -1
+BEFORE  poetry run pytest ../../tests/ -v  # 1,859 passed, 1 failed by design, 4 skipped
+$ grep -F "pytest ../../tests/ -v" README.md | head -1
+AFTER   poetry run pytest ../../tests/ -v  # 1,863 passed, 1 failed by design, 4 skipped
+
+### dev snippet — README_CN.md
+$ git show HEAD:README_CN.md | grep -F "pytest ../../tests/ -v" | head -1
+BEFORE  poetry run pytest ../../tests/ -v  # 1142 tests
+$ grep -F "pytest ../../tests/ -v" README_CN.md | head -1
+AFTER   poetry run pytest ../../tests/ -v  # 1,863 passed, 1 failed by design, 4 skipped
+
+### hero badge on the published docs site — docs/index.html
+$ git show HEAD:docs/index.html | grep -F "OWASP coverage ·" | head -1
+BEFORE          v0.20.0 — 66 rules · 10/10 OWASP coverage · 1,887 tests
+$ grep -F "OWASP coverage ·" docs/index.html | head -1
+AFTER           v0.20.0 — 66 rules · 10/10 OWASP coverage · 1,895 tests
+
+### CWE map size — CLAUDE.md
+$ git show HEAD:CLAUDE.md | grep -F "RULE_CWE_MAPPING" | head -1
+BEFORE  engine.py  # RULE_CWE_MAPPING (92 rules), PATTERN_TYPE_TO_RULE_MAP (60+ patterns)
+$ grep -F "RULE_CWE_MAPPING" CLAUDE.md | head -1
+AFTER   engine.py  # RULE_CWE_MAPPING (86 entries), PATTERN_TYPE_TO_RULE_MAP (60+ patterns)
+    producer:  python3 -c "...from agent_audit.rules.engine import RULE_CWE_MAPPING as m;print(len(m))"
+    -> 86
+
+### suite line — CLAUDE.md
+$ git show HEAD:CLAUDE.md | grep -oE "Suite: .{0,58}"
+BEFORE  Suite: `pytest tests/ packages/audit/tests/` → **1,891 passed, 1
+$ grep -oE "Suite: .{0,58}" CLAUDE.md
+AFTER   Suite: `pytest tests/ packages/audit/tests/` → **1,895 passed, 1
+
+### collected count — CLAUDE.md
+BEFORE  # 1,896 collected (1,891 pass, 1 red by design, 4 skipped)
+AFTER   # 1,900 collected (1,895 pass, 1 red by design, 4 skipped)
+    producer:  python3 -m pytest tests/ packages/audit/tests/ -q --collect-only
+    -> 1900 tests collected
+```
+
+### The one claim that has no BEFORE, stated rather than papered over
+
+**W49's re-measurement has no same-command BEFORE, and cannot have one.** The AVB command
+`run_eval --tool all --dataset all` had never been run at v0.20.0 before this session, so
+there is no prior output of the same command to pair with. What exists instead:
+
+* the **provenance** of each superseded row (corpus, sample count, date, tool version), which
+  is what made the old table incomparable — recorded in the W49 section above and in
+  `docs/COMPETITIVE-COMPARISON.md` § 6;
+* the raw output of the new run, committed at `results/avb_tool_comparison_v0.20.0.{json,md}`
+  so the AFTER is checkable by a reader;
+* an independent cross-check that the run is sound: its agent-audit row (R 95.24 / P 86.96 /
+  F1 0.9091) is **byte-identical** to the AVB `all` figures `PROGRESS.md` carried from RUN9,
+  measured by a different session.
+
+Calling that a BEFORE/AFTER pair would be a fabrication. It is a first measurement with its
+provenance, and the distinction is the same one this release spent nine runs enforcing.
+
+### Scanner fix — the pairing that matters most, restated for completeness
+
+```
+$ bash <scan_external_claims.sh as committed at dbae329> $SCRATCH/specimen
+ 1 match(es).
+$ ./scripts/scan_external_claims.sh $SCRATCH/specimen
+ patterns: 34 (all validated)
+ 11 match(es).
+```
+
+### Guard — proven red, then green, same command
+
+```
+$ python3 -m pytest tests/test_unsubstantiated_metrics.py -q     # README:147 restored to pre-fix text
+2 failed, 2 passed
+$ python3 -m pytest tests/test_unsubstantiated_metrics.py -q     # corrected text
+4 passed
+```
+
+---
+
+# RUN 10 addendum — 2026-09-11 — the paper correction
+
+**Authorised by Heady**, superseding the RUN10 brief's "no edits outside the repository" for
+these four items only. `paper/` is **not** under version control, so `main.tex` and `main.pdf`
+were backed up before any edit: `main.tex.pre-retraction-20260911.bak`,
+`main.pdf.pre-retraction-20260911.bak`.
+
+## The one edit: `paper/main.tex:325`
+
+```
+$ grep -n "98\.51" main.tex.pre-retraction-20260911.bak
+BEFORE  325:On synthetic ground-truth fixtures (Layer~1 evaluation), this system achieves 98.51\% precision at 100\% recall.
+
+$ sed -n '325,332p' main.tex
+AFTER   On synthetic ground-truth fixtures (Layer~1 evaluation), this system achieves
+        68.86\% precision at 84.32\% recall (F1 0.758), measured at agent-audit
+        v0.20.0.\footnote{An earlier version of this paper reported 98.51\% precision
+        at 100\% recall for this evaluation. Those figures were not measured: false
+        negatives were assumed to be zero rather than counted. The values above are
+        measured and reproducible via the evaluation script distributed with the tool
+        (\texttt{tests/benchmark/precision\_recall.py}) against ground truth v2.2
+        (81 files, 238 labels), yielding TP~199 / FP~90 / FN~37.}
+```
+
+Heady's supplied wording ended mid-word at *"reproducible via the evaluati"*; the footnote was
+completed to name the producing script, the corpus version and the three counts. Brace balance
+of the edited block verified 2/2.
+
+## The two claims verified and deliberately KEPT
+
+The distinction Heady drew is the whole point: Layer 1's 98.51% was never measured (FN assumed
+zero), while AVB's 100% recall is measured against an explicit oracle. Both AVB claims were
+re-checked against this run's committed measurement
+(`results/avb_tool_comparison_v0.20.0.json`, agent-audit 0.20.0):
+
+| line | claim | verdict |
+|---|---|---|
+| `main.tex:395` | "achieves perfect recall on Set~A (injection/RCE) and Set~B (MCP/components)" | **TRUE** — Set A 100.0% (19/19), Set B 100.0% (9/9) |
+| `main.tex:408` | "achieves 100\% recall on injection/RCE and MCP vulnerability sets" | **TRUE** — same measurement |
+
+The same paragraph's supporting detail also still holds: *"The two false negatives in Set~C"* —
+measured Set C 85.7% (12/14), and both FN fall in the T12 noise sample, matching the paper's
+"both in a TypeScript/Markdown noise sample".
+
+**Neither was touched.** Retracting them alongside the Layer 1 figure would have withdrawn a
+correct, oracle-backed result — the error in the opposite direction that
+`METRICS_RETRACTION.md` § 3 warns about.
+
+## `main.pdf` — NOT rebuilt, and it briefly did not exist
+
+**The rebuild failed and is blocked on the toolchain, not on the source.** This machine has
+TeX Live 2026 **basic** at `/usr/local/texlive/2026basic`; `main.tex` needs three packages that
+are not installed:
+
+```
+$ kpsewhich pgfplots.sty acmart.sty placeins.sty
+  MISSING pgfplots
+  MISSING acmart
+  MISSING placeins
+$ pdflatex -interaction=nonstopmode -halt-on-error main.tex
+! LaTeX Error: File `pgfplots.sty' not found.
+!  ==> Fatal error occurred, no output PDF file produced!
+```
+
+**pdflatex deleted `main.pdf` while reporting "no output PDF file produced".** Restored from
+the backup and verified byte-identical (`cmp` clean, 125,833 bytes); the failed run's `main.log`
+was removed. Had the backup not been taken first, the only compiled copy of the paper would
+have been destroyed by a command that said it had produced nothing.
+
+`tlmgr` cannot install into a root-owned tree as `heady`, and no `sudo` was run. So:
+
+* **`main.tex` is corrected.** The source is the artifact of record.
+* **`main.pdf` is the OLD build and still carries the retracted sentence.** It is *not* a
+  second uncorrected surface to chase — it is one rebuild behind, and rebuilding is Heady's
+  step. Until then the two disagree, and the PDF is the one a reader would open.
+
+## Consequence for the claims scanner
+
+`main.tex` will keep matching `P-98.51` and `R-100`, because the footnote quotes both figures in
+order to retract them — the same shape as the repo's allowlisted records. That is correct and
+should not be "fixed"; a scan hit on `main.tex` now needs one glance to confirm it is the
+footnote and not a live claim.
+
+## Paper correction — same-command BEFORE/AFTER, and a counting trap
+
+Added on the stop-gate's challenge that the entry above pairs a `grep` on the backup with a
+`sed` on the working file — two different commands, which is the weaker form. One command,
+both files, real output:
+
+```
+$ for f in main.tex.pre-retraction-20260911.bak main.tex; do echo "== $f"; grep -n "Layer~1 evaluation" "$f"; done
+== main.tex.pre-retraction-20260911.bak
+325:On synthetic ground-truth fixtures (Layer~1 evaluation), this system achieves 98.51\% precision at 100\% recall.
+== main.tex
+325:On synthetic ground-truth fixtures (Layer~1 evaluation), this system achieves
+```
+
+**The obvious check would have been wrong here, and it is worth writing down.** Counting
+occurrences shows no change at all, because the retraction footnote quotes the figure it
+withdraws:
+
+```
+$ for f in main.tex.pre-retraction-20260911.bak main.tex; do printf "%-42s " "$f"; grep -c "98\.51" "$f"; done
+main.tex.pre-retraction-20260911.bak       1
+main.tex                                   1
+```
+
+A "the number is gone" test would read that as *nothing happened*; a "the number is absent"
+test would read the corrected file as *still broken*. Both are wrong. The discriminator is
+the **verb**, not the count — whether the paper *asserts* the figure or *reports having
+asserted* it:
+
+```
+$ for f in main.tex.pre-retraction-20260911.bak main.tex; do printf "%-42s " "$f"; grep -c "achieves 98\.51" "$f"; done
+main.tex.pre-retraction-20260911.bak       1      <- live claim
+main.tex                                   0
+
+$ for f in main.tex.pre-retraction-20260911.bak main.tex; do printf "%-42s " "$f"; grep -c "reported 98\.51" "$f"; done
+main.tex.pre-retraction-20260911.bak       0
+main.tex                                   1      <- retraction footnote
+```
+
+This is the same shape as the repository's allowlist decision — a document that quotes a wrong
+number in order to discuss it is not a surface carrying that number — but here it holds
+*within a single sentence*, which no path-based allowlist could express.
+
+And the claim that must survive both greps, unchanged on both sides (line number shifted by
+the seven added lines, text identical):
+
+```
+$ for f in main.tex.pre-retraction-20260911.bak main.tex; do echo "== $f"; grep -n "perfect recall on" "$f"; done
+== main.tex.pre-retraction-20260911.bak
+388:vulnerability category.  \tool{} achieves perfect recall on
+== main.tex
+395:vulnerability category.  \tool{} achieves perfect recall on
+```
+
+### Correction to the entry above
+
+That entry says the paper correction covers "the one edit". More precisely: **one of the four
+items Heady listed was an edit; two were verifications that correctly resulted in no change;
+the fourth (`main.pdf`) is blocked on the toolchain and remains uncorrected.** The paper is
+not fixed until `main.pdf` is rebuilt — the source and the build currently disagree, and the
+build is the file a reader opens.
+
+---
+
+# W52 — the pre-release audit, and the authority that had gone stale
+
+**2026-09-12, RUN 11. Branch `fix/py314-blocker`, from `dbae329`.** Nothing pushed, merged,
+tagged or published.
+
+## 1. The established figures, confirmed rather than assumed
+
+Every number in the brief was re-measured. Five of six reproduce exactly.
+
+```
+$ cd packages/audit && python3 ../../tests/benchmark/precision_recall.py
+  True Positives:  199     False Positives: 90     False Negatives: 37
+  Precision: 68.86%   Recall: 84.32%   F1-Score: 75.81%   FP Rate: 31.14%
+  [PASS] Precision >= 66%   [PASS] Recall >= 82%   [PASS] F1 >= 73%
+
+$ python3 tests/benchmark/quality_gate_check.py --config tests/benchmark/gates.yaml
+  Summary: 0 failures, 0 warnings, 0 skipped, 4 below target (non-blocking)     exit 0
+
+$ python3 -m pytest tests/ packages/audit/tests/ -q
+  1 failed, 1895 passed, 4 skipped in 42.88s          (corpus-label guard, red on purpose)
+
+$ bash .claude/hooks/test-guard.sh
+  passed=11 failed=0
+
+$ python3 -c "...advertised_rules()..."             66
+$ pyproject.toml / version.py / __init__.py         0.20.0, 0.20.0, 0.20.0
+```
+
+**The sixth does not reproduce, and cannot.** The brief expects signal-to-noise 2.2:1.
+Searching the repository for `2.2:1` returns **nothing**, and `run_eval.sh` does not exist.
+RUN10 recorded this as item 52 and declined to restate the ratio; this run confirms the state
+is unchanged and likewise does not restate it.
+
+## 2. The finding: the documents that define the number were the ones that were wrong
+
+`fda9f06` corrected three ground-truth labels and moved the measurement from F1 0.746667 to
+0.758095. Every surface a **user** reads was updated in that pass — `README.md:97`,
+`README_CN.md:98`, `docs/index.html:927,1076`, `docs/BENCHMARK-RESULTS.md`,
+`docs/COMPETITIVE-COMPARISON.md` all verified carrying 0.7581 at HEAD. The documents those
+surfaces **cite as the authority** were not.
+
+| document | what it printed | framing that makes it a claim |
+|---|---|---|
+| `docs/decisions/METRICS_RETRACTION.md` § 3 | TP 196 / FP 93 / FN 40, P 67.82 / R 83.05 / F1 74.67 | heading: *"The correct current values, measured now"*, over a verbatim transcript |
+| `CAPABILITY_BOUNDARIES.md` § 6 | TP 196 / FP 93 / FN 40, P 0.6782 / R 0.8305 / F1 0.7467 | directly under *"Reproduce with `python3 tests/benchmark/precision_recall.py`"* |
+| `docs/decisions/METRICS_RETRACTION.md` § 3a | replacement column giving 0.7467 / TP 196 / FP 93 | a **draft of corrections**; following it would have written a stale figure onto a correct surface |
+| `docs/F1_REPRODUCTION.md` | v0.20.0 numbers under *"reproduced on 2026-05-31 (agent-audit 0.19.0)"*; adjustment arithmetic on a 70-FP run | the one document whose entire claim is that the headline reproduces |
+
+Proof that § 3's own command contradicts § 3's own block:
+
+```
+$ sed -n '255p' docs/decisions/METRICS_RETRACTION.md
+## 3. The correct current values, measured now
+$ sed -n '269,275p' docs/decisions/METRICS_RETRACTION.md
+  True Positives:  196 ... Precision: 67.82%  Recall: 83.05%  F1-Score: 74.67%
+$ python3 tests/benchmark/precision_recall.py
+  True Positives:  199 ... Precision: 68.86%  Recall: 84.32%  F1-Score: 75.81%
+```
+
+### Why nothing caught it
+
+`scripts/scan_external_claims.sh` carries patterns `F1-0.7467`, `P-67.82`, `R-83.05` —
+written for these exact numbers. Run with the allowlist, it reported **zero** hits on both
+documents, because `scripts/external_claims_allowlist.txt` exempts `CAPABILITY_BOUNDARIES.md`
+and `docs/decisions/` by path.
+
+The exemption is correct: § 1 of the retraction document quotes 98.51% / 100% / 99.25% four
+times as the evidence that they were never measured, and a scanner that failed on those would
+be failing on true text. But the allowlist is drawn around **documents**, and these documents
+hold two kinds of block — quotations that must never move, and measurements that must. So the
+blind spot fell precisely over the definition of the value being scanned for.
+
+RUN10 ended on *"a mechanism whose failure mode is silence must be made to prove it can still
+fire."* The scanner could fire. It was pointed away from the one place it was needed, and
+being pointed away and finding nothing look identical. `DECISIONS.md` item 54.
+
+## 3. The fix, red then green
+
+`tests/test_published_metrics.py`. The invariant is narrower than "these numbers must not
+appear" and that is the whole design: **a fenced block that names `precision_recall.py` as
+its producer must print what `precision_recall.py` produces.** Prose, markdown tables and
+blocks quoting another producer are untouched.
+
+The first draft checked every fenced block containing a TP/FP/FN triple, and it failed on
+true text — four blocks in § 1 that quote `git show a65b341:…` and a `python3 -c` arithmetic
+demonstration. A guard that fails on true text gets switched off, so the producer-name
+requirement was added before anything else. It also earns its keep twice: a block only comes
+under the guard by saying what made it, which is RUN9's rule turned into a check.
+
+```
+BEFORE (guard added, documents untouched)
+  $ python3 -m pytest tests/test_published_metrics.py -q
+  3 failed, 6 passed
+
+    CAPABILITY_BOUNDARIES.md: block at line 222 prints TP = 196
+    CAPABILITY_BOUNDARIES.md: block at line 222 prints FP = 93
+    CAPABILITY_BOUNDARIES.md: block at line 222 prints FN = 40
+    CAPABILITY_BOUNDARIES.md: block at line 222 prints precision = 0.6782
+    CAPABILITY_BOUNDARIES.md: block at line 222 prints recall = 0.8305
+    CAPABILITY_BOUNDARIES.md: block at line 222 prints f1 = 0.7467
+    METRICS_RETRACTION.md: block at line 257 prints TP = 196
+    METRICS_RETRACTION.md: block at line 257 prints FP = 93
+    METRICS_RETRACTION.md: block at line 257 prints FN = 40
+    METRICS_RETRACTION.md: block at line 257 prints precision = 67.82
+    METRICS_RETRACTION.md: block at line 257 prints recall = 83.05
+    METRICS_RETRACTION.md: block at line 257 prints f1 = 74.67
+    docs/F1_REPRODUCTION.md no longer prints any Layer 1 figure this guard can read
+
+AFTER (same command, documents corrected)
+  $ python3 -m pytest tests/test_published_metrics.py -q
+  9 passed in 0.05s
+```
+
+The `F1_REPRODUCTION.md` line is the vacuity check doing its job: the document's numbers were
+already correct, but the block did not name its producer, so nothing related it to anything.
+It names the command now.
+
+`test_the_guard_can_actually_fail` is carried over from `test_unsubstantiated_metrics.py`'s
+pattern and exists for the same reason: it feeds the comparison a block that is wrong on
+purpose, and asserts the superseded 74.67% is *rejected*. A silent regex and a clean
+repository are indistinguishable.
+
+## 4. The second finding: a sixth rule count, on the PyPI page
+
+`packages/audit/README.md:26` read **"60+ rules mapped to the OWASP Agentic Top 10"**. That
+file is the `readme` declared in `packages/audit/pyproject.toml`, so it *is* the wheel's long
+description and the PyPI project page.
+
+RUN10 corrected `packages/audit/pyproject.toml:4` from 53 to 66 and recorded it as "the only
+claim of any kind on a distribution surface". It was not the only one — the other lives in
+the same directory, and `tests/test_published_rule_count.py` did not list it.
+
+```
+BEFORE (file added to PUBLISHED_SURFACES, text untouched)
+  $ python3 -m pytest tests/test_published_rule_count.py -q
+  1 failed, 7 passed, 1 skipped
+    packages/audit/README.md:26  says 60
+
+AFTER (same command, "60+ rules" becomes "66 rules")
+  $ python3 -m pytest tests/test_published_rule_count.py -q
+  8 passed, 1 skipped
+```
+
+The existing regex caught it on the first run with no change — the optional `+` was written
+for exactly the "40+ rules" shape. The defect was scope, not detection.
+
+## 5. Artifacts rebuilt, because the README is the long description
+
+```
+BEFORE  whl sha256 6a631d2a…d433c   364354 bytes   long description contains "60+ rules"
+AFTER   whl sha256 cff62109…5ee1    364351 bytes   long description contains "66 rules"
+        sdist sha256 e874556e…d149 becomes 9649f1f1…0e8a
+```
+
+Verified on the rebuilt pair: `Summary` carries 66 rules, wheel and sdist hold **99**
+identical package files, and **zero** entries match `audit-eval`, `datasets/`, `knowns`,
+`wilds`, `results/`, `ground_truth`, `labeled_samples`, `NIGHT_RUN`, `DECISIONS` or
+`.claude/`.
+
+Clean-venv install, CPython 3.14.3:
+
+```
+$ agent-audit --version
+agent-audit, version 0.20.0
+$ agent-audit scan tests/differential_corpus
+  BLOCK: 1 | WARN: 5 | INFO: 0 | SUPPRESSED: 16
+  Risk Score: 5.2/10 (MEDIUM)
+```
+
+Byte-identical to the summary RUN10 recorded, from a wheel built this run.
+
+**`RELEASE_CHECKLIST.md` § 5 recorded the artifacts as 357,007 / 307,519 bytes and "98
+package files".** Neither matched what was on disk before this run (364,354 / 314,382, 99
+files), so the checklist's verification record described a build that is not the one sitting
+in `dist/`. Corrected to the rebuilt pair, with hashes rather than sizes — a hash identifies a
+build and a byte count does not.
+
+## 6. Other corrections, each with its measurement
+
+* **`tests/README.md`** described the corpus as *v2.1, 42 samples, 198 annotations*.
+  `METRICS_RETRACTION.md` § 2 had flagged this and it had not been done. Counted from the
+  file: `version 2.2, 81 sample files, 238 labels (236 positive, 2 negative, 12 files with no
+  vulns)`. Corrected at both locations.
+* **`tests/README.md`'s "剩余改进空间: 3 个误报"** — the 3 is not a measurement. It is the
+  `3 FP / 201 total` from the 98.51% derivation, surviving because it carries no percent sign
+  and so matched no retraction pattern. Replaced with the current breakdown: 90 false
+  positives across 32 rules, largest AGENT-004 and AGENT-034 at 7 each, and the bound from
+  § 3(b).
+* **Suite 1,895 to 1,904** (nine new tests), `tests/` alone 1,863 to 1,872. Corrected on
+  `CLAUDE.md` ×2, both README badges, both README pytest comments, `docs/index.html:896`,
+  `EXTERNAL_CLAIMS_CHECKLIST.md` ×2, `OUTREACH_CLAIMS.md` ×2, `RELEASE_CHECKLIST.md`,
+  `blog_post.md`, and `scan_external_claims.sh` ×2 — where 1,895 also joins the stale-count
+  pattern so the next drift is caught rather than discovered. Records untouched.
+
+## 7. Guard denials — three, none bypassed
+
+All three were the guard reading a command correctly, and each was resolved by rewriting the
+command rather than working around the rule.
+
+1. A `2>&1` matched the write-operator test, which then tokenised the pipeline and found a
+   bare protected-looking token. Re-run without redirection.
+2. A read of the two dead threshold files under `tests/benchmark/` matched the protected
+   filename pattern. Answered with `git ls-files` and `find` instead, which need no redirect.
+   (Both files are gone from the index and from disk; `tests/README.md:179` is accurate.)
+3. A recursive delete on a scratch venv. Used a fresh directory name instead.
+
+A fourth denial came from this ledger itself: the prose in § 8 named a publishing command
+literally, and the heredoc carried it to the shell. Reworded. That is the guard behaving
+exactly as designed — it cannot tell prose about a command from the command.
+
+## 8. Statement
+
+No push, merge, rebase, tag or publish. No `gh` write. No package upload to PyPI. No oracle,
+dataset, ground-truth label, existing fixture, confidence value, tier boundary or threshold
+modified. Nothing outside this repository was read or edited — including `paper/`, which the
+brief placed out of scope this run.

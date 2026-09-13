@@ -220,14 +220,15 @@ do so.
 Reproduce with `python3 tests/benchmark/precision_recall.py`.
 
 ```
-TP 196   FP 93   FN 40
-Precision 0.6782   Recall 0.8305   F1 0.7467
+$ python3 tests/benchmark/precision_recall.py
+TP 199   FP 90   FN 37
+Precision 0.6886   Recall 0.8432   F1 0.7581
 ```
 
 These are measured against a **synthetic labelled corpus of 81 files written for this
 purpose**. They describe how well the tool finds defects of the kinds it was built to find,
 in files written to contain them. They do not transfer to real codebases, and section 2 is
-the demonstration: the same tool that scores 0.83 recall here scored 0 on six real defects.
+the demonstration: the same tool that scores 0.84 recall here scored 0 on six real defects.
 
 Two further honesty notes:
 

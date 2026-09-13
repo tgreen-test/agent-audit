@@ -1,8 +1,16 @@
 # The 98.51% — a retraction path
 
-**Status:** retraction drafted, not issued. Nothing public-facing has been edited.
-**Date:** 2026-08-11 · RUN6 / W25
-**Measured at:** `950e308` on `fix/py314-blocker`, `agent_audit.__version__ == 0.19.2`
+**Status:** the in-repo half is applied; the external half is not issued.
+**Date:** 2026-08-11 · RUN6 / W25 — measurement refreshed 2026-09-12 · RUN11 / W52
+**Measured at:** § 1's forensics at `950e308` (`__version__ == 0.19.2`); every current
+figure in § 3 and § 3a at `dbae329` (`__version__ == 0.20.0`), CPython 3.14.3
+
+> **Read § 1 and § 3 as different kinds of writing.** § 1 is forensics on a commit from
+> 2026-02-04 and is pinned there — the blocks quoting `git show` and the v0.4.1 brief must
+> not be refreshed, because they are the evidence. § 3 and § 3a state what reproduces
+> *today*, and they must be refreshed whenever the measurement moves. They were not,
+> between `fda9f06` and 2026-09-12; `tests/test_published_metrics.py` now relates them to
+> `results/layer1.json` so that the two kinds cannot be confused again.
 
 This document exists because of a distinction that changes the correction. A **drifted
 number** — one that was measured correctly on an older commit and has since moved — gets
@@ -266,18 +274,36 @@ PRECISION/RECALL EVALUATION REPORT
 ============================================================
 
 Summary Metrics:
-  True Positives:  196
-  False Positives: 93
-  False Negatives: 40
+  True Positives:  199
+  False Positives: 90
+  False Negatives: 37
 
-  Precision: 67.82%
-  Recall:    83.05%
-  F1-Score:  74.67%
-  FP Rate:   32.18%
+  Precision: 68.86%
+  Recall:    84.32%
+  F1-Score:  75.81%
+  FP Rate:   31.14%
 ============================================================
 $ echo $?
 0
 ```
+
+> **This block was itself stale between `fda9f06` and 2026-09-12, and that is worth
+> recording here rather than only in a run report.** It printed TP 196 / FP 93 / FN 40,
+> P 67.82% / R 83.05% / F1 74.67% — the measurement as it stood before `fda9f06` corrected
+> three ground-truth labels. Every surface a *user* reads was updated in that pass; this
+> section, which those surfaces cite as the authority, was not.
+>
+> `scripts/scan_external_claims.sh` carries patterns for exactly these numbers (`F1-0.7467`,
+> `P-67.82`, `R-83.05`) and reported nothing, because `scripts/external_claims_allowlist.txt`
+> exempts `docs/decisions/` — correctly, since § 1 above must keep quoting the withdrawn
+> figures as evidence. The allowlist was drawn around whole documents, and this document
+> holds both kinds of block: quotations that must stay, and a measurement that must move.
+> So the scanner's blind spot fell exactly over the definition of the value it scans for —
+> `CAPABILITY_BOUNDARIES.md` § 3 one level up.
+>
+> `tests/test_published_metrics.py` now relates this block to `results/layer1.json` by
+> machine. It checks only fenced blocks that *name* `precision_recall.py` as their
+> producer, which is why § 1's `git show` and arithmetic blocks are untouched.
 
 Reproducible: ten consecutive runs of that command return identical figures to six decimal
 places, including under the two `PYTHONHASHSEED` values that used to disagree
@@ -288,7 +314,8 @@ opposite direction.**
 
 **(a) The F1 fell for reasons that are not detection regressions.** Precision dropped in
 three steps since v0.19.0, and every one was a *discovery bug being fixed* — the tool began
-finding things the corpus never labelled:
+finding things the corpus never labelled. A fourth step then moved it back up, and that one
+was the corpus being repaired rather than the tool changing:
 
 | step | what happened | FP | precision |
 |---|---|---|---|
@@ -296,22 +323,40 @@ finding things the corpus never labelled:
 | `f649dcc` | MCP config discovery made recursive; 20 findings became possible, 18 correct and unlabelled | 90 | 0.6853 |
 | `d4d2850` | AI-tool hook discovery made recursive; 3 findings became possible, all correct and unlabelled | 93 | 0.6782 |
 | `2ee8345` | AGENT-034 gated on a tool boundary | 93 | 0.6782 |
+| `fda9f06` | three ground-truth labels corrected to cite the rule that actually fires; **no detection code changed**, the scan is byte-identical either side | 90 | 0.6886 |
 
-Recall rose over the same period, 0.8263 → 0.8305. Publishing "F1 fell from 0.778 to 0.747"
+Recall rose over the same period, 0.8263 → 0.8432. Publishing "F1 fell from 0.778 to 0.758"
 without that paragraph would assert a quality regression that did not happen.
 
-**(b) 67.82% is a floor, not a point estimate, and saying so is the honest version of the
-same lesson this document is about.** At least 21 of the 93 false positives are findings
-that are correct by their rule's own definition and simply unlabelled (18 MCP + 3
-AGENT-120). A further 3 are the AGENT-015 / AGENT-036 double-counts (`AGENT-015_RESOLUTION.md`),
-each scored as a false positive *and* a false negative. Correcting only the accounting
-already known today gives P 0.6886 / R 0.8432 / F1 0.7581, measured. The corpus is
+`fda9f06` is the one step that moves three counters at once: a mislabelled detection is
+scored as a miss *and* as a false alarm, so correcting the label adds a true positive while
+removing both a false positive and a false negative. TP 196 → 199, FP 93 → 90, FN 40 → 37.
+
+**(b) 68.86% is a floor, not a point estimate, and saying so is the honest version of the
+same lesson this document is about.** At least 21 of the 90 false positives are findings
+that are correct by their rule's own definition and simply unlabelled. The corpus is
 incomplete, and precision measured against an incomplete corpus reads low.
 
+The 3 AGENT-015 / AGENT-036 double-counts this paragraph used to list separately
+(`AGENT-015_RESOLUTION.md`) — each scored as a false positive *and* a false negative — **are
+no longer among them.** They were corrected at `fda9f06`, which is the whole of the 93 → 90
+movement in (a). The "correcting only the accounting already known today gives P 0.6886 /
+R 0.8432 / F1 0.7581" sentence that stood here was a prediction; it has since been applied,
+and those are now the measured values rather than an adjustment to them.
+
 **The discipline that follows: state it as a bound, do not silently adjust for it.** "P
-67.82% measured; at least 21 of the 93 false positives are unlabelled true positives, so
+68.86% measured; at least 21 of the 90 false positives are unlabelled true positives, so
 the true precision is higher and the corpus is being repaired" is honest. "P ≈ 75% after
 adjustment" is the 98.51% again, in the other direction.
+
+> **The 21 needs re-deriving, and this run did not do it.** The figure was composed as
+> "18 MCP + 3 AGENT-120". AGENT-120 still contributes 3, but the MCP-family rules
+> (AGENT-029…033) contribute **15** false positives in the current run, not 18 — the 18 was
+> the `f649dcc` commit delta, which is a different quantity from the standing composition.
+> 15 + 3 = 18, so the bound as published may be three too high. Deciding that requires
+> judging which of the 90 are correct by their own rule's definition, which is not a
+> mechanical count, and the 21 is published in `CLAUDE.md`. Left as written rather than
+> silently moved; `DECISIONS.md` item 53.
 
 ---
 
@@ -332,13 +377,13 @@ All commands are run from the repository root.
 | `tests/README.md:40` | lists `quality_gates.yaml` in the tree | the live gate is `tests/benchmark/gates.yaml`; see `docs/decisions/DEAD_FILES.md` | `python3 tests/benchmark/quality_gate_check.py --config tests/benchmark/gates.yaml` |
 | `tests/README.md:160-164` | "release standard: P ≥90%, R ≥85%, F1 ≥0.87, FP ≤5%" | those are the **aspirational target** in `gates.yaml`, which blocks nothing. The gate is **P ≥0.66 / R ≥0.81 / F1 ≥0.72** | `python3 tests/benchmark/quality_gate_check.py --config tests/benchmark/gates.yaml` |
 | **`CHANGELOG.md:175-177`** | "Precision: 98.51% → 100%", "Recall maintained at 100%", "F1 Score: 100%" | **never measured.** Strike with a dated note; do not replace with a current figure, which would imply the old one was a measurement | — no command exists, and that is the finding |
-| `docs/F1_REPRODUCTION.md:35,38,73` | raw F1 0.778 (P 73.58 / R 82.63) | **F1 0.7467 (P 0.6782 / R 0.8305)** — drifted, not fabricated; the causal note in § 3(a) must travel with it | `python3 tests/benchmark/precision_recall.py` |
+| `docs/F1_REPRODUCTION.md:35,38,73` | raw F1 0.778 (P 73.58 / R 82.63) | **F1 0.7581 (P 0.6886 / R 0.8432)** — drifted, not fabricated; the causal note in § 3(a) must travel with it | `python3 tests/benchmark/precision_recall.py` |
 | `docs/F1_REPRODUCTION.md:75` | "the CI gate inside `precision_recall.py` is set at `f1 < 0.75` (line 485) — passes today" | the gate was deleted at `78d8fe5`; the line number was already wrong; it was failing, not passing. The gate is `gates.yaml` via `quality_gate_check.py` | `python3 -m pytest tests/test_layer1_gate_singleton.py -q` |
-| `README.md:97-98`, `README_CN.md:98-99` | F1 0.778 raw, TP 195 / FP 70 / FN 41 | **F1 0.7467, TP 196 / FP 93 / FN 40** | `python3 tests/benchmark/precision_recall.py` |
-| `README.md:233`, `README_CN.md:214` | comparison table row: 82.63 / 73.58 / 0.778 | 83.05 / 67.82 / 0.7467 | same |
-| `docs/index.html:927` | headline tile "0.778" | 0.7467 | same |
-| `docs/index.html:1076` | comparison table cell 0.778 | 0.7467 | same |
-| `CLAUDE.md` metrics line | P 73.58 / R 82.63 / F1 0.778, TP 195 / FP 70 / FN 41, "1542 collected" | P 67.82 / R 83.05 / F1 0.7467, TP 196 / FP 93 / FN 40; suite **1796 passed / 1 failed / 3 skipped** | `python3 tests/benchmark/precision_recall.py` and `python3 -m pytest tests/ -q` |
+| `README.md:97-98`, `README_CN.md:98-99` | F1 0.778 raw, TP 195 / FP 70 / FN 41 | **F1 0.7581, TP 199 / FP 90 / FN 37** | `python3 tests/benchmark/precision_recall.py` |
+| `README.md:233`, `README_CN.md:214` | comparison table row: 82.63 / 73.58 / 0.778 | 84.32 / 68.86 / 0.7581 | same |
+| `docs/index.html:927` | headline tile "0.778" | 0.7581 | same |
+| `docs/index.html:1076` | comparison table cell 0.778 | 0.7581 | same |
+| `CLAUDE.md` metrics line | P 73.58 / R 82.63 / F1 0.778, TP 195 / FP 70 / FN 41, "1542 collected" | P 68.86 / R 84.32 / F1 0.7581, TP 199 / FP 90 / FN 37; suite **1,904 passed / 1 failed / 4 skipped** | `python3 tests/benchmark/precision_recall.py` and `python3 -m pytest tests/ -q` |
 | `packages/audit/pyproject.toml:4` | "53 rules" | **66** | `python3 -c "import sys;sys.path.insert(0,'tests');from test_rule_producers import advertised_rules;print(len(advertised_rules()))"` |
 | AVB figures | R 100.0 / P 88.0 / F1 0.9362 | unchanged and unaffected — measured against an explicit oracle | — |
 
@@ -354,7 +399,17 @@ that its numbers were produced by the code beside it. They were not. Of all the 
 listed, it is the one where the reader has the strongest reason to believe and the least
 opportunity to check.
 
-**No public-facing claim was edited by this run.** Every row above is a draft.
+**Status, 2026-09-12.** When this table was written no public-facing claim had been
+edited and every row was a draft. That is no longer true: rows 3, 5, 6, 7, 8, 9 and 10 have
+been applied, and the surfaces named in them now carry the figures in column 3.
+
+**Column 3 was itself stale until 2026-09-12, and that is the more useful warning.** It
+gave the replacement values as F1 0.7467 / P 0.6782 / R 0.8305 / TP 196 / FP 93 / FN 40 —
+the measurement as it stood before `fda9f06` corrected three ground-truth labels. Anyone
+working down this table after that commit would have *introduced* a stale figure onto a
+surface that was already correct, using a document whose purpose is to prevent exactly
+that. The column now reads from the same measurement as § 3, and
+`tests/test_published_metrics.py` keeps § 3 tied to `results/layer1.json` by machine.
 
 ---
 

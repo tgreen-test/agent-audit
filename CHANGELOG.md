@@ -62,11 +62,16 @@ is a floor, not a point estimate. It is stated as a bound rather than silently a
 
 ### Corrected — one rule count, on every surface that publishes one
 
-**Four different numbers were published for one set of rules: 40, 49, 53 and 72.** The set
-contains 66. `packages/audit/pyproject.toml` said 53 and is the PyPI description — the only
-rule count on a distribution surface, and the most-read line the project has.
+**Five different numbers were published for one set of rules: 40, 49, 53, 60+ and 72.** The
+set contains 66.
 
-Eighteen in-repo locations now say 66, and the number is checkable rather than asserted:
+Two of them sat on **distribution** surfaces, in the same directory, and only one was found
+first: `packages/audit/pyproject.toml` said 53 and is the PyPI description, while
+`packages/audit/README.md` said "60+" and is the wheel's long description — the PyPI project
+page itself. The second was caught on 2026-09-12, during the pre-release audit, because the
+guard below listed the first and not the second. Both are corrected and both are now guarded.
+
+Nineteen in-repo locations now say 66, and the number is checkable rather than asserted:
 
 ```bash
 python3 -c "import sys;sys.path.insert(0,'tests');from test_rule_producers import advertised_rules;print(len(advertised_rules()))"

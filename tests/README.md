@@ -38,7 +38,7 @@ tests/
 │
 ├── ground_truth/                  # 基准测试数据集
 │   ├── schema.yaml                # Ground Truth 数据格式定义
-│   └── labeled_samples.yaml       # 标注的漏洞样本（v2.1，42 样本，198 标注）
+│   └── labeled_samples.yaml       # 标注的漏洞样本（v2.2，81 样本，238 标注）
 │
 ├── benchmark/                     # 性能与精度基准测试
 │   ├── precision_recall.py        # 精确率/召回率/F1 评估脚本
@@ -272,8 +272,8 @@ pytest tests/test_owasp_agentic.py -v
 ## 📊 测试统计
 
 - **总测试文件数**: ~30+ 个测试模块
-- **测试样本数**: 42 个（33 漏洞 + 9 良性）
-- **漏洞标注数**: 198 个
+- **测试样本数**: 81 个（69 含漏洞 + 12 良性）
+- **漏洞标注数**: 238 个（236 正例 + 2 负例）
 - **基准测试目标**: 11 个项目
 - **OWASP ASI 覆盖**: 10/10 类别
 
@@ -310,4 +310,10 @@ pytest tests/test_owasp_agentic.py -v
 P ≥0.66 / R ≥0.82 / F1 ≥0.73，写在 `tests/benchmark/gates.yaml`。
 
 剩余改进空间:
-- 3 个误报需要规则逻辑优化（AGENT-026, AGENT-034）
+- 当前 90 个误报，分布在 32 条规则上；最大的两个来源是 AGENT-004 与 AGENT-034，各 7 个。
+  按规则统计的命令见 `docs/F1_REPRODUCTION.md`「False positives by rule, current run」。
+- 其中至少 21 个按规则自身定义是正确的，只是语料尚未标注，所以 68.86% 是**下界**而非点估计
+  （`docs/decisions/METRICS_RETRACTION.md` § 3(b)）。
+
+> 这一节此前写的是「3 个误报需要规则逻辑优化」。那个 3 不是测量值，而是 98.51% 那次推导里
+> 的 `3 FP / 201 total` 残留 —— 与它一起被撤回的数字都已改正，它却因为不带百分号而留了下来。

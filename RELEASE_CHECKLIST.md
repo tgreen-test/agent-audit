@@ -1,27 +1,54 @@
 # v0.20.0 release checklist
 
-> **Status, 2026-08-11 (session 9). Steps 1–4 are DONE. Steps 5–7 remain and are yours.**
+> **Status, 2026-09-12 (RUN 11). Steps 1–5 are DONE and re-verified; the artifacts were
+> rebuilt this run because one of them was wrong. What remains is two edits outside this
+> repository, then steps 6–7.**
 >
-> | step | state |
-> |---|---|
-> | 1. the three corpus-label edits | **done** — applied by Heady via `scripts/finalize_run7.sh`, committed at `fda9f06`. Measured F1 0.746667 → 0.758095, exactly as predicted below |
-> | 2. the ratchet | **done** — `recall_min` 0.82, `f1_min` 0.73, in the same commit |
-> | 3. the two dead threshold files | **done** — removed in the same commit |
-> | 4a. the rule count | **done** — 18 in-repo surfaces now say 66, guarded by `tests/test_published_rule_count.py`. The two published blog posts carry correction notes rather than edits |
-> | 4b. the metrics | **done in-repo** — every surface carries the measured value and the command that produces it; `tests/README.md` opens with the retraction. **Blocked externally**: § 5 step 1 of `METRICS_RETRACTION.md` asks which *external* surfaces carry the 98.51%, and only you can answer it |
-> | 5. rebuild | **done** — artifacts rebuilt after the `pyproject.toml` correction; see below |
-> | 6. merge, tag, publish | **not done** — the guard blocks all of it, correctly |
-> | 7. the issue replies | **not done, and one verdict changed** — #10 is now **fixed** and can close. See the addendum in `ISSUE_TRIAGE.md` |
+> **Blocker A is answered for the paper.** Heady corrected `paper/main.tex` and re-uploaded
+> the arXiv paper. That closes row B's paper item and removes the ordering constraint that
+> `METRICS_RETRACTION.md` § 5 placed on everything downstream of it. It says nothing about
+> the slide deck or `docs/cais-2026/`, which are separate surfaces and still carry the
+> retracted set. **Nothing outside this repository was read or edited in RUN 11** — the
+> brief placed it out of scope — so rows B and C are reported from RUN10's findings, not
+> re-verified.
 >
-> The numbers quoted in steps 1 and 2 below are the *predictions* this checklist was written
-> with. They are left as written because they were checked and held. Current measured values:
-> **TP 199 / FP 90 / FN 37, P 0.688581 / R 0.843220 / F1 0.758095**.
+> **New this run, and it would have shipped:** `packages/audit/README.md` published
+> "60+ rules" — a *sixth* count, on the file that renders as the PyPI project page. Fixed,
+> guarded, and the artifacts rebuilt; see § 5. The three documents that define the current
+> Layer 1 figures were also stale and are corrected; `NIGHT_RUN_LEDGER.md` § W52.
+>
+> **Execution order — and the first item genuinely gates the rest.**
+>
+> | # | step | state |
+> |---|---|---|
+> | **A** | **Establish whether any external material is already submitted, on arXiv, or presented** | **answered for the paper.** It was on arXiv; Heady has corrected `paper/main.tex` and re-uploaded. Still unanswered for the deck and `docs/cais-2026/` |
+> | **B** | **Correct the external surfaces** — ~~`paper/main.tex:325` + `main.pdf`~~ (done by Heady), `agent-audit-slides.html`, `docs/cais-2026/` (5 files) | **two of three remain.** Located and itemised with line numbers in `RUN10_REPORT.md` § 2. Out of scope in RUN 11; nothing outside the repo was read or edited |
+> | **C** | **Look at `openclaw-skill/`** — not scanned (skipped as not-a-paper-repo), but checklist § 2.7 names the ClawHub listing as an outreach destination | **not done** |
+> | 6 | merge, tag, publish | **not done** — the guard blocks all of it, correctly |
+> | 7 | the issue replies | **not done.** Five bodies ready in `ISSUE_REPLIES.md`; #10 closes as fixed, #12 as won't-fix, #11 stays open |
+>
+> **Do not start B before A.** `METRICS_RETRACTION.md` § 5: nothing new is published on top of
+> a surface that still carries a retracted figure — and a v2 with a change note is a different
+> piece of writing from a correction to a draft.
+>
+> **Two verified results that reduce B:** `paper/neurips/submission/` has **0 matches** and
+> `paper/skillsworkshop/` (the SkillScanner camera-ready and poster) is clean. And
+> `paper/main.tex:401`'s "100\% recall on injection/RCE and MCP" is **true** — AVB Set A 19/19,
+> Set B 9/9, re-measured at v0.20.0 — so it must **not** be retracted with the rest.
+>
+> **Re-run the claims scanner before trusting any earlier sweep.** It was broken until
+> 2026-09-10: 18 of its 34 patterns silently matched nothing. `EXTERNAL_CLAIMS_CHECKLIST.md`
+> § 4.
+>
+> Steps 1–5 below are kept as the record of what was done and why. Current measured values:
+> **TP 199 / FP 90 / FN 37, P 0.688581 / R 0.843220 / F1 0.758095**; suite **1,904 passed, 1
+> failed by design, 4 skipped**.
 
 The branch is `fix/py314-blocker`. Nothing has been pushed, merged, tagged or published.
 
-Work top to bottom. Steps 1–3 change measured numbers and must precede the rest.
-
 ---
+
+# Record of steps 1–5 (done)
 
 ## 1. The three corpus-label edits — the one change I was authorised to make and could not
 
@@ -210,17 +237,25 @@ rm -rf dist/agent_audit-0.20.0*
 python3 -m build          # needs `pip install build` in a venv; poetry-core does the rest
 ```
 
-Artifacts from this run, already verified:
+Artifacts, rebuilt and verified 2026-09-12 (RUN11). **Identified by hash, not size** — the
+sizes this section used to record (357,007 / 307,519, "98 package files") matched no build
+that was ever on disk here, so the verification record described something other than the
+artifacts it sat next to:
 
 ```
--rw-r--r--  357,007  agent_audit-0.20.0-py3-none-any.whl
--rw-r--r--  307,519  agent_audit-0.20.0.tar.gz
+sha256  cff621095734b38358d80d3f98f42e7437ff95426dd3ba0c2d93d452cd5a5ee1  agent_audit-0.20.0-py3-none-any.whl
+sha256  9649f1f1b83e487e3ac10c08e5d610384176e55f6a66b5e26551b92eafeb0e8a  agent_audit-0.20.0.tar.gz
 ```
 
-Contents checked and clean: 98 package files in each, sdist and wheel **identical** in
-package content, and **zero** entries matching `audit-eval`, `eval/`, `datasets/`, `knowns`,
-`wilds`, `noise/`, `results/`, `ground_truth`, `labeled_samples`, `NIGHT_RUN`, `DECISIONS` or
-`.claude/`. No local evaluation data and no target-identifying string.
+**The rebuild was required, not cosmetic.** `packages/audit/README.md` is the `readme` in
+`packages/audit/pyproject.toml`, so it is the wheel's long description and the PyPI project
+page — and it read "60+ rules", a sixth published count on a distribution surface. The
+artifacts standing in `dist/` before this run carried that text.
+
+Contents checked and clean: **99** package files in each, sdist and wheel **identical** in
+package content, and **zero** entries matching `audit-eval`, `datasets/`, `knowns`, `wilds`,
+`results/`, `ground_truth`, `labeled_samples`, `NIGHT_RUN`, `DECISIONS` or `.claude/`. No
+local evaluation data and no target-identifying string. `Summary` carries 66 rules.
 
 One nit, not a blocker: `agent_audit/scanners/typescript_scanner.py:54` contains the comment
 `… see TOOL_SCOPED_RULES use below and NIGHT_RUN_LEDGER § W20`, which ships a pointer to a

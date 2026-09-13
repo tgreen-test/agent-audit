@@ -63,6 +63,11 @@ PUBLISHED_SURFACES = (
     "docs/ROADMAP.md",
     "docs/RULES.md",
     "packages/audit/pyproject.toml",
+    # The README that ships inside the wheel and renders as the PyPI project page. Added
+    # 2026-09-12 (RUN11): it was publishing a *sixth* count, "60+ rules", having been
+    # missed when `packages/audit/pyproject.toml` was corrected from 53 to 66 — the two
+    # distribution surfaces sit in the same directory and only one of them was guarded.
+    "packages/audit/README.md",
 )
 
 # Outreach drafts. Guarded only once tracked — see the module docstring and

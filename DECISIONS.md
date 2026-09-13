@@ -1355,3 +1355,197 @@ If a mechanism is wanted later, the shape that avoids the ratchet is a test that
 whatever that thing is — plus one place where the number is written down. That is a real
 option and it is not free; it is written here so the next person does not have to rediscover
 why the obvious version is a trap.
+
+
+---
+
+# RUN 10 — items 47 to 52
+
+## Decisions taken (session 10, reversible, done)
+
+### 47 — `scan_external_claims.sh` split its own regexes at the wrong `|`
+
+The scan loop used `regex="${rest%%|*}"`, cutting at the **first** pipe. Every pattern using
+alternation was truncated into an unbalanced parenthesis; `grep -E` errored; the error went
+to `/dev/null`. **18 of 34 patterns silently matched nothing for the tool's entire life**,
+including `R-100`, `R-0FN`, `P-100`, `F1-100`, `ARROW`, `PREC-80`, `RULES-N`, `TESTS-N` and
+`VER`.
+
+Fixed by splitting from the right (`${rest%|*}`), mirrored in `--list` (`${rest##*|}`), plus
+`validate_patterns()` which exits 2 rather than under-reporting. Same command, same
+specimen: **1 match before, 11 after.**
+
+This is item 44's lesson at one remove. `EXTERNAL_CLAIMS_CHECKLIST.md` § 4 certified the tool
+under the heading *"so you know the tool works"* — a certification produced by running the
+broken tool. **A broken pattern and a clean surface produce identical output.** Any check
+whose failure mode is silence needs a positive proof that it can still fire; that is what the
+validator, and `test_guard_can_actually_fail` in the new guard, now provide.
+
+### 48 — the pattern count was 35 everywhere and 34 in the array
+
+`PROGRESS.md`, `RUN9_REPORT.md:183` and the RUN10 brief all say 35 patterns. The array holds
+34. Corrected in `EXTERNAL_CLAIMS_CHECKLIST.md` § 4; the two report files are records and
+were left as written.
+
+### 49 — the competitive table was incomparable for a reason nobody had stated
+
+RUN9 added a caveat saying the baselines *"have not been re-run against the 81-sample GT;
+until they are…"*. That framing was wrong: re-running them is **impossible**.
+`precision_recall.py:332` requires `e_rule == d_rule`, so a tool emitting `B102` or
+`python.lang.security.*` scores a structural zero against `AGENT-0xx` labels — a measurement
+of the identifier scheme, not the tool. AVB's `matches_oracle()` takes no rule ID, which is
+what makes it the comparable corpus.
+
+All three tools re-measured there at v0.20.0 (`results/avb_tool_comparison_v0.20.0.json`).
+The document now states per-row provenance, reports that **Bandit and Semgrep beat
+agent-audit on precision and FPR**, and records three limits including that the Semgrep row
+is not reproducible over time because the adapter runs `--config=auto`.
+
+### 50 — `README.md:147` cut, and guarded
+
+"validated against 18,899 ClawHub skills at 80% precision" removed; no artifact in the tree
+reproduces either half, and the 80% was a 20-sample draw (16/20, Wilson 58.4–91.9%) attached
+to an 18,899 denominator. Replaced with two reproducible facts. Guarded by
+`tests/test_unsubstantiated_metrics.py`, demonstrated red against the pre-fix text.
+
+The guard deliberately does **not** pattern-match `100% recall`, because
+`docs/COMPETITIVE-COMPARISON.md` says it truthfully three times about AVB Sets A and B.
+`test_true_avb_recall_is_not_flagged` pins that decision so nobody "completes" the pattern
+list later and turns a true statement red.
+
+---
+
+## NEEDS-HEADY (session 10)
+
+### 51 — the external surfaces, and whether any of them is already published
+
+`RUN10_REPORT.md` § 2 and `EXTERNAL_CLAIMS_CHECKLIST.md` § 4 list every hit. Read-only; no
+file outside this repository was edited. Three things need a decision:
+
+**(a) `agent-audit-slides.html` — the worst surface, and a public deck.** One slide carries
+precision 98.51%, recall 100%, F1 99.25% and FP rate 1.49% together, a closing slide repeats
+F1 99.25%, and the deck also states "42 synthetic samples, 198 annotations", "1,142 passing",
+"49 Rules" (x4) and "v0.16.0" (x5). A slide states a number with no methodology beside it, so
+this is the most naked form the retracted set takes.
+
+**(b) `paper/main.tex:325` + `paper/main.pdf`** — "achieves 98.51\% precision at 100\%
+recall", in an ACM `sigconf` paper, in **both** source and the compiled PDF. The PDF build
+(2026-03-07) is also older than the source (2026-03-10).
+
+**(c) `docs/cais-2026/PAPER_DATA_SUMMARY.md`** — the highest-leverage item, because it is not
+a stale figure but a **standing instruction**: a column headed `LaTeX (v0.16.0)` holding
+paste-ready `98.51\%`, `100\%`, `99.25\%`, under "Recommend reporting v0.16.0 Layer 1 metrics
+in the paper". Four sibling files in the same directory carry the figures too.
+
+**The blocking unknown, which no command answers: has any of this been submitted, uploaded to
+arXiv, or presented?** The remedy differs — an arXiv v1 can only be superseded by a v2 with a
+change note, a working draft is an edit — and `METRICS_RETRACTION.md` § 4 requires
+retract-then-restate, never a merged "updated results" note.
+
+**Two findings that reduce the work, both verified:** `paper/neurips/submission/` has **0
+matches**, and `paper/skillsworkshop/` (the SkillScanner camera-ready and poster) is clean —
+its `WILSON` hits are its own cross-lingual intervals. And `main.tex:401`'s "100\% recall on
+injection/RCE and MCP" is **true**, re-measured at v0.20.0 (Set A 19/19, Set B 9/9); it must
+not be retracted alongside the rest.
+
+**Not scanned, and listed so the gap is explicit rather than assumed:** `agentpayment-paper/`
+and `argus-site/` are forbidden by the brief; `trustagent_bench/`, `openclaw-skill/`,
+`reachout/`, `post/` and eleven others were skipped as ambiguous or not paper repos, per
+*"when unsure, skip"*. `openclaw-skill/` is worth a manual look — `EXTERNAL_CLAIMS_CHECKLIST.md`
+§ 2.7 names the ClawHub listing description as an outreach destination, and it was not read.
+
+### 52 — `./run_eval.sh --commit HEAD` does not exist, and the 2.2:1 figure has no producer
+
+The RUN10 brief's release-evidence set expects `./run_eval.sh --commit HEAD` to print a
+signal-to-noise ratio of at least 2.2:1. **There is no such file.** It has never been tracked
+(`git log --all -- run_eval.sh` is empty), and `git ls-files` shows zero tracked files under
+the gitignored benchmark-corpus directory that `NIGHT_RUN_LEDGER.md:701` associates with it —
+a directory this run's hard rules and `night-guard.sh:8` both forbid touching.
+
+Recorded **UNVERIFIED**; the ratio was not restated. `CLAIMS_RECONCILIATION.md:23` publishes
+`noise 44 / high-value 20 = 2.2:1` citing that command, which makes it a claim whose producer
+is not in the repository — the same shape as the ClawHub figure item 50 just cut, and the
+only one of its kind left. Either the script comes into the tree with its corpus, or the
+2.2:1 should be dated and attributed the way option (b) of `OUTREACH_CLAIMS.md` § 3 describes.
+
+---
+
+## NEEDS-HEADY (session 11)
+
+### 53 — the "at least 21 unlabelled true positives" bound needs re-deriving
+
+`CLAUDE.md:11` and `docs/decisions/METRICS_RETRACTION.md` § 3(b) both publish precision
+68.86% as a **lower bound**, on the grounds that *"at least 21 of the 90 false positives are
+correct by their rules' own definitions and merely unlabelled"*. The 21 was composed as
+**18 MCP + 3 AGENT-120**.
+
+Counted against the current run, the composition no longer holds:
+
+```
+python3 -c "import json,collections,re; d=json.load(open('results/layer1.json')); \
+  print(collections.Counter(re.search(r'AGENT-\d+',s).group(0) for s in d['fp_details']))"
+```
+
+AGENT-120 still contributes 3. The MCP-family rules AGENT-029…033 contribute **15**, not 18
+— AGENT-029 2, AGENT-030 5, AGENT-031 2, AGENT-032 5, AGENT-033 1. No AGENT-054…057 finding
+is among the 90. So the arithmetic gives **18**, and the published bound may be three too
+high.
+
+**Why the 18 was probably never the standing composition.** § 3(a)'s table attributes 18 to
+the `f649dcc` commit — *"MCP config discovery made recursive; 20 findings became possible, 18
+correct and unlabelled"*. That is a **delta at one commit**, which is a different quantity
+from how many MCP false positives stand in the corpus today. The bound appears to have been
+built from the delta and then carried forward unchanged through three further measurements.
+
+**Why I did not change it.** Deciding which of the 90 are "correct by their rule's own
+definition" is a judgement about each finding, not a count — and `is_true_positive` is a
+ground-truth field this run may not touch. Lowering a published bound is also a claim in its
+own right. Left exactly as published, with the discrepancy recorded in § 3(b) as a block
+quote so the next reader meets it rather than rediscovering it.
+
+**The safe move if you want it closed:** it is a bound, so it stays true if stated as the
+number that can be defended — `18` is defensible by the count above without judging anything.
+Dropping 21 → 18 weakens the claim and is the conservative direction.
+
+### 54 — the claims allowlist is drawn around documents, and it should be drawn around blocks
+
+Not urgent, and recorded because the fix I applied is narrower than the problem.
+
+`scripts/external_claims_allowlist.txt` exempts whole files — `CAPABILITY_BOUNDARIES.md`,
+`docs/decisions/`, the run logs — because those documents quote withdrawn figures in order to
+discuss them. That is right. But two of the exempted documents contain **both** kinds of
+block: quotations that must never be refreshed, and statements of the current measurement
+that must be refreshed whenever it moves. Exempting the file exempts both.
+
+That is how § 3 of `METRICS_RETRACTION.md` — the block every other surface cites as *the*
+correct current value — sat stale from `fda9f06` to 2026-09-12 while a scanner carrying
+patterns for exactly those numbers (`F1-0.7467`, `P-67.82`, `R-83.05`) reported nothing.
+
+`tests/test_published_metrics.py` closes the specific hole by relating any block that names
+`precision_recall.py` to `results/layer1.json`. It does **not** close the general one: the
+allowlist is still per-file, and the next authority document to go stale will be invisible in
+the same way unless it happens to print that script's name. A per-block allowlist — exempt a
+fenced region, not a path — would close it properly, and is a change to the scanner rather
+than to any claim.
+
+---
+
+## Decisions taken (session 11, reversible, done)
+
+* **The three authority documents were corrected to the measured values**, with the
+  supersession recorded in place rather than only in a run report: `METRICS_RETRACTION.md`
+  § 3 and § 3a, `CAPABILITY_BOUNDARIES.md` § 6, `docs/F1_REPRODUCTION.md`. Before/after in
+  `NIGHT_RUN_LEDGER.md` § W52.
+* **`docs/F1_REPRODUCTION.md`'s adjusted-F1 section was demoted from a live derivation to a
+  record.** It previously called 0.842 "reproducible within ±0.004", which invites exactly
+  the re-derivation § 3(b) rules out. The v0.19.0 inputs are kept and labelled as v0.19.0;
+  no adjusted figure is recomputed against the current run, on purpose.
+* **`packages/audit/README.md` said "60+ rules"** — a sixth published count, on the surface
+  that renders as the PyPI project page, missed when its own directory's `pyproject.toml`
+  was corrected 53 → 66. Fixed, and the file is now inside
+  `tests/test_published_rule_count.py`. The artifacts were rebuilt, because that README *is*
+  the wheel's long description.
+* **The suite moved 1,895 → 1,904** (nine tests in the new metrics guard), corrected on every
+  current-state surface; records left alone.
+* **No oracle, ground-truth label, fixture, confidence value, tier boundary or threshold was
+  modified. Nothing was pushed, merged, tagged or published.**

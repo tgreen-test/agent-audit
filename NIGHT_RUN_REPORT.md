@@ -1,5 +1,86 @@
 # NIGHT RUN REPORT — 2026-08-11
 
+> **2026-09-11 — the paper correction, authorised mid-session by Heady.** Supersedes the RUN10
+> brief's "no edits outside the repository" for four named items in `paper/`. One was an edit,
+> two were verifications that correctly changed nothing, and the fourth is blocked.
+>
+> **Edited — `paper/main.tex:325`.** "achieves 98.51\% precision at 100\% recall" replaced with
+> the measured "68.86\% precision at 84.32\% recall (F1 0.758), measured at agent-audit
+> v0.20.0", plus a footnote stating the mechanism (false negatives assumed zero rather than
+> counted) and naming the producing script, corpus version and counts. Heady's supplied wording
+> ended mid-word; the footnote was completed and the completion flagged.
+>
+> **Verified and deliberately NOT changed — `main.tex:395` and `:408`.** "perfect recall on
+> Set~A and Set~B" and "100\% recall on injection/RCE and MCP" are **true**: re-measured at
+> v0.20.0, Set A 100.0% (19/19), Set B 100.0% (9/9), with Set C's "two false negatives" also
+> matching (12/14, both in the T12 noise sample). Layer 1's 98.51% was never measured; AVB's
+> 100% is oracle-backed. Retracting the second with the first would have been an error in the
+> opposite direction.
+>
+> **NOT done — `main.pdf` is still the old build and still carries the retracted sentence.**
+> This machine runs TeX Live 2026 *basic* and lacks `pgfplots`, `acmart` and `placeins`;
+> `tlmgr` cannot write to the root-owned tree and no `sudo` was run. **The source and the build
+> now disagree, and the build is the file a reader opens** — so the paper is not corrected until
+> Heady rebuilds it. The command to do so is in `RUN10_REPORT.md`.
+>
+> **`paper/` is not under version control, and that nearly cost the paper.** Both files were
+> backed up before the edit (`*.pre-retraction-20260911.bak`). The failed `pdflatex` run
+> **deleted `main.pdf`** while printing *"no output PDF file produced"*; it was restored from
+> the backup, byte-identical. Without the backup the only compiled copy would have been
+> destroyed by a command that reported producing nothing.
+
+
+> **RUN 10 ADDENDUM — 2026-09-10. Three release blockers; the full write-up is
+> `RUN10_REPORT.md`, evidence in the `NIGHT_RUN_LEDGER.md` RUN 10 entry.**
+>
+> **Nothing below changes.** No detection code, threshold, oracle, fixture or dataset was
+> touched, and Layer 1 is unmoved: **TP 199 / FP 90 / FN 37, P 68.86% / R 84.32% / F1
+> 0.7581**, gate exit 0. Nothing pushed, merged, tagged or published; HEAD is still
+> `dbae329`.
+>
+> **The finding that matters most is about an instrument, not a number.**
+> `scripts/scan_external_claims.sh` — the tool RUN9 built to find retracted figures on
+> external surfaces, and the tool the release blocker depends on — **had never worked**. It
+> cut each pattern's regex at the first `|`, turning every alternation into an unbalanced
+> parenthesis; `grep -E` rejected them and the error went to `/dev/null`. **18 of its 34
+> patterns silently matched nothing**, including every form of "100% recall" and "0 false
+> negatives", the 80%-precision pattern, and all three count patterns. Same command, same
+> specimen: **1 match before the fix, 11 after.** `EXTERNAL_CLAIMS_CHECKLIST.md` § 4 had
+> certified the tool under the heading *"so you know the tool works"* — using the broken
+> tool's own output as the evidence. Fixed, plus a `validate_patterns()` pass that exits 2
+> rather than under-reporting. **Any external sweep run before 2026-09-10 must be re-run.**
+>
+> **What the fixed scan found outside the repository** (read-only; nothing outside this
+> repository was edited, verified by unchanged mtimes): the retracted set is live on
+> `agent-audit-slides.html` (a public deck — precision 98.51%, recall 100%, F1 99.25%, FP
+> rate 1.49%, plus four wrong rule counts and five stale versions), in `paper/main.tex:325`
+> **and the compiled `paper/main.pdf`**, and across five `docs/cais-2026/` files — one of
+> which, `PAPER_DATA_SUMMARY.md`, is not a stale figure but a **standing instruction**: a
+> column of paste-ready `LaTeX (v0.16.0)` macros under "Recommend reporting v0.16.0 Layer 1
+> metrics in the paper". Clean, and both verified: `paper/neurips/submission/` (0 matches)
+> and the SkillScanner camera-ready.
+>
+> **Two other blockers closed.** `docs/COMPETITIVE-COMPARISON.md` re-measured with all three
+> tools on one corpus at v0.20.0 — and the baselines beat agent-audit on precision (100% vs
+> 86.96%) and FPR (0% vs 13.04%), which the table now states. `README.md:147`'s "18,899
+> ClawHub skills at 80% precision" cut and guarded by
+> `tests/test_unsubstantiated_metrics.py`; the 80% was a 20-sample draw (16/20, Wilson
+> 58.4–91.9%) attached to an 18,899 denominator.
+>
+> **Suite moved 1,891 → 1,895** (four new guard tests), corrected on every current-state
+> surface; three further stale counts surfaced only because the scanner was fixed.
+>
+> **One expected command does not exist.** `./run_eval.sh --commit HEAD` has never been
+> tracked and belongs to a gitignored corpus directory this run may not touch, so the 2.2:1
+> signal-to-noise figure has **no producer in the repository**. Recorded UNVERIFIED and not
+> restated. `DECISIONS.md` item 52.
+>
+> **Blocking, and it is a decision rather than a task:** has any of the external material
+> been submitted, uploaded to arXiv, or presented? No command answers it, and it decides both
+> the remedy and the ordering (`METRICS_RETRACTION.md` § 4). `RELEASE_CHECKLIST.md` steps
+> A–C.
+
+
 > **SUPERSEDED IN PART — read SESSION2_REPORT.md.** Session 2 measured the blind audit
 > directly and settled the open question below: **the 0/6 is real.** It reproduces
 > identically at all three commits and on both interpreters, so it is a capability gap,

@@ -29,6 +29,7 @@ RUN6_REPORT.md
 RUN7_REPORT.md
 RUN8_REPORT.md
 RUN9_REPORT.md
+RUN10_REPORT.md
 RELEASE_CHECKLIST.md
 ISSUE_TRIAGE.md
 ISSUE_REPLIES.md
@@ -72,6 +73,7 @@ tests/benchmark/v0.14
 tests/benchmark/precision_recall.py
 tests/test_gate_provenance.py
 tests/test_layer1_gate_singleton.py
+tests/test_unsubstantiated_metrics.py
 tests/README.md
 
 # A separate research line (SkillScanner). Its Wilson CIs are its own, not agent-audit's.

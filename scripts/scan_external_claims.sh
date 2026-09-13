@@ -88,7 +88,7 @@ PATTERNS=(
 # --- rule counts: one set, nine numbers ------------------------------------
 'RULES-N|COUNT|(^|[^0-9])(40|49|52|53|56|63|72|92)[[:space:]]*\+?[[:space:]]*(detection[[:space:]]+)?(rules|Rules|条规则|条检测规则)|66 rules. The one-line check is in the legend printed after a scan'
 # --- test counts -----------------------------------------------------------
-'TESTS-N|COUNT|(1,?14[12]|1,?322|1,?54[12]|1,?748|1,?796|1,?808|1,?88[37])[[:space:]]*\+?[[:space:]]*(tests?|passing|passed)|1,891 passing (pytest tests/ packages/audit/tests/), 1 red on purpose'
+'TESTS-N|COUNT|(1,?14[12]|1,?322|1,?54[12]|1,?748|1,?796|1,?808|1,?88[37]|1,?891|1,?895)[[:space:]]*\+?[[:space:]]*(tests?|passing|passed)|1,904 passing (pytest tests/ packages/audit/tests/), 1 red on purpose'
 # --- version -----------------------------------------------------------
 'VER|COUNT|v?0[.,](4[.,]1|5[.,]2|16[.,]0|18[.,]2|19[.,][02])([^0-9]|$)|current version is 0.20.0'
 )
@@ -141,11 +141,47 @@ if [ "$LIST_ONLY" -eq 1 ]; then
     for entry in "${PATTERNS[@]}"; do
         label="${entry%%|*}"; rest="${entry#*|}"
         class="${rest%%|*}";  rest="${rest#*|}"
-        truth="${rest#*|}"
+        truth="${rest##*|}"
         printf '%-14s %-8s %s\n' "$label" "$class" "$truth"
     done
     exit 0
 fi
+
+# ---------------------------------------------------------------------------
+# Validate every pattern before scanning.
+#
+# Why this exists. Until 2026-09-10 the scan loop extracted the regex by cutting the
+# entry at its FIRST '|'. Every pattern using alternation was therefore truncated
+# mid-group -- 'R-100' became '(recall', an unbalanced parenthesis. grep rejected
+# each one, the error went to /dev/null, and the scan reported 0 matches for it. 18
+# of 34 patterns were dead for the tool's entire life, including every form of the
+# retracted "100% recall" and "0 false negatives" claims, and the 80%-precision
+# pattern this release was written to catch.
+#
+# The bug was invisible because a broken pattern and a clean surface produce the
+# same output: nothing. So the tool now proves its instrument works before trusting
+# it, and fails loudly rather than quietly under-reporting.
+# ---------------------------------------------------------------------------
+validate_patterns() {
+    local bad=0 entry label rest regex status
+    for entry in "${PATTERNS[@]}"; do
+        label="${entry%%|*}"; rest="${entry#*|}"
+        rest="${rest#*|}"
+        regex="${rest%|*}"
+        # grep exits 0 on match, 1 on no match, >=2 on a malformed pattern.
+        printf '' | grep -qE -e "$regex" >/dev/null 2>&1
+        status=$?
+        if [ "$status" -ge 2 ]; then
+            echo "$SELF: pattern '$label' is not a valid regex: $regex" >&2
+            bad=$((bad + 1))
+        fi
+    done
+    if [ "$bad" -gt 0 ]; then
+        echo "$SELF: $bad of ${#PATTERNS[@]} patterns are invalid. Refusing to present a" >&2
+        echo "$SELF: partial scan as a complete one -- fix the patterns and re-run." >&2
+        exit 2
+    fi
+}
 
 if [ "${#DIRS[@]}" -eq 0 ]; then
     echo "$SELF: no directory given" >&2
@@ -161,6 +197,8 @@ if [ -n "$ALLOWLIST" ] && [ ! -f "$ALLOWLIST" ]; then
     echo "$SELF: allowlist not found: $ALLOWLIST" >&2
     exit 2
 fi
+
+validate_patterns
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/scan_external_claims.XXXXXX")" || exit 2
 trap 'rm -rf "$WORK"' EXIT INT TERM
@@ -262,7 +300,12 @@ report_for() {
 for entry in "${PATTERNS[@]}"; do
     label="${entry%%|*}"; rest="${entry#*|}"
     class="${rest%%|*}";  rest="${rest#*|}"
-    regex="${rest%%|*}"
+    # The regex may itself contain '|' (alternation), so split from the RIGHT: the
+    # last field is the truth text, everything before it is the pattern. Splitting
+    # from the left truncated 18 of 34 patterns at their first alternation, leaving
+    # an unbalanced paren that grep rejected -- silently, because stderr is
+    # discarded. See _validate_patterns below, which now makes that loud.
+    regex="${rest%|*}"
     for d in "${DIRS[@]}"; do
         report_for "$d" "$label [$class]" "$regex" ""
     done
@@ -280,6 +323,7 @@ echo "============================================================"
 echo " agent-audit external claims scan"
 echo " roots: ${DIRS[*]}"
 [ -n "$ALLOWLIST" ] && echo " allowlist: $ALLOWLIST"
+echo " patterns: ${#PATTERNS[@]} (all validated)"
 echo " containers opened: $n_pdf PDF, $n_office Office"
 echo "============================================================"
 echo
@@ -318,7 +362,7 @@ if [ "$n_hits" -gt 0 ]; then
      cd packages/audit && python3 ../../tests/benchmark/precision_recall.py
    66 rules
      python3 -c "import sys;sys.path.insert(0,'tests');from test_rule_producers import advertised_rules;print(len(advertised_rules()))"
-   1,891 tests passing, 1 red by design
+   1,904 tests passing, 1 red by design
      python3 -m pytest tests/ packages/audit/tests/ -q
    AVB knowns: R 100.0% / P 88.0% / F1 0.9362  (unaffected — measured against an oracle)
      cd tests/benchmark && python3 -m "agent-vuln-bench.harness.run_eval" --tool agent-audit --dataset knowns

@@ -35,7 +35,7 @@ Nothing was hedged. A number a reader cannot check is not softened in the prose;
 | **0 of 6** on the blind audit, 0 files skipped, 0 parse failures | blog, thread, CN | `CAPABILITY_BOUNDARIES.md` § 2 |
 | tree-sitter differential: **2 TPs lost, 8 added, 6 of them known FPs, 42 test regressions** | blog | `CAPABILITY_BOUNDARIES.md` § 4; `python3 tests/test_treesitter_differential.py` |
 | the retracted **98.51% / 100% / 99.25%**, and **124 FN / 47.46% recall** measured beside it | blog, thread, CN | `git show a65b341:results/layer1.json`; full trace in `docs/decisions/METRICS_RETRACTION.md` § 1 |
-| **1,891** tests passing, 1 red by design | blog footer | `python3 -m pytest tests/ packages/audit/tests/ -q` |
+| **1,904** tests passing, 1 red by design | blog footer | `python3 -m pytest tests/ packages/audit/tests/ -q` |
 | language coverage table (Python AST+taint; TS/JS, Go, Solidity regex; `.sh` unread) | blog | `CAPABILITY_BOUNDARIES.md` § 4 |
 | version **0.20.0** | blog footer | `python3 -c "import agent_audit;print(agent_audit.__version__)"` |
 
@@ -150,7 +150,7 @@ v0.20.0.
 no methodology for this 50-sample review exists in this tree. This sentence is the one that
 would do real damage: it invites a reader to go and check, and there is nothing there.
 
-`1,322 regression tests` is separately stale — the measured figure is **1,891 passing, 1
+`1,322 regression tests` is separately stale — the measured figure is **1,904 passing, 1
 failing on purpose, 4 skipped** (`python3 -m pytest tests/ packages/audit/tests/ -q`).
 
 The same 80% appears on a **tracked, published** surface: `README.md:147`, "validated against
